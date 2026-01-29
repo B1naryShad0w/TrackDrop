@@ -51,6 +51,14 @@ services:
       - RECOMMAND_FRESH_RELEASES_CACHE_DURATION=${RECOMMAND_FRESH_RELEASES_CACHE_DURATION:-300}
       - RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS=${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}
 
+      # API Playlist Mode
+      - RECOMMAND_PLAYLIST_MODE=${RECOMMAND_PLAYLIST_MODE:-tags}
+      - RECOMMAND_DOWNLOAD_HISTORY_PATH=${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/download_history.json}
+
+      # Admin credentials for library scan (startScan requires admin privileges)
+      - RECOMMAND_ADMIN_USER=${RECOMMAND_ADMIN_USER:-}
+      - RECOMMAND_ADMIN_PASSWORD=${RECOMMAND_ADMIN_PASSWORD:-}
+
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -49,6 +49,11 @@ echo "PLAYLIST_MODE = os.getenv(\"PLAYLIST_MODE\", \"${RECOMMAND_PLAYLIST_MODE:-
 echo "DOWNLOAD_HISTORY_PATH = os.getenv(\"DOWNLOAD_HISTORY_PATH\", \"${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/download_history.json}\")" >> config.py
 echo "" >> config.py
 
+# Admin credentials for library scan (startScan requires admin)
+echo "ADMIN_USER = os.getenv(\"ADMIN_USER\", \"${RECOMMAND_ADMIN_USER:-}\")" >> config.py
+echo "ADMIN_PASSWORD = os.getenv(\"ADMIN_PASSWORD\", \"${RECOMMAND_ADMIN_PASSWORD:-}\")" >> config.py
+echo "" >> config.py
+
 # Deezer Configuration (Optional - can be configured via web UI)
 echo "DEEZER_ARL = os.getenv(\"DEEZER_ARL\", \"${RECOMMAND_DEEZER_ARL:-}\")" >> config.py
 echo "" >> config.py

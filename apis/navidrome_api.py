@@ -17,7 +17,7 @@ from mutagen.m4a import M4A
 from utils import sanitize_filename
 
 class NavidromeAPI:
-    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, llm_target_comment=None, listenbrainz_enabled=False, lastfm_enabled=False, llm_enabled=False):
+    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, llm_target_comment=None, listenbrainz_enabled=False, lastfm_enabled=False, llm_enabled=False, admin_user=None, admin_password=None):
         self.root_nd = root_nd
         self.user_nd = user_nd
         self.password_nd = password_nd
@@ -29,12 +29,23 @@ class NavidromeAPI:
         self.listenbrainz_enabled = listenbrainz_enabled
         self.lastfm_enabled = lastfm_enabled
         self.llm_enabled = llm_enabled
+        self.admin_user = admin_user or ''
+        self.admin_password = admin_password or ''
 
     def _get_navidrome_auth_params(self):
         """Generates authentication parameters for Navidrome."""
         salt = os.urandom(6).hex()
         token = hashlib.md5((self.password_nd + salt).encode('utf-8')).hexdigest()
         return salt, token
+
+    def _get_admin_auth_params(self):
+        """Generates authentication parameters using admin credentials.
+        Falls back to regular user credentials if admin creds are not configured."""
+        user = self.admin_user if self.admin_user else self.user_nd
+        password = self.admin_password if self.admin_password else self.password_nd
+        salt = os.urandom(6).hex()
+        token = hashlib.md5((password + salt).encode('utf-8')).hexdigest()
+        return user, salt, token
 
     def _get_all_songs(self, salt, token):
         """Fetches all songs from Navidrome."""
@@ -626,11 +637,13 @@ class NavidromeAPI:
             print(f"Error updating playlist (id={playlist_id}): {e}")
             return False
 
-    def _start_scan(self, salt, token):
-        """Trigger a Navidrome library scan via the Subsonic API."""
+    def _start_scan(self, _salt=None, _token=None):
+        """Trigger a Navidrome library scan via the Subsonic API.
+        Uses admin credentials since startScan requires admin privileges."""
+        admin_user, salt, token = self._get_admin_auth_params()
         url = f"{self.root_nd}/rest/startScan.view"
         params = {
-            'u': self.user_nd,
+            'u': admin_user,
             't': token,
             's': salt,
             'v': '1.16.1',
@@ -651,11 +664,13 @@ class NavidromeAPI:
             print(f"Error triggering library scan: {e}")
             return False
 
-    def _get_scan_status(self, salt, token):
-        """Check if a library scan is in progress."""
+    def _get_scan_status(self, _salt=None, _token=None):
+        """Check if a library scan is in progress.
+        Uses admin credentials since getScanStatus requires admin privileges."""
+        admin_user, salt, token = self._get_admin_auth_params()
         url = f"{self.root_nd}/rest/getScanStatus.view"
         params = {
-            'u': self.user_nd,
+            'u': admin_user,
             't': token,
             's': salt,
             'v': '1.16.1',
@@ -672,11 +687,11 @@ class NavidromeAPI:
             print(f"Error checking scan status: {e}")
             return False
 
-    def _wait_for_scan(self, salt, token, timeout=120):
+    def _wait_for_scan(self, timeout=120):
         """Wait for an ongoing library scan to complete."""
         start = time.time()
         while time.time() - start < timeout:
-            if not self._get_scan_status(salt, token):
+            if not self._get_scan_status():
                 print("Library scan completed.")
                 return True
             time.sleep(3)
@@ -791,8 +806,8 @@ class NavidromeAPI:
 
         # Trigger scan and wait
         print("Triggering library scan for newly downloaded files...")
-        self._start_scan(salt, token)
-        self._wait_for_scan(salt, token)
+        self._start_scan()
+        self._wait_for_scan()
 
         # Group songs by source
         source_map = {

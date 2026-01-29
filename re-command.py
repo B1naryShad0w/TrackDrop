@@ -44,7 +44,9 @@ async def process_navidrome_cleanup():
         password_nd=PASSWORD_ND,
         music_library_path=MUSIC_LIBRARY_PATH,
         target_comment=TARGET_COMMENT,
-        lastfm_target_comment=LASTFM_TARGET_COMMENT
+        lastfm_target_comment=LASTFM_TARGET_COMMENT,
+        admin_user=globals().get('ADMIN_USER', ''),
+        admin_password=globals().get('ADMIN_PASSWORD', '')
     )
 
     playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
@@ -104,7 +106,9 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         listenbrainz_enabled=LISTENBRAINZ_ENABLED,
         lastfm_enabled=LASTFM_ENABLED,
         llm_target_comment=LLM_TARGET_COMMENT,
-        llm_enabled=LLM_ENABLED
+        llm_enabled=LLM_ENABLED,
+        admin_user=globals().get('ADMIN_USER', ''),
+        admin_password=globals().get('ADMIN_PASSWORD', '')
     )
     track_downloader = TrackDownloader(tagger)
 
@@ -268,7 +272,9 @@ async def process_fresh_releases_albums(download_id=None):
         lastfm_target_comment=LASTFM_TARGET_COMMENT,
         album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
         listenbrainz_enabled=LISTENBRAINZ_ENABLED,
-        lastfm_enabled=LASTFM_ENABLED
+        lastfm_enabled=LASTFM_ENABLED,
+        admin_user=globals().get('ADMIN_USER', ''),
+        admin_password=globals().get('ADMIN_PASSWORD', '')
     )
     album_downloader = AlbumDownloader(tagger)
 

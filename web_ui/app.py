@@ -48,7 +48,9 @@ navidrome_api_global = NavidromeAPI(
     listenbrainz_enabled=LISTENBRAINZ_ENABLED,
     lastfm_enabled=LASTFM_ENABLED,
     llm_target_comment=LLM_TARGET_COMMENT,
-    llm_enabled=LLM_ENABLED
+    llm_enabled=LLM_ENABLED,
+    admin_user=globals().get('ADMIN_USER', ''),
+    admin_password=globals().get('ADMIN_PASSWORD', '')
 )
 deezer_api_global = DeezerAPI()
 link_downloader_global = LinkDownloader(tagger_global, navidrome_api_global, deezer_api_global)
@@ -420,7 +422,9 @@ def update_config():
             listenbrainz_enabled=globals().get('LISTENBRAINZ_ENABLED', False),
             lastfm_enabled=globals().get('LASTFM_ENABLED', False),
             llm_target_comment=globals().get('LLM_TARGET_COMMENT', ''),
-            llm_enabled=globals().get('LLM_ENABLED', False)
+            llm_enabled=globals().get('LLM_ENABLED', False),
+            admin_user=globals().get('ADMIN_USER', ''),
+            admin_password=globals().get('ADMIN_PASSWORD', '')
         )
         link_downloader_global = LinkDownloader(tagger_global, navidrome_api_global, deezer_api_global)
 
