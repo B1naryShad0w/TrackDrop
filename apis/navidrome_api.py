@@ -517,36 +517,114 @@ class NavidromeAPI:
 
     # ---- Subsonic API Playlist Methods (for API playlist mode) ----
 
+    @staticmethod
+    def _normalize_for_match(text):
+        """Normalize a string for fuzzy matching: lowercase, strip punctuation artifacts,
+        remove feat./ft./with clauses, and collapse whitespace."""
+        import re
+        t = text.lower().strip()
+        # Remove trailing periods (e.g. "Escapism." -> "escapism")
+        t = t.rstrip('.')
+        # Remove feat/ft/with clauses: "DJ Snake feat. Justin Bieber" -> "dj snake"
+        t = re.sub(r'\s*(feat\.?|ft\.?|featuring|with)\s+.*', '', t)
+        # Remove parenthetical/bracket suffixes: "(Radio Edit)", "[Remastered]", "(Explicit)"
+        t = re.sub(r'\s*[\(\[].*?[\)\]]', '', t)
+        # Collapse whitespace
+        t = re.sub(r'\s+', ' ', t).strip()
+        return t
+
     def _search_song_in_navidrome(self, artist, title, salt, token):
-        """Search for a song in Navidrome by artist and title. Returns song dict or None."""
-        url = f"{self.root_nd}/rest/search3.view"
-        params = {
-            'u': self.user_nd,
-            't': token,
-            's': salt,
-            'v': '1.16.1',
-            'c': 'python-script',
-            'f': 'json',
-            'query': f"{artist} {title}",
-            'songCount': 20,
-            'artistCount': 0,
-            'albumCount': 0
-        }
-        try:
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            songs = data.get('subsonic-response', {}).get('searchResult3', {}).get('song', [])
-            # Try exact match first
-            for song in songs:
-                if (song.get('artist', '').lower() == artist.lower() and
-                        song.get('title', '').lower() == title.lower()):
-                    return song
-            # Fallback: return first result if any
-            return songs[0] if songs else None
-        except Exception as e:
-            print(f"Error searching Navidrome for '{artist} - {title}': {e}")
+        """Search for a song in Navidrome by artist and title. Returns song dict or None.
+        Uses multiple search strategies and fuzzy matching to handle feat./ft. artist
+        variations and title differences."""
+        import re
+
+        norm_artist = self._normalize_for_match(artist)
+        norm_title = self._normalize_for_match(title)
+
+        # Build multiple search queries to maximize chances of finding the song
+        queries = []
+        # 1. Title-only search (most reliable since Navidrome full-text indexes titles well)
+        queries.append(title)
+        # 2. Normalized artist + title
+        queries.append(f"{norm_artist} {norm_title}")
+        # 3. Original full query
+        queries.append(f"{artist} {title}")
+
+        seen_ids = set()
+        all_candidates = []
+
+        for query in queries:
+            url = f"{self.root_nd}/rest/search3.view"
+            params = {
+                'u': self.user_nd,
+                't': token,
+                's': salt,
+                'v': '1.16.1',
+                'c': 'python-script',
+                'f': 'json',
+                'query': query,
+                'songCount': 20,
+                'artistCount': 0,
+                'albumCount': 0
+            }
+            try:
+                response = requests.get(url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                songs = data.get('subsonic-response', {}).get('searchResult3', {}).get('song', [])
+                for s in songs:
+                    sid = s.get('id', '')
+                    if sid not in seen_ids:
+                        seen_ids.add(sid)
+                        all_candidates.append(s)
+            except Exception as e:
+                print(f"Error searching Navidrome with query '{query}': {e}")
+
+        if not all_candidates:
             return None
+
+        def _score(song):
+            """Score a candidate song. Higher = better match."""
+            s_artist = self._normalize_for_match(song.get('artist', ''))
+            s_title = self._normalize_for_match(song.get('title', ''))
+            score = 0
+
+            # Exact normalized title match
+            if s_title == norm_title:
+                score += 100
+            # Title contains or is contained
+            elif norm_title in s_title or s_title in norm_title:
+                score += 60
+
+            # Exact normalized artist match
+            if s_artist == norm_artist:
+                score += 100
+            # Artist contains or is contained (handles "DJ Snake" in "DJ Snake feat. Justin Bieber")
+            elif norm_artist in s_artist or s_artist in norm_artist:
+                score += 60
+            # Check if any word overlap for multi-artist strings like "VXLLAIN, iGRES, ENXK"
+            else:
+                artist_words = set(re.split(r'[,&\s]+', norm_artist))
+                s_artist_words = set(re.split(r'[,&\s]+', s_artist))
+                overlap = artist_words & s_artist_words
+                if overlap:
+                    score += 30 * len(overlap)
+
+            return score
+
+        # Score all candidates and pick the best
+        scored = [(s, _score(s)) for s in all_candidates]
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        best_song, best_score = scored[0]
+        # Require at least a title or artist partial match (score >= 60)
+        if best_score >= 60:
+            return best_song
+
+        # If nothing scored well, don't return a wrong match
+        print(f"  No confident match for '{artist} - {title}' (best score: {best_score})")
+        return None
 
     def _get_playlists(self, salt, token):
         """Get all playlists from Navidrome."""
