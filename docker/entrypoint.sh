@@ -98,17 +98,19 @@ echo "0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py >> /proc/1/fd/1 2
 chmod 0644 /etc/cron.d/re-command-cron
 
 # Replace ARL placeholder in streamrip_config.toml
+# Use temp file + cat to avoid sed -i rename failures on overlay/mounted filesystems
+STREAMRIP_CONFIG="/root/.config/streamrip/config.toml"
 if [ -n "${RECOMMAND_DEEZER_ARL}" ]; then
-    sed -i "s|arl = \"REPLACE_WITH_ARL\"|arl = \"${RECOMMAND_DEEZER_ARL}\"|" /root/.config/streamrip/config.toml
+    sed "s|arl = \"REPLACE_WITH_ARL\"|arl = \"${RECOMMAND_DEEZER_ARL}\"|" "$STREAMRIP_CONFIG" > "${STREAMRIP_CONFIG}.tmp" && cat "${STREAMRIP_CONFIG}.tmp" > "$STREAMRIP_CONFIG" && rm "${STREAMRIP_CONFIG}.tmp"
     # Create .arl file for deemix in /root/.config/deemix/
     echo "${RECOMMAND_DEEZER_ARL}" > /root/.config/deemix/.arl
 fi
 
 # Replace downloads folder in streamrip_config.toml
-sed -i "s|folder = \"/home/ubuntu/StreamripDownloads\"|folder = \"/app/temp_downloads\"|" /root/.config/streamrip/config.toml
+sed 's|folder = "/home/ubuntu/StreamripDownloads"|folder = "/app/temp_downloads"|' "$STREAMRIP_CONFIG" > "${STREAMRIP_CONFIG}.tmp" && cat "${STREAMRIP_CONFIG}.tmp" > "$STREAMRIP_CONFIG" && rm "${STREAMRIP_CONFIG}.tmp"
 
 # Set Deezer quality to 0 (autoselect) in streamrip_config.toml
-sed -i '/^\[deezer\]/,/^\[[a-z]*\]/ s/quality = [0-9]*/quality = 0/' /root/.config/streamrip/config.toml
+sed '/^\[deezer\]/,/^\[[a-z]*\]/ s/quality = [0-9]*/quality = 0/' "$STREAMRIP_CONFIG" > "${STREAMRIP_CONFIG}.tmp" && cat "${STREAMRIP_CONFIG}.tmp" > "$STREAMRIP_CONFIG" && rm "${STREAMRIP_CONFIG}.tmp"
 
 # Deemix Configuration
 DEEMIX_CONFIG_PATH="/root/.config/deemix/config.json"
@@ -123,6 +125,10 @@ else
 fi
 
 # Start syslog service (required for cron)
+# Disable kernel log module since containers can't access /proc/kmsg
+if [ -f /etc/rsyslog.conf ]; then
+    sed 's/^module(load="imklog")/#module(load="imklog")/' /etc/rsyslog.conf > /etc/rsyslog.conf.tmp && cat /etc/rsyslog.conf.tmp > /etc/rsyslog.conf && rm /etc/rsyslog.conf.tmp
+fi
 rsyslogd
 
 # Give syslog a moment to start
