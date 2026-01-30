@@ -888,8 +888,8 @@
                 </div>
             </div>
             <div id="listenBrainzButtons" class="playlist-controls">
-                <button onclick="discoverListenBrainzPlaylist()">Discover Weekly</button>
-                <button onclick="downloadListenBrainzPlaylistDirect()">Download Weekly</button>
+                <button onclick="discoverListenBrainzPlaylist()">Discover Weekly Playlist</button>
+                <button onclick="downloadListenBrainzPlaylistDirect()">Download Weekly Playlist</button>
             </div>
             <div id="listenBrainzPlaylist" class="playlist-content"></div>
         </div>
@@ -903,8 +903,8 @@
                 </div>
             </div>
             <div id="lastFmButtons" class="playlist-controls">
-                <button onclick="discoverLastFmPlaylist()">Discover Weekly</button>
-                <button onclick="downloadLastFmPlaylistDirect()">Download Weekly</button>
+                <button onclick="discoverLastFmPlaylist()">Discover Weekly Playlist</button>
+                <button onclick="downloadLastFmPlaylistDirect()">Download Weekly Playlist</button>
             </div>
             <div id="lastFmPlaylist" class="playlist-content"></div>
         </div>
@@ -1437,7 +1437,7 @@ async function createSmartPlaylists() {
             // Create new abort controller for this request
             llmAbortController = new AbortController();
 
-            playlistDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100px;"><div class="spinner" style="margin-right: 8px;"></div><span>Querying the LLM for suggestions... (this can take a while)</span><button id="cancelLlmBtn" style="margin-left: 15px; padding: 5px 10px; background-color: var(--error-color); color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="cancelLlmQuery()">Cancel</button></div>';
+            playlistDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100px;"><div class="spinner" style="margin-right: 8px;"></div><span>Querying the LLM for recommendations... (this can take a while)</span><button id="cancelLlmBtn" style="margin-left: 15px; padding: 5px 10px; background-color: var(--error-color); color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="cancelLlmQuery()">Cancel</button></div>';
             statusDiv.textContent = '';
             toggleBtn.style.display = 'none';
 
@@ -1493,7 +1493,7 @@ async function createSmartPlaylists() {
                     lazyLoadAlbumArts('llmPlaylist');
                 } else {
                     playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
-                    statusDiv.textContent = 'No tracks found';
+                    statusDiv.textContent = 'No recommendations found';
                 }
             } catch (error) {
                 if (error.name === 'AbortError') {
@@ -1600,10 +1600,10 @@ async function createSmartPlaylists() {
                     // Setup intersection observer for lazy loading album art
                     statusDiv.textContent = `${data.recommendations.length} songs fetched from ListenBrainz`;
                     toggleBtn.style.display = 'inline-block';
-                    showMessage('info', `Found ${data.recommendations.length} ListenBrainz weekly tracks.`);
+                    showMessage('info', `Found ${data.recommendations.length} ListenBrainz recommendations.`);
                 } else {
                     playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
-                    statusDiv.textContent = 'No tracks found';
+                    statusDiv.textContent = 'No recommendations found';
                     showMessage(data.status, data.message);
                 }
                 // Call lazy load function for all album arts after rendering
@@ -1705,10 +1705,10 @@ async function createSmartPlaylists() {
                     }
                     statusDiv.textContent = `${data.recommendations.length} songs fetched from Last.fm`;
                     toggleBtn.style.display = 'inline-block';
-                    showMessage('info', `Found ${data.recommendations.length} Last.fm weekly tracks.`);
+                    showMessage('info', `Found ${data.recommendations.length} Last.fm recommendations.`);
                 } else {
                     playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
-                    statusDiv.textContent = 'No tracks found';
+                    statusDiv.textContent = 'No recommendations found';
                     showMessage(data.status, data.message);
                 }
             } catch (error) {

@@ -1162,15 +1162,15 @@ class NavidromeAPI:
 
         # Group ALL recommended songs by source
         source_map = {
-            'listenbrainz': 'ListenBrainz Recommendations',
-            'last.fm': 'Last.fm Recommendations',
-            'llm': 'LLM Recommendations',
+            'listenbrainz': 'ListenBrainz Weekly',
+            'last.fm': 'Last.fm Weekly',
+            'llm': 'LLM Weekly',
         }
 
         tracks_by_source = {}
         for song in all_recommendations:
             src = song.get('source', 'Unknown').lower()
-            playlist_name = source_map.get(src, f"{song.get('source', 'Unknown')} Recommendations")
+            playlist_name = source_map.get(src, f"{song.get('source', 'Unknown')} Weekly")
             if playlist_name not in tracks_by_source:
                 tracks_by_source[playlist_name] = []
             tracks_by_source[playlist_name].append(song)
@@ -1248,9 +1248,9 @@ class NavidromeAPI:
         }
 
         playlist_name_map = {
-            'ListenBrainz': 'ListenBrainz Recommendations',
-            'Last.fm': 'Last.fm Recommendations',
-            'LLM': 'LLM Recommendations',
+            'ListenBrainz': 'ListenBrainz Weekly',
+            'Last.fm': 'Last.fm Weekly',
+            'LLM': 'LLM Weekly',
         }
 
         for source_name in list(history.keys()):
@@ -1260,7 +1260,7 @@ class NavidromeAPI:
 
             print(f"\n--- API Cleanup for source: {source_name} ({len(tracks)} tracked downloads) ---")
 
-            playlist_name = playlist_name_map.get(source_name, f"{source_name} Recommendations")
+            playlist_name = playlist_name_map.get(source_name, f"{source_name} Weekly")
             existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
             playlist_songs = []
             if existing_playlist:
@@ -1405,9 +1405,9 @@ class NavidromeAPI:
         summary = {'deleted': [], 'kept': [], 'failed': [], 'playlists_cleared': []}
 
         playlist_name_map = {
-            'ListenBrainz': 'ListenBrainz Recommendations',
-            'Last.fm': 'Last.fm Recommendations',
-            'LLM': 'LLM Recommendations',
+            'ListenBrainz': 'ListenBrainz Weekly',
+            'Last.fm': 'Last.fm Weekly',
+            'LLM': 'LLM Weekly',
         }
 
         # Track which history entries to keep (songs that were NOT successfully deleted)

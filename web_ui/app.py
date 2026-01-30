@@ -719,7 +719,7 @@ def trigger_listenbrainz_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'ListenBrainz Weekly',
+            'artist': 'ListenBrainz Playlist',
             'title': 'Multiple Tracks',
             'status': 'in_progress',
             'start_time': datetime.now().isoformat(),
@@ -727,7 +727,7 @@ def trigger_listenbrainz_download():
             'current_track_count': 0,
             'total_track_count': None  # Will be updated when recommendations are fetched
         }
-        
+
         # Execute re-command.py in a separate process for non-blocking download, bypassing playlist check
         subprocess.Popen([
             sys.executable, '/app/re-command.py',
@@ -777,7 +777,7 @@ def trigger_lastfm_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'Last.fm Weekly',
+            'artist': 'Last.fm Playlist',
             'title': 'Multiple Tracks',
             'status': 'in_progress',
             'start_time': datetime.now().isoformat(),
@@ -1150,7 +1150,7 @@ def trigger_llm_download():
     download_id = str(uuid.uuid4())
     downloads_queue[download_id] = {
         'id': download_id,
-        'artist': 'LLM Weekly',
+        'artist': 'LLM Playlist',
         'title': f'{len(recommendations)} Tracks',
         'status': 'in_progress',
         'start_time': datetime.now().isoformat(),
