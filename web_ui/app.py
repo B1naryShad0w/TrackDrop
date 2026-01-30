@@ -358,10 +358,13 @@ def api_login():
     password = data.get('password', '')
     if not username or not password:
         return jsonify({"status": "error", "message": "Username and password are required"}), 400
-    if user_manager.authenticate(username, password):
+    success, error_reason = user_manager.authenticate(username, password)
+    if success:
         session['username'] = username
         return jsonify({"status": "success", "message": "Login successful"})
-    return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+    if error_reason == "offline":
+        return jsonify({"status": "error", "message": "Could not connect to Navidrome. Check that the server is running and accessible."}), 503
+    return jsonify({"status": "error", "message": "Invalid username or password."}), 401
 
 @app.route('/logout')
 def logout():

@@ -36,7 +36,12 @@ DEFAULT_SETTINGS = {
 
 
 def authenticate_navidrome(username, password):
-    """Validate credentials against Navidrome's Subsonic API using MD5+salt auth."""
+    """Validate credentials against Navidrome's Subsonic API using MD5+salt auth.
+
+    Returns (success: bool, error_reason: str or None).
+    error_reason is None on success, 'offline' if Navidrome is unreachable,
+    or 'invalid' if the credentials are wrong.
+    """
     salt = "".join(random.choices(string.ascii_lowercase + string.digits, k=12))
     token = hashlib.md5((password + salt).encode()).hexdigest()
     try:
@@ -53,9 +58,13 @@ def authenticate_navidrome(username, password):
             timeout=10,
         )
         data = resp.json()
-        return data.get("subsonic-response", {}).get("status") == "ok"
+        if data.get("subsonic-response", {}).get("status") == "ok":
+            return True, None
+        return False, "invalid"
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        return False, "offline"
     except Exception:
-        return False
+        return False, "offline"
 
 
 class UserManager:
@@ -77,7 +86,11 @@ class UserManager:
             json.dump(data, f, indent=2)
 
     def authenticate(self, username, password):
-        """Validate credentials against Navidrome."""
+        """Validate credentials against Navidrome.
+
+        Returns (success, error_reason) where error_reason is None on success,
+        'offline' if Navidrome is unreachable, or 'invalid' for bad credentials.
+        """
         return authenticate_navidrome(username, password)
 
     def get_user_settings(self, username):

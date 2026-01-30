@@ -92,10 +92,44 @@
         .login-btn:hover { background-color: var(--secondary-color); }
         .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .error-msg {
-            color: var(--error-color);
             font-size: 0.9em;
             margin-top: 12px;
             display: none;
+            padding: 10px 14px;
+            border-radius: 8px;
+            line-height: 1.4;
+        }
+        .error-msg.error-invalid {
+            color: var(--error-color);
+            background-color: rgba(220, 53, 69, 0.12);
+            border: 1px solid rgba(220, 53, 69, 0.3);
+        }
+        .error-msg.error-offline {
+            color: #ffc107;
+            background-color: rgba(255, 193, 7, 0.12);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+        .error-msg.error-generic {
+            color: var(--error-color);
+            background-color: rgba(220, 53, 69, 0.12);
+            border: 1px solid rgba(220, 53, 69, 0.3);
+        }
+        .navidrome-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background-color: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 6px 14px;
+            margin-bottom: 24px;
+            font-size: 0.8em;
+            color: #b0b0b0;
+        }
+        .navidrome-badge svg {
+            width: 14px;
+            height: 14px;
+            opacity: 0.7;
         }
     </style>
 </head>
@@ -103,7 +137,10 @@
     <div class="login-card">
         <img src="/assets/logo.svg" alt="Re-command">
         <h1>Re-command</h1>
-        <p>Sign in with your Navidrome account</p>
+        <div class="navidrome-badge">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V17M6 21H18C19.1046 21 20 20.1046 20 19V13C20 11.8954 19.1046 11 18 11H6C4.89543 11 4 11.8954 4 13V19C4 20.1046 4.89543 21 6 21ZM16 11V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V11H16Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Sign in with your Navidrome credentials
+        </div>
         <form id="loginForm" onsubmit="handleLogin(event)">
             <div class="form-group">
                 <label for="username">Username</label>
@@ -140,11 +177,18 @@
                 if (data.status === 'success') {
                     window.location.href = '/';
                 } else {
+                    errEl.className = 'error-msg';
+                    if (resp.status === 503) {
+                        errEl.classList.add('error-offline');
+                    } else {
+                        errEl.classList.add('error-invalid');
+                    }
                     errEl.textContent = data.message || 'Login failed';
                     errEl.style.display = 'block';
                 }
             } catch (err) {
-                errEl.textContent = 'Connection error. Please try again.';
+                errEl.className = 'error-msg error-offline';
+                errEl.textContent = 'Could not reach the server. Please check your connection.';
                 errEl.style.display = 'block';
             }
             btn.disabled = false;
