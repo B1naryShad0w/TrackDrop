@@ -206,9 +206,9 @@ class Tagger:
             extracted_title = base_filename
 
             # Remove artist name if present at the beginning (case-insensitive)
-            # This regex looks for "Artist - " at the start of the string
-            artist_pattern = re.compile(f"^{re.escape(artist)}\s*-\s*", re.IGNORECASE)
-            extracted_title = artist_pattern.sub("", extracted_title, 1)
+            if artist:
+                artist_pattern = re.compile(f"^{re.escape(artist)}\s*-\s*", re.IGNORECASE)
+                extracted_title = artist_pattern.sub("", extracted_title, 1)
 
             # Remove common track number patterns like "01 - ", "01. "
             extracted_title = re.sub(r"^\d+\s*-\s*", "", extracted_title) # "01 - Title"
@@ -240,14 +240,15 @@ class Tagger:
                 # For MP3s, use ID3 tags
                 if audio.tags is None:
                     audio.tags = ID3()
-                
+
                 from mutagen.id3 import TPE2
-                audio.tags.add(TPE1(encoding=3, text=[artist]))
+                if artists and len(artists) > 1:
+                    # Multi-artist: use plural ARTISTS tag only, skip singular ARTIST
+                    audio.tags.add(TXXX(encoding=3, desc='ARTISTS', text=artists))
+                elif artist:
+                    audio.tags.add(TPE1(encoding=3, text=[artist]))
                 if album_artist:
                     audio.tags.add(TPE2(encoding=3, text=[album_artist]))
-                if artists and len(artists) > 1:
-                    # Plural ARTISTS tag via TXXX for multi-valued artist support
-                    audio.tags.add(TXXX(encoding=3, desc='ARTISTS', text=artists))
                 audio.tags.add(TIT2(encoding=3, text=[title]))
                 audio.tags.add(TALB(encoding=3, text=[album]))
                 audio.tags.add(TDRC(encoding=3, text=[release_date]))
@@ -259,12 +260,15 @@ class Tagger:
 
             elif file_path.lower().endswith('.flac'):
                 # For FLAC, use Vorbis comments
-                audio['artist'] = [artist]
+                if artists and len(artists) > 1:
+                    # Multi-artist: use plural ARTISTS tag, skip singular
+                    audio['artists'] = artists
+                    if 'artist' in audio:
+                        del audio['artist']
+                elif artist:
+                    audio['artist'] = [artist]
                 if album_artist:
                     audio['albumartist'] = [album_artist]
-                if artists and len(artists) > 1:
-                    # Plural ARTISTS tag: each entry is a separate value
-                    audio['artists'] = artists
                 audio['title'] = [title]
                 audio['album'] = [album]
                 audio['date'] = [release_date]
@@ -274,11 +278,14 @@ class Tagger:
 
             elif file_path.lower().endswith(('.ogg', '.oga')):
                 # For OggVorbis, use Vorbis comments
-                audio['artist'] = [artist]
-                if album_artist:
-                    audio['albumartist'] = [album_artist]
                 if artists and len(artists) > 1:
                     audio['artists'] = artists
+                    if 'artist' in audio:
+                        del audio['artist']
+                elif artist:
+                    audio['artist'] = [artist]
+                if album_artist:
+                    audio['albumartist'] = [album_artist]
                 audio['title'] = [title]
                 audio['album'] = [album]
                 audio['date'] = [release_date]
@@ -287,8 +294,11 @@ class Tagger:
                     audio['musicbrainz_recordingid'] = recording_mbid
 
             elif file_path.lower().endswith('.m4a'):
-                # For M4A, use iTunes-style atoms
-                audio['\xa9ART'] = [artist]
+                # For M4A, use iTunes-style atoms (no standard plural tag — use separator)
+                if artists and len(artists) > 1:
+                    audio['\xa9ART'] = ["; ".join(artists)]
+                elif artist:
+                    audio['\xa9ART'] = [artist]
                 if album_artist:
                     audio['aART'] = [album_artist]
                 audio['\xa9nam'] = [title]

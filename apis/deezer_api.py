@@ -127,17 +127,15 @@ class DeezerAPI:
                     else:
                         artist_list = [data.get("artist", {}).get("name", "")]
 
-                    # Display name uses "; " separator (recognized by Navidrome)
-                    artist_name = "; ".join(artist_list)
-
-                    # Album artist is typically the primary artist
-                    album_artist = data.get("artist", {}).get("name", artist_name)
+                    # Album artist: fetch from the album's own artist info if possible,
+                    # otherwise use the track's primary artist
+                    album_id = data["album"].get("id")
+                    album_artist = data.get("artist", {}).get("name", artist_list[0] if artist_list else "")
 
                     return {
                         "album": data["album"]["title"],
                         "release_date": data.get("release_date"),
                         "album_art": album_cover,
-                        "artist": artist_name,
                         "artists": artist_list,
                         "album_artist": album_artist,
                         "title": data.get("title", ""),

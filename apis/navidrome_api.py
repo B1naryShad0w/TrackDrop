@@ -1496,26 +1496,23 @@ class NavidromeAPI:
 
                         if file_ext == '.mp3':
                             audio = ID3(file_path)
-                            artist = str(audio.get('TPE1', ['Unknown Artist'])[0])
-                            folder_artist = str(audio.get('TPE2', [artist])[0])
+                            # Folder: prefer albumartist (TPE2), fall back to artist (TPE1), then TXXX:ARTISTS
+                            folder_artist = str(audio.get('TPE2', [None])[0] or audio.get('TPE1', [None])[0] or 'Unknown Artist')
                             album = str(audio.get('TALB', ['Unknown Album'])[0])
                             title = str(audio.get('TIT2', [os.path.splitext(filename)[0]])[0])
                         elif file_ext == '.flac':
                             audio = FLAC(file_path)
-                            artist = _get_tag(audio, 'artist', 'Unknown Artist')
-                            folder_artist = _get_tag(audio, 'albumartist', artist)
+                            folder_artist = _get_tag(audio, 'albumartist') or _get_tag(audio, 'artist') or _get_tag(audio, 'artists', 'Unknown Artist')
                             album = _get_tag(audio, 'album', 'Unknown Album')
                             title = _get_tag(audio, 'title', os.path.splitext(filename)[0])
                         elif file_ext in ('.m4a', '.aac'):
                             audio = M4A(file_path)
-                            artist = _get_tag(audio, '\xa9ART', 'Unknown Artist')
-                            folder_artist = _get_tag(audio, 'aART', artist)
+                            folder_artist = _get_tag(audio, 'aART') or _get_tag(audio, '\xa9ART', 'Unknown Artist')
                             album = _get_tag(audio, '\xa9alb', 'Unknown Album')
                             title = _get_tag(audio, '\xa9nam', os.path.splitext(filename)[0])
                         elif file_ext in ('.ogg', '.wma'):
                             audio = OggVorbis(file_path)
-                            artist = _get_tag(audio, 'artist', 'Unknown Artist')
-                            folder_artist = _get_tag(audio, 'albumartist', artist)
+                            folder_artist = _get_tag(audio, 'albumartist') or _get_tag(audio, 'artist') or _get_tag(audio, 'artists', 'Unknown Artist')
                             album = _get_tag(audio, 'album', 'Unknown Album')
                             title = _get_tag(audio, 'title', os.path.splitext(filename)[0])
                         else:
