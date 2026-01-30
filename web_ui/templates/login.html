@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Re-command - Login</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4142e0">
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        :root {
+            --primary-color: #4142e0;
+            --secondary-color: #3fbbda;
+            --background-color: #1a1a2e;
+            --card-background: #2e2e4a;
+            --text-color: #e0e0e0;
+            --border-color: #4a4a6a;
+            --error-color: #dc3545;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-card {
+            background-color: var(--card-background);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .login-card img {
+            width: 100px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 5px rgba(0,0,0,0.3));
+        }
+        .login-card h1 {
+            color: var(--primary-color);
+            margin-bottom: 8px;
+            font-size: 1.8em;
+        }
+        .login-card p {
+            color: #b0b0b0;
+            margin-bottom: 24px;
+            font-size: 0.9em;
+        }
+        .form-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1em;
+            background-color: #3a3a5a;
+            color: var(--text-color);
+            transition: border-color 0.3s ease;
+        }
+        .form-group input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(65,66,224,0.3);
+        }
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-top: 8px;
+        }
+        .login-btn:hover { background-color: var(--secondary-color); }
+        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .error-msg {
+            color: var(--error-color);
+            font-size: 0.9em;
+            margin-top: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <img src="/assets/logo.svg" alt="Re-command">
+        <h1>Re-command</h1>
+        <p>Sign in with your Navidrome account</p>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+            <div class="error-msg" id="errorMsg"></div>
+        </form>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const errEl = document.getElementById('errorMsg');
+            btn.disabled = true;
+            btn.textContent = 'Signing in...';
+            errEl.style.display = 'none';
+            try {
+                const resp = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        password: document.getElementById('password').value
+                    })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    window.location.href = '/';
+                } else {
+                    errEl.textContent = data.message || 'Login failed';
+                    errEl.style.display = 'block';
+                }
+            } catch (err) {
+                errEl.textContent = 'Connection error. Please try again.';
+                errEl.style.display = 'block';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+        }
+    </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, session
 import os
 import subprocess
 import re
@@ -23,9 +23,14 @@ from apis.llm_api import LlmAPI
 from downloaders.track_downloader import TrackDownloader
 from downloaders.link_downloader import LinkDownloader
 from utils import Tagger
+from web_ui.user_manager import UserManager, login_required, get_current_user
 import uuid
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('RECOMMAND_SECRET_KEY') or os.urandom(24)
+
+# User manager for per-user settings
+user_manager = UserManager()
 
 # Global dictionary to store download queue status
 # Key: download_id (UUID), Value: { 'artist', 'title', 'status', 'start_time', 'message' }
@@ -243,7 +248,91 @@ def poll_download_statuses():
         time.sleep(5) # Poll every 5 seconds
 
 # --- Routes ---
+
+@app.route('/login', methods=['GET'])
+def login():
+    if 'username' in session:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({"status": "error", "message": "Username and password are required"}), 400
+    if user_manager.authenticate(username, password):
+        session['username'] = username
+        return jsonify({"status": "success", "message": "Login successful"})
+    return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/api/user/settings', methods=['GET'])
+@login_required
+def get_user_settings():
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    # Mask sensitive fields
+    masked = dict(settings)
+    for key in ['listenbrainz_token', 'lastfm_password', 'lastfm_api_key', 'lastfm_api_secret', 'lastfm_session_key']:
+        if masked.get(key):
+            masked[key] = '••••••••'
+    return jsonify({"status": "success", "settings": masked, "first_time": user_manager.is_first_time(username)})
+
+@app.route('/api/user/settings', methods=['POST'])
+@login_required
+def update_user_settings():
+    username = get_current_user()
+    data = request.get_json()
+    current = user_manager.get_user_settings(username)
+    # Don't overwrite sensitive fields if masked
+    for key in ['listenbrainz_token', 'lastfm_password', 'lastfm_api_key', 'lastfm_api_secret', 'lastfm_session_key']:
+        if data.get(key) == '••••••••':
+            data.pop(key, None)
+    user_manager.update_user_settings(username, data)
+    return jsonify({"status": "success", "message": "Settings saved successfully"})
+
+@app.route('/api/user/setup_done', methods=['POST'])
+@login_required
+def mark_setup_done():
+    user_manager.mark_setup_done(get_current_user())
+    return jsonify({"status": "success"})
+
+# --- PWA Routes ---
+@app.route('/manifest.json')
+def pwa_manifest():
+    manifest = {
+        "name": "Re-command",
+        "short_name": "Re-command",
+        "description": "Music recommendation & download manager",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#1a1a2e",
+        "theme_color": "#4142e0",
+        "icons": [
+            {"src": "/assets/logo.svg", "sizes": "any", "type": "image/svg+xml"},
+            {"src": "/favicon.ico", "sizes": "48x48", "type": "image/png"}
+        ]
+    }
+    return jsonify(manifest)
+
+@app.route('/sw.js')
+def service_worker():
+    sw_content = """
+self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));
+"""
+    from flask import Response
+    return Response(sw_content.strip(), mimetype='application/javascript')
+
 @app.route('/api/download_queue', methods=['GET'])
+@login_required
 def get_download_queue():
     # Update the queue from status files to ensure latest data
     if os.path.exists(DOWNLOAD_STATUS_DIR):
@@ -269,24 +358,28 @@ def get_download_queue():
     return jsonify({"status": "success", "queue": queue_list})
 
 @app.route('/')
+@login_required
 def index():
-    current_arl = DEEZER_ARL
+    username = get_current_user()
+    user_settings = user_manager.get_user_settings(username)
+    first_time = user_manager.is_first_time(username)
+
     current_cron = get_current_cron_schedule()
 
-    # Parse cron schedule to extract hour and day
-    cron_parts = current_cron.split()
-    if len(cron_parts) >= 5:
-        try:
-            cron_hour = int(cron_parts[1])
-            cron_day = int(cron_parts[4])
-        except (ValueError, IndexError):
-            cron_hour = 0
-            cron_day = 2
-    else:
-        cron_hour = 0
-        cron_day = 2
+    # Parse cron schedule to extract hour and day (use per-user settings if available)
+    cron_hour = user_settings.get('cron_hour', 0)
+    cron_day = user_settings.get('cron_day', 2)
 
-    return render_template('index.html', arl=current_arl, cron_schedule=current_cron, cron_hour=cron_hour, cron_day=cron_day)
+    return render_template('index.html',
+        cron_schedule=current_cron,
+        cron_hour=cron_hour,
+        cron_day=cron_day,
+        username=username,
+        first_time=first_time,
+        user_settings=json.dumps(user_settings),
+        llm_enabled=LLM_ENABLED,
+        hide_fresh_releases=True
+    )
 
 @app.route('/favicon.ico')
 def favicon():
@@ -297,6 +390,7 @@ def assets(filename):
     return send_from_directory(os.path.join(app.root_path, 'assets'), filename)
 
 @app.route('/api/config', methods=['GET'])
+@login_required
 def get_config():
     return jsonify({
         "ROOT_ND": "••••••••" if ROOT_ND else "",
@@ -325,6 +419,7 @@ def get_config():
     })
 
 @app.route('/api/update_arl', methods=['POST'])
+@login_required
 def update_arl():
     data = request.get_json()
     new_arl = data.get('arl')
@@ -349,6 +444,7 @@ def update_arl():
         return jsonify({"status": "error", "message": f"Failed to update streamrip config: {e}"}), 500
 
 @app.route('/api/update_cron', methods=['POST'])
+@login_required
 def update_cron():
     data = request.get_json()
     new_schedule = data.get('schedule')
@@ -361,6 +457,7 @@ def update_cron():
         return jsonify({"status": "error", "message": "Failed to update cron schedule."}), 500
 
 @app.route('/api/update_config', methods=['POST'])
+@login_required
 def update_config():
     data = request.get_json()
     try:
@@ -454,6 +551,7 @@ def update_config():
         return jsonify({"status": "error", "message": f"Failed to update configuration: {e}"}), 500
 
 @app.route('/api/get_listenbrainz_playlist', methods=['GET'])
+@login_required
 def get_listenbrainz_playlist():
     print("Attempting to get ListenBrainz playlist...")
 
@@ -478,6 +576,7 @@ def get_listenbrainz_playlist():
         return jsonify({"status": "error", "message": f"Error getting ListenBrainz playlist: {e}"}), 500
 
 @app.route('/api/trigger_listenbrainz_download', methods=['POST'])
+@login_required
 def trigger_listenbrainz_download():
     print("Attempting to trigger ListenBrainz download via background script...")
     try:
@@ -512,6 +611,7 @@ def trigger_listenbrainz_download():
         return jsonify({"status": "error", "message": f"Error triggering ListenBrainz download: {e}"}), 500
 
 @app.route('/api/get_lastfm_playlist', methods=['GET'])
+@login_required
 def get_lastfm_playlist():
     print("Attempting to get Last.fm playlist...")
 
@@ -533,6 +633,7 @@ def get_lastfm_playlist():
         return jsonify({"status": "error", "message": f"Error getting Last.fm playlist: {e}"}), 500
 
 @app.route('/api/trigger_lastfm_download', methods=['POST'])
+@login_required
 def trigger_lastfm_download():
     print("Attempting to trigger Last.fm download via background script...")
     try:
@@ -566,6 +667,7 @@ def trigger_lastfm_download():
         return jsonify({"status": "error", "message": f"Error triggering Last.fm download: {e}"}), 500
 
 @app.route('/api/trigger_navidrome_cleanup', methods=['POST'])
+@login_required
 def trigger_navidrome_cleanup():
     print("Attempting to trigger Navidrome cleanup...")
     try:
@@ -590,6 +692,7 @@ def trigger_navidrome_cleanup():
         return jsonify({"status": "error", "message": f"Error during Navidrome cleanup: {e}"}), 500
 
 @app.route('/api/get_fresh_releases', methods=['GET'])
+@login_required
 async def get_fresh_releases():
     overall_start_time = time.perf_counter()
     print("Attempting to get ListenBrainz fresh releases...")
@@ -658,6 +761,7 @@ async def get_fresh_releases():
         return response
 
 @app.route('/api/toggle_cron', methods=['POST'])
+@login_required
 def toggle_cron():
     data = request.get_json()
     disabled = data.get('disabled', False)
@@ -687,6 +791,7 @@ def toggle_cron():
         return jsonify({"status": "error", "message": f"Error toggling cron: {e}"}), 500
 
 @app.route('/api/submit_listenbrainz_feedback', methods=['POST'])
+@login_required
 def submit_listenbrainz_feedback():
     print("Attempting to submit ListenBrainz feedback...")
     try:
@@ -721,6 +826,7 @@ def submit_listenbrainz_feedback():
         return jsonify({"status": "error", "message": f"Error submitting feedback: {e}"}), 500
 
 @app.route('/api/submit_lastfm_feedback', methods=['POST'])
+@login_required
 def submit_lastfm_feedback():
     print("Attempting to submit Last.fm feedback...")
     try:
@@ -754,6 +860,7 @@ def submit_lastfm_feedback():
         return jsonify({"status": "error", "message": f"Error submitting feedback: {e}"}), 500
 
 @app.route('/api/get_llm_playlist', methods=['GET'])
+@login_required
 async def get_llm_playlist():
     if not LLM_ENABLED:
         return jsonify({"status": "error", "message": "LLM suggestions are not enabled in the configuration."}), 400
@@ -829,6 +936,7 @@ async def get_llm_playlist():
         return jsonify({"status": "error", "message": f"An error occurred: {e}"}), 500
 
 @app.route('/api/trigger_llm_download', methods=['POST'])
+@login_required
 def trigger_llm_download():
     # This endpoint will fetch recommendations and then trigger downloads.
     # For simplicity, it wil be re-fetched. A better implementation might cache the result from get_llm_playlist.
@@ -873,6 +981,7 @@ def trigger_llm_download():
     return jsonify({"status": "info", "message": f"Started download of {len(recommendations)} tracks from LLM recommendations in the background."})
 
 @app.route('/api/trigger_fresh_release_download', methods=['POST'])
+@login_required
 def trigger_fresh_release_download():
     print("Attempting to trigger fresh release album download...")
     artist = None
@@ -962,6 +1071,7 @@ def trigger_fresh_release_download():
         }), 500
 
 @app.route('/api/get_track_preview', methods=['GET'])
+@login_required
 async def get_track_preview():
     artist = request.args.get('artist')
     title = request.args.get('title')
@@ -980,6 +1090,7 @@ async def get_track_preview():
         return jsonify({"status": "error", "message": f"Error getting track preview: {e}"}), 500
 
 @app.route('/api/trigger_track_download', methods=['POST'])
+@login_required
 def trigger_track_download():
     print("Attempting to trigger individual track download...")
     try:
@@ -1034,6 +1145,7 @@ def trigger_track_download():
         return jsonify({"status": "error", "message": f"Error triggering download: {e}"}), 500
 
 @app.route('/api/download_from_link', methods=['POST'])
+@login_required
 async def download_from_link():
     print("Attempting to download from link...")
     try:
@@ -1074,6 +1186,7 @@ async def download_from_link():
         return jsonify({"status": "error", "message": f"Error initiating download from link: {e}"}), 500
 
 @app.route('/api/get_deezer_album_art', methods=['GET'])
+@login_required
 async def get_deezer_album_art():
     artist = request.args.get('artist')
     album_title = request.args.get('album_title')
@@ -1093,6 +1206,7 @@ async def get_deezer_album_art():
         return jsonify({"status": "error", "message": f"Error getting Deeezer album art: {e}"}), 500
 
 @app.route('/api/create_smart_playlists', methods=['POST'])
+@login_required
 def create_smart_playlists():
     """
     Create Navidrome Smart Playlist (.nsp) files for enabled recommendation types.

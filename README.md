@@ -10,10 +10,14 @@
 
 *   **Multi-Source Recommendations:** Fetches music recommendations playlists from ListenBrainz, Last.fm, and LLM-powered suggestions (gemini/openrouter/llama.cpp). Includes a built-in cron scheduling for weekly automated downloads
 *   **Dual Download Methods:** Supports both modern Streamrip v2 and legacy Deemix for downloading from Deezer
+*   **Lossless Quality Enforcement:** Downloads are enforced to FLAC lossless quality (Streamrip quality=2, Deemix maxBitrate=9)
+*   **API Playlist Mode:** Manage Navidrome playlists via the Subsonic API instead of metadata tagging. Configurable via `PLAYLIST_MODE` ("tags" or "api")
+*   **Multi-User Authentication:** Login via your Navidrome account. Per-user settings are stored persistently and survive container restarts
+*   **Progressive Web App (PWA):** Install Re-command as a standalone app on mobile and desktop
 *   **Fresh Releases Discovery:** Automatically shows newly released albums from ListenBrainz with a quick download button
-*   **Universal Link Downloads:** Download music straight to your sever with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
+*   **Universal Link Downloads:** Download music straight to your server with Spotify, YouTube, Deezer, and other platforms links using Songlink API integration (still in beta)
 *   **Track Previews & Feedback:** Preview tracks before downloading and submit feedback manually to ListenBrainz/Last.fm
-*   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists
+*   **Dynamic Playlist Support:** Downloaded tracks are tagged with configurable comment markers for dynamic playlists (tags mode) or managed via Subsonic API playlists (api mode)
 *   **Automated Library Maintenance:** Removes tracks from previous recommendations and submit scrobbling feedbacks based on your Navidrome ratings
 *   **Containerized Deployment:** Full Docker support with automated setup and configuration
 
@@ -67,7 +71,7 @@ docker compose up -d
 
 ### 3. Access the Web Interface
 
-Open `http://localhost:5000` in your browser. Configure Navidrome access, playlist providers, and Deezer ARL in the settings. You can also click the "Create Smart Playlists" after you configured everything and then trigger a rescan of your Navidrome library.
+Open `http://localhost:5000` in your browser. Log in with your Navidrome credentials. On first login, a setup wizard will guide you through configuring ListenBrainz and Last.fm. Infrastructure settings (Navidrome URL, Deezer ARL, download method, LLM) are configured via environment variables in docker-compose.yml.
 
 ## Screenshots
 
@@ -220,6 +224,12 @@ Then open `http://localhost:5000` in your browser.
 | `RECOMMAND_LLM_PROVIDER` | LLM provider (gemini/openrouter/llama) |
 | `RECOMMAND_LLM_API_KEY` | LLM API key |
 | `RECOMMAND_LLM_MODEL_NAME` | LLM model name |
+| `RECOMMAND_PLAYLIST_MODE` | Playlist mode: `tags` (metadata) or `api` (Subsonic API) |
+| `RECOMMAND_DOWNLOAD_HISTORY_PATH` | Path for download history JSON (default: `/app/data/download_history.json`) |
+| `RECOMMAND_ADMIN_USER` | Admin username for library scan (required if scan user differs from regular user) |
+| `RECOMMAND_ADMIN_PASSWORD` | Admin password for library scan |
+| `RECOMMAND_SECRET_KEY` | Flask session secret key (auto-generated if not set) |
+| `RECOMMAND_USER_SETTINGS_PATH` | Path for per-user settings JSON (default: `/app/data/user_settings.json`) |
 
 ### Configuration File (Local)
 
@@ -249,6 +259,12 @@ The web interface exposes RESTful APIs:
 - `POST /api/trigger_track_download` - Download individual track
 - `POST /api/download_from_link` - Download from universal music links
 - `GET /api/get_deezer_album_art` - Get album art from Deezer
+- `POST /api/login` - Authenticate with Navidrome credentials
+- `GET /logout` - Log out and clear session
+- `GET/POST /api/user/settings` - Get or update per-user settings
+- `POST /api/user/setup_done` - Mark first-time setup as complete
+- `GET /manifest.json` - PWA manifest
+- `GET /sw.js` - PWA service worker
 
 ## LLM Model Comparison
 
@@ -274,20 +290,29 @@ re-command supports various Large Language Models for music recommendations. Fro
 
 ## Advanced Configuration
 
-### Custom Download Quality
-If you have a Deezer Premium account, you can get better mp3 quality.
+### Download Quality
 
-Edit the Streamrip configuration in Docker:
-```bash
-docker exec -it re-command bash
-# Edit /root/.config/streamrip/config.toml
-```
+By default, re-command enforces lossless FLAC downloads:
+- Streamrip: `quality = 2` (FLAC)
+- Deemix: `maxBitrate = 9` (FLAC)
 
-Or edit the Deemix config if you are using it:
-```bash
-docker exec -it re-command bash
-# Edit /root/.config/deemix/config.json
-```
+These are set automatically on container startup. A Deezer Premium/HiFi account is required for lossless downloads.
+
+### API Playlist Mode
+
+Set `RECOMMAND_PLAYLIST_MODE=api` to manage playlists via the Navidrome Subsonic API instead of metadata tagging. In this mode:
+- Playlists are created/updated directly in Navidrome (e.g., "ListenBrainz Recommendations")
+- Downloaded songs are tracked in a JSON file for cleanup purposes
+- Pre-existing library songs are included in playlists without being tracked for deletion
+- Cleanup checks ratings from Navidrome: 4-5 stars keeps the song, 1-3 stars deletes it
+
+If you run one instance per user, set `RECOMMAND_ADMIN_USER` and `RECOMMAND_ADMIN_PASSWORD` so library scans can be triggered (the Subsonic `startScan` endpoint requires admin privileges).
+
+### Data Persistence
+
+Mount `/app/data` as a Docker volume to persist:
+- User settings (`user_settings.json`)
+- Download history (`download_history.json`)
 
 ## Troubleshooting
 
@@ -325,5 +350,5 @@ docker logs -f re-command-container
 
 Contributions are welcome! Areas for improvement:
 
-- Really looking forward sharing links to an Android re-command PWA (I tried and failed many times so PRs are welcomed!)
+- PWA support is now included - install Re-command as a standalone app from your browser
 - Adding Tidal as a streamrip option to get higher resolution downloads (quite unstable for now)
