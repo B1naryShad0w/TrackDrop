@@ -121,9 +121,10 @@ class DeezerAPI:
                     album_cover = data["album"].get("cover_xl", data["album"].get("cover_big", data["album"].get("cover_medium", data["album"].get("cover", None))))
 
                     # Build full artist string from contributors (includes all artists)
+                    # Use "; " as separator - recognized by Navidrome by default for multi-artist splitting
                     contributors = data.get("contributors", [])
                     if contributors:
-                        artist_name = ", ".join(c.get("name", "") for c in contributors if c.get("name"))
+                        artist_name = "; ".join(c.get("name", "") for c in contributors if c.get("name"))
                     else:
                         # Fallback to primary artist
                         artist_name = data.get("artist", {}).get("name", "")
