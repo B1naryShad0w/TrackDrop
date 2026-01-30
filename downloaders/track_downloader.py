@@ -62,21 +62,21 @@ class TrackDownloader:
             return None
 
         if downloaded_file_path:
-            # In API playlist mode, skip metadata/comment tagging entirely
+            # Always tag with recommendation source metadata so file tags and
+            # folder organization match (Deezer metadata can differ from source)
+            self.tagger.tag_track(
+                downloaded_file_path,
+                song_info['artist'],
+                song_info['title'],
+                song_info['album'],
+                song_info['release_date'],
+                song_info['recording_mbid'],
+                song_info['source'],
+                song_info.get('album_art')
+            )
+            # In tags mode, also add comment tag for source-based cleanup
             playlist_mode = getattr(config, 'PLAYLIST_MODE', 'tags')
-            if playlist_mode == 'api':
-                print(f"  [API mode] Skipping tagging for {song_info['artist']} - {song_info['title']}")
-            else:
-                self.tagger.tag_track(
-                    downloaded_file_path,
-                    song_info['artist'],
-                    song_info['title'],
-                    song_info['album'],
-                    song_info['release_date'],
-                    song_info['recording_mbid'],
-                    song_info['source'],
-                    song_info.get('album_art')
-                )
+            if playlist_mode != 'api':
                 self.tagger.add_comment_to_file(
                     downloaded_file_path,
                     comment
