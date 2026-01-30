@@ -66,7 +66,7 @@ services:
       - RECOMMAND_USER_SETTINGS_PATH=${RECOMMAND_USER_SETTINGS_PATH:-/app/data/user_settings.json}
 
       # Navidrome database path (read-only, for checking ratings across all users)
-      - RECOMMAND_NAVIDROME_DB_PATH=${RECOMMAND_NAVIDROME_DB_PATH:-}
+      - RECOMMAND_NAVIDROME_DB_PATH=${RECOMMAND_NAVIDROME_DB_PATH:-/app/navidrome_data/navidrome.db}
 
     restart: unless-stopped
     extra_hosts:

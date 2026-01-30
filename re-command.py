@@ -9,7 +9,7 @@ from tqdm import tqdm
 from config import *
 from apis.deezer_api import DeezerAPI
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db, update_status_file
+from utils import initialize_streamrip_db, update_status_file, get_user_history_path
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.llm_api import LlmAPI
@@ -17,7 +17,7 @@ from downloaders.track_downloader import TrackDownloader
 from downloaders.album_downloader import AlbumDownloader
 from utils import remove_empty_folders, Tagger
 
-async def process_navidrome_cleanup():
+async def process_navidrome_cleanup(username=None):
     """
     Processes Navidrome library for cleanup based on ratings and submits feedback.
     Uses tag-based or API-based cleanup depending on PLAYLIST_MODE.
@@ -52,8 +52,9 @@ async def process_navidrome_cleanup():
 
     playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
     if playlist_mode == 'api':
-        print("[API mode] Running API-based cleanup using download history...")
-        download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+        cleanup_user = username or USER_ND
+        print(f"[API mode] Running API-based cleanup for user '{cleanup_user}' using download history...")
+        download_history_path = get_user_history_path(cleanup_user)
         await navidrome_api.process_api_cleanup(
             history_path=download_history_path,
             listenbrainz_api=listenbrainz_api,
@@ -68,7 +69,7 @@ async def process_navidrome_cleanup():
     print("Navidrome cleanup and feedback submission finished.")
 
 
-async def process_recommendations(source="all", bypass_playlist_check=False, download_id=None):
+async def process_recommendations(source="all", bypass_playlist_check=False, download_id=None, username=None):
     """
     Processes recommendations from specified sources (ListenBrainz, Last.fm, or all).
     """
@@ -236,8 +237,9 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             # In API playlist mode, update Navidrome playlists
             playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
             if playlist_mode == 'api':
-                print("\n[API mode] Updating Navidrome API playlists...")
-                download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+                rec_user = username or USER_ND
+                print(f"\n[API mode] Updating Navidrome API playlists for user '{rec_user}'...")
+                download_history_path = get_user_history_path(rec_user)
                 # Pass ALL recommendations so pre-existing library songs also get added to the playlist
                 navidrome_api.update_api_playlists(unique_recommendations, download_history_path, downloaded_songs_info)
         else:
@@ -245,8 +247,9 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             # In API mode, still update playlists with pre-existing library songs
             playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
             if playlist_mode == 'api':
-                print("\n[API mode] Updating Navidrome API playlists with pre-existing songs...")
-                download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+                rec_user = username or USER_ND
+                print(f"\n[API mode] Updating Navidrome API playlists with pre-existing songs for user '{rec_user}'...")
+                download_history_path = get_user_history_path(rec_user)
                 navidrome_api.update_api_playlists(unique_recommendations, download_history_path, [])
     else:
         print("\nNo new recommendations found from enabled sources.")
@@ -382,6 +385,12 @@ if __name__ == "__main__":
         type=str,
         help="Unique ID for the download task, used for status tracking."
     )
+    parser.add_argument(
+        "--user",
+        type=str,
+        default=None,
+        help="Username for per-user download history tracking. Defaults to USER_ND from config."
+    )
     args = parser.parse_args()
 
     # Initial status update
@@ -391,10 +400,10 @@ if __name__ == "__main__":
         if args.source == "fresh_releases":
             asyncio.run(process_fresh_releases_albums(download_id=args.download_id))
         elif args.cleanup:
-            asyncio.run(process_navidrome_cleanup())
+            asyncio.run(process_navidrome_cleanup(username=args.user))
             update_status_file(args.download_id, "completed", "Cleanup finished successfully.", "Cleanup completed")
         else:
-            asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check, download_id=args.download_id))
+            asyncio.run(process_recommendations(source=args.source, bypass_playlist_check=args.bypass_playlist_check, download_id=args.download_id, username=args.user))
     except Exception as e:
         update_status_file(args.download_id, "failed", f"Download failed: {e}", f"Download failed: {e}")
         raise # Re-raise the exception after updating status

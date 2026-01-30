@@ -15,7 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config import *
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db
+from utils import initialize_streamrip_db, get_user_history_path
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.deezer_api import DeezerAPI
@@ -602,10 +602,11 @@ def trigger_listenbrainz_download():
         
         # Execute re-command.py in a separate process for non-blocking download, bypassing playlist check
         subprocess.Popen([
-            sys.executable, '/app/re-command.py', 
-            '--source', 'listenbrainz', 
+            sys.executable, '/app/re-command.py',
+            '--source', 'listenbrainz',
             '--bypass-playlist-check',
-            '--download-id', download_id # Pass the download ID
+            '--download-id', download_id,
+            '--user', get_current_user()
         ])
         return jsonify({"status": "info", "message": "ListenBrainz download initiated in the background."})
     except Exception as e:
@@ -659,9 +660,10 @@ def trigger_lastfm_download():
         
         # Execute re-command.py in a separate process for non-blocking download
         subprocess.Popen([
-            sys.executable, '/app/re-command.py', 
+            sys.executable, '/app/re-command.py',
             '--source', 'lastfm',
-            '--download-id', download_id # Pass the download ID
+            '--download-id', download_id,
+            '--user', get_current_user()
         ])
         return jsonify({"status": "info", "message": "Last.fm download initiated in the background."})
     except Exception as e:
@@ -680,7 +682,7 @@ def trigger_navidrome_cleanup():
         import asyncio
         playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
         if playlist_mode == 'api':
-            download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+            download_history_path = get_user_history_path(get_current_user())
             asyncio.run(navidrome_api_global.process_api_cleanup(
                 history_path=download_history_path,
                 listenbrainz_api=listenbrainz_api,
@@ -699,7 +701,7 @@ def trigger_debug_cleanup():
     """Debug: clear playlists and remove all songs not rated 4-5 stars."""
     print("Attempting to trigger debug cleanup...")
     try:
-        download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/data/download_history.json')
+        download_history_path = get_user_history_path(get_current_user())
         summary = asyncio.run(navidrome_api_global.process_debug_cleanup(
             history_path=download_history_path
         ))

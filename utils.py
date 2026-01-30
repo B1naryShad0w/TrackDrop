@@ -13,6 +13,13 @@ from mutagen.m4a import M4A
 from streamrip.db import Database, Downloads, Failed
 from config import *
 
+def get_user_history_path(username):
+    """Get per-user download history path."""
+    base_dir = os.path.dirname(globals().get('DOWNLOAD_HISTORY_PATH', '/app/data/download_history.json'))
+    os.makedirs(base_dir, exist_ok=True)
+    safe_user = username.replace('/', '_').replace('\\', '_')
+    return os.path.join(base_dir, f'download_history_{safe_user}.json')
+
 def initialize_streamrip_db():
     """Initializes the streamrip database, ensuring tables exist."""
     db_path = "/app/temp_downloads/downloads.db"
