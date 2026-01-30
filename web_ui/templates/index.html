@@ -782,6 +782,12 @@
             cursor: not-allowed;
         }
 
+        .download-link-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .container {
@@ -812,6 +818,15 @@
             .release-art {
                 width: 100px;
                 height: 100px;
+            }
+            .download-link-row {
+                flex-direction: column;
+            }
+            .download-link-row input[type="text"] {
+                width: 100% !important;
+            }
+            .download-link-row button {
+                width: 100%;
             }
         }
     </style>
@@ -858,8 +873,8 @@
 
         <div id="downloadFromLinkSection" class="playlist-section" style="border-top: none; padding-top: 10px; margin-top: 10px;">
             <div class="form-group" style="margin-bottom: 10px;">
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <input type="text" id="musicLinkInput" placeholder="Paste a Spotify, YouTube, Deezer, or other music link..." style="flex: 1;">
+                <div class="download-link-row">
+                    <input type="text" id="musicLinkInput" placeholder="Paste a Spotify, YouTube, Deezer, or other music link..." style="flex: 1; width: 100%;">
                     <button id="downloadLinkBtn" onclick="downloadFromLink()" style="white-space: nowrap; margin: 0;">Download</button>
                 </div>
             </div>
