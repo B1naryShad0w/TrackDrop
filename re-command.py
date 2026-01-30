@@ -215,6 +215,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                     lb_recommendation = song_info.get('source', '').lower() == 'listenbrainz'
                     downloaded_file_path = await track_downloader.download_track(song_info, lb_recommendation=lb_recommendation)
                     if downloaded_file_path:
+                        song_info['downloaded_path'] = downloaded_file_path
                         downloaded_songs_info.append(song_info)
                         # Update progress
                         update_status_file(download_id, "in_progress", f"Downloaded {len(downloaded_songs_info)} of {total} tracks.", title, current_track_count=len(downloaded_songs_info), total_track_count=total)
@@ -229,7 +230,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 print(f"- {song['artist']} - {song['title']} (Source: {song['source']})")
 
             # Organize the newly downloaded and tagged files
-            navidrome_api.organize_music_files(
+            moved_files = navidrome_api.organize_music_files(
                 TEMP_DOWNLOAD_FOLDER,
                 MUSIC_LIBRARY_PATH
             )
@@ -241,7 +242,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 print(f"\n[API mode] Updating Navidrome API playlists for user '{rec_user}'...")
                 download_history_path = get_user_history_path(rec_user)
                 # Pass ALL recommendations so pre-existing library songs also get added to the playlist
-                navidrome_api.update_api_playlists(unique_recommendations, download_history_path, downloaded_songs_info)
+                navidrome_api.update_api_playlists(unique_recommendations, download_history_path, downloaded_songs_info, file_path_map=moved_files)
         else:
             print("\nNo new songs were downloaded.")
             # In API mode, still update playlists with pre-existing library songs

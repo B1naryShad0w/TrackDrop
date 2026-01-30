@@ -778,6 +778,55 @@ class NavidromeAPI:
         print(f"  No confident match for '{artist} - {title}' (best score: {best_score})")
         return None
 
+    def _find_song_by_path(self, file_path):
+        """Look up a song in Navidrome's SQLite DB by file path.
+        Returns a dict with 'id' and 'path' keys, or None if not found.
+        Handles path prefix differences between re-command and Navidrome mounts."""
+        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+            return None
+
+        import sqlite3
+        try:
+            conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
+            cursor = conn.cursor()
+
+            # The file_path from organize is absolute under re-command's mount (e.g. /app/music/Artist/Album/Track.flac)
+            # Navidrome stores paths relative to its own music folder (e.g. /music/re-command/Artist/Album/Track.flac)
+            # Try multiple path suffixes to match
+            candidates = [file_path]
+
+            # Extract relative path after the music library base
+            music_bases = ['/app/music/', '/app/music']
+            for base in music_bases:
+                if file_path.startswith(base):
+                    rel = file_path[len(base):]
+                    candidates.append(rel)
+                    # Navidrome might prepend its own base
+                    candidates.append(f"/music/{rel}")
+                    candidates.append(f"/music/re-command/{rel}")
+                    candidates.append(f"re-command/{rel}")
+                    break
+
+            for path_candidate in candidates:
+                cursor.execute("SELECT id, path FROM media_file WHERE path = ?", (path_candidate,))
+                row = cursor.fetchone()
+                if row:
+                    conn.close()
+                    return {'id': row[0], 'path': row[1]}
+
+            # Fallback: match by filename suffix (basename within artist/album structure)
+            basename = os.path.basename(file_path)
+            cursor.execute("SELECT id, path FROM media_file WHERE path LIKE ?", (f"%/{basename}",))
+            rows = cursor.fetchall()
+            if len(rows) == 1:
+                conn.close()
+                return {'id': rows[0][0], 'path': rows[0][1]}
+
+            conn.close()
+        except Exception as e:
+            print(f"  Error looking up song by path in DB: {e}")
+        return None
+
     def _get_playlists(self, salt, token):
         """Get all playlists from Navidrome."""
         url = f"{self.root_nd}/rest/getPlaylists.view"
@@ -1060,7 +1109,7 @@ class NavidromeAPI:
 
     # ---- API Playlist Mode: Update playlists after download ----
 
-    def update_api_playlists(self, all_recommendations, history_path, downloaded_songs_info=None):
+    def update_api_playlists(self, all_recommendations, history_path, downloaded_songs_info=None, file_path_map=None):
         """After downloading, update Navidrome API playlists for each source.
         - Triggers a scan so new files get IDs
         - Groups ALL recommended tracks by source (not just downloaded ones)
@@ -1071,16 +1120,25 @@ class NavidromeAPI:
             all_recommendations: ALL songs from the recommendation list (downloaded + pre-existing)
             history_path: Path to the download history JSON
             downloaded_songs_info: Only the songs that were actually downloaded (for history tracking)
+            file_path_map: Dict mapping temp download paths to final organized paths (from organize_music_files)
         """
         if downloaded_songs_info is None:
             downloaded_songs_info = []
+        if file_path_map is None:
+            file_path_map = {}
 
         salt, token = self._get_navidrome_auth_params()
 
-        # Build a set of actually-downloaded songs for quick lookup
+        # Build a lookup: (artist_lower, title_lower) -> final_file_path for downloaded songs
+        downloaded_file_paths = {}
         downloaded_set = set()
         for s in downloaded_songs_info:
-            downloaded_set.add((s.get('artist', '').lower(), s.get('title', '').lower()))
+            key = (s.get('artist', '').lower(), s.get('title', '').lower())
+            downloaded_set.add(key)
+            # Map the temp download path to the final organized path
+            temp_path = s.get('downloaded_path', '')
+            if temp_path and temp_path in file_path_map:
+                downloaded_file_paths[key] = file_path_map[temp_path]
 
         # Trigger scan and wait (so newly downloaded files get IDs)
         if downloaded_songs_info:
@@ -1107,11 +1165,23 @@ class NavidromeAPI:
             print(f"\n--- Updating API playlist: {playlist_name} ---")
             song_ids = []
             for song in songs:
-                nd_song = self._search_song_in_navidrome(song['artist'], song['title'], salt, token)
+                nd_song = None
+                song_key = (song.get('artist', '').lower(), song.get('title', '').lower())
+                was_downloaded = song_key in downloaded_set
+
+                # For downloaded songs, try path-based lookup first (most reliable)
+                if was_downloaded and song_key in downloaded_file_paths:
+                    final_path = downloaded_file_paths[song_key]
+                    nd_song = self._find_song_by_path(final_path)
+                    if nd_song:
+                        print(f"  Found by path: {song['artist']} - {song['title']} (id={nd_song['id']})")
+
+                # Fall back to search-based matching
+                if not nd_song:
+                    nd_song = self._search_song_in_navidrome(song['artist'], song['title'], salt, token)
+
                 if nd_song:
                     song_ids.append(nd_song['id'])
-                    # Only record in download history if we actually downloaded this song
-                    was_downloaded = (song.get('artist', '').lower(), song.get('title', '').lower()) in downloaded_set
                     if was_downloaded:
                         source_key = song.get('source', 'Unknown')
                         self.add_to_download_history(history_path, source_key, {
@@ -1466,15 +1536,17 @@ class NavidromeAPI:
         """
         Organizes music files from a source folder into a destination base folder
         using Artist/Album/filename structure based on metadata.
+        Returns a dict mapping original file paths to their new destination paths.
         """
         from mutagen.id3 import ID3, ID3NoHeaderError
         from mutagen.flac import FLAC
         from mutagen.mp3 import MP3
         from mutagen.oggvorbis import OggVorbis
-        from mutagen.m4a import M4A
+        from mutagen.mp4 import MP4
         from utils import sanitize_filename
 
         print(f"\nOrganizing music files from '{source_folder}' to '{destination_base_folder}'...")
+        moved_files = {}  # original_path -> new_path
 
         # Supported audio file extensions
         audio_extensions = ('.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wma')
@@ -1506,7 +1578,7 @@ class NavidromeAPI:
                             album = _get_tag(audio, 'album', 'Unknown Album')
                             title = _get_tag(audio, 'title', os.path.splitext(filename)[0])
                         elif file_ext in ('.m4a', '.aac'):
-                            audio = M4A(file_path)
+                            audio = MP4(file_path)
                             folder_artist = _get_tag(audio, 'aART') or _get_tag(audio, '\xa9ART', 'Unknown Artist')
                             album = _get_tag(audio, '\xa9alb', 'Unknown Album')
                             title = _get_tag(audio, '\xa9nam', os.path.splitext(filename)[0])
@@ -1540,6 +1612,7 @@ class NavidromeAPI:
 
                         os.makedirs(album_folder, exist_ok=True)
                         shutil.move(file_path, new_file_path)
+                        moved_files[file_path] = new_file_path
                         print(f"Moved '{filename}' to '{os.path.relpath(new_file_path, destination_base_folder)}'")
                     except Exception as e:
                         print(f"Error organizing '{filename}': {e}")
@@ -1574,3 +1647,5 @@ class NavidromeAPI:
 
         # Fix permissions on organized files
         os.system(f'chown -R 1000:1000 "{destination_base_folder}"')
+
+        return moved_files
