@@ -236,12 +236,14 @@ class NavidromeAPI:
     def _find_actual_song_path(self, navidrome_relative_path, song_details=None):
         """
         Attempts to find the actual file path on disk given the Navidrome relative path.
-        Uses multiple strategies with verbose debug logging.
+        Navidrome may store paths relative to its own music folder which can differ
+        from re-command's music_library_path mount point.
         """
         print(f"[PATH RESOLVE] Trying to find: '{navidrome_relative_path}'", flush=True)
         print(f"[PATH RESOLVE] Music library: '{self.music_library_path}'", flush=True)
 
-        # Strategy 0: Query Navidrome DB for the absolute path
+        # Strategy 0: Query Navidrome DB for the path it has on record
+        db_path = None
         if self.navidrome_db_path and os.path.exists(self.navidrome_db_path) and song_details:
             nd_id = song_details.get('id', '')
             if nd_id:
@@ -253,57 +255,75 @@ class NavidromeAPI:
                     conn.close()
                     if row and row[0]:
                         db_path = row[0]
-                        print(f"[PATH RESOLVE] DB full path: '{db_path}'", flush=True)
-                        if os.path.exists(db_path):
-                            print(f"[PATH RESOLVE] FOUND via DB absolute path", flush=True)
-                            return db_path
-                        # Try joining with music library
-                        joined = os.path.join(self.music_library_path, db_path)
-                        print(f"[PATH RESOLVE] Trying joined: '{joined}'", flush=True)
-                        if os.path.exists(joined):
-                            print(f"[PATH RESOLVE] FOUND via DB path joined with library", flush=True)
-                            return joined
+                        print(f"[PATH RESOLVE] DB path: '{db_path}'", flush=True)
                 except Exception as e:
                     print(f"[PATH RESOLVE] DB query failed: {e}", flush=True)
 
-        # Strategy 1: path as-is
-        expected_full_path = os.path.join(self.music_library_path, navidrome_relative_path)
-        print(f"[PATH RESOLVE] Strategy 1 (as-is): '{expected_full_path}' exists={os.path.exists(expected_full_path)}", flush=True)
-        if os.path.exists(expected_full_path):
-            return expected_full_path
+        # Build a list of candidate relative paths to try joining with music_library_path
+        candidates = []
 
-        # Strategy 2: reconstructing from song details metadata
-        if song_details:
-            artist = sanitize_filename(song_details.get('artist', ''))
-            album = sanitize_filename(song_details.get('album', ''))
-            title = sanitize_filename(song_details.get('title', ''))
-            suffix = song_details.get('suffix', 'flac')
+        # From DB path: try as-is, then strip known prefixes
+        if db_path:
+            candidates.append(db_path)
+            # Strip common absolute prefixes (e.g. /music/, /data/music/)
+            # to get the artist/album/file relative part
+            for prefix in ['/music/', '/data/music/', '/data/', '/media/']:
+                if db_path.startswith(prefix):
+                    candidates.append(db_path[len(prefix):])
 
-            if artist and album and title:
-                for ext in [suffix, 'flac', 'mp3', 'ogg', 'm4a']:
-                    reconstructed_path = os.path.join(self.music_library_path, artist, album, f"{title}.{ext}")
-                    if os.path.exists(reconstructed_path):
-                        print(f"[PATH RESOLVE] FOUND via metadata reconstruction: '{reconstructed_path}'", flush=True)
-                        return reconstructed_path
+        # The relative path from the Subsonic API / download history
+        if navidrome_relative_path:
+            candidates.append(navidrome_relative_path)
 
-                    track = song_details.get('track', '')
-                    if track:
-                        reconstructed_path_with_track = os.path.join(self.music_library_path, artist, album, f"{track} - {title}.{ext}")
-                        if os.path.exists(reconstructed_path_with_track):
-                            print(f"[PATH RESOLVE] FOUND via metadata+track: '{reconstructed_path_with_track}'", flush=True)
-                            return reconstructed_path_with_track
+        # Try each candidate joined with music_library_path
+        for candidate in candidates:
+            # Try as absolute path first
+            if os.path.isabs(candidate) and os.path.exists(candidate):
+                print(f"[PATH RESOLVE] FOUND as absolute: '{candidate}'", flush=True)
+                return candidate
+            # Join with music library
+            full = os.path.join(self.music_library_path, candidate)
+            if os.path.exists(full):
+                print(f"[PATH RESOLVE] FOUND: '{full}'", flush=True)
+                return full
 
-        # Strategy 3: scan the artist/album directory for any matching file
-        path_parts = navidrome_relative_path.split('/')
+        # Strategy 2: scan the artist/album directory for files matching the title
+        # Use the best relative path we have (DB stripped or API path)
+        best_rel = candidates[-1] if candidates else navidrome_relative_path
+        path_parts = best_rel.split('/')
+        # Find artist/album dirs - skip leading empty parts from absolute paths
+        path_parts = [p for p in path_parts if p]
+
         if len(path_parts) >= 2:
-            artist_dir = os.path.join(self.music_library_path, path_parts[0])
-            album_dir = os.path.join(artist_dir, path_parts[1]) if len(path_parts) >= 3 else artist_dir
-            print(f"[PATH RESOLVE] Strategy 3: checking dir '{album_dir}' exists={os.path.isdir(album_dir)}", flush=True)
-            if os.path.isdir(album_dir):
-                files = os.listdir(album_dir)
-                print(f"[PATH RESOLVE] Files in dir: {files}", flush=True)
+            # Try to find the artist/album directory
+            artist_name = path_parts[0]
+            album_name = path_parts[1] if len(path_parts) >= 3 else None
+            artist_dir = os.path.join(self.music_library_path, artist_name)
 
-        # Strategy 4: fallback complex logic
+            if os.path.isdir(artist_dir):
+                album_dir = os.path.join(artist_dir, album_name) if album_name else artist_dir
+                if os.path.isdir(album_dir):
+                    files = os.listdir(album_dir)
+                    print(f"[PATH RESOLVE] Scanning dir '{album_dir}': {files}", flush=True)
+
+                    # If only one audio file, that's probably it
+                    audio_exts = ('.flac', '.mp3', '.ogg', '.m4a', '.aac', '.wma')
+                    audio_files = [f for f in files if any(f.lower().endswith(e) for e in audio_exts)]
+                    if len(audio_files) == 1:
+                        found = os.path.join(album_dir, audio_files[0])
+                        print(f"[PATH RESOLVE] FOUND (only audio file in dir): '{found}'", flush=True)
+                        return found
+
+                    # Try matching by title from song_details
+                    if song_details:
+                        song_title = song_details.get('title', '').lower()
+                        for f in audio_files:
+                            if song_title and song_title in f.lower():
+                                found = os.path.join(album_dir, f)
+                                print(f"[PATH RESOLVE] FOUND (title match): '{found}'", flush=True)
+                                return found
+
+        # Strategy 3: fallback complex logic
         result = self._find_actual_song_path_fallback(navidrome_relative_path)
         print(f"[PATH RESOLVE] Fallback result: {result}", flush=True)
         return result
@@ -1348,10 +1368,10 @@ class NavidromeAPI:
                     protection = self._check_song_protection(nd_id)
                     if protection['protected']:
                         reasons = '; '.join(protection['reasons'])
-                        print(f"[DEBUG CLEANUP]     PROTECTED - keeping file and history entry", flush=True)
+                        print(f"[DEBUG CLEANUP]     PROTECTED - keeping file, removing from download history (now permanent)", flush=True)
                         print(f"[DEBUG CLEANUP]     Reasons: {reasons}", flush=True)
                         summary['kept'].append(f"{label} ({reasons})")
-                        remaining_tracks.append(track)
+                        # Don't add to remaining_tracks - remove from history since it's now a permanent library file
                         continue
 
                     print(f"[DEBUG CLEANUP]     NOT protected (max_rating={protection['max_rating']}) - attempting deletion", flush=True)
