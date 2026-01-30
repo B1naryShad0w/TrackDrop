@@ -119,7 +119,43 @@ def get_current_cron_schedule():
         return "0 0 * * 2"
     return "0 0 * * 2"
 
+def rebuild_cron_from_settings():
+    """Rebuild /etc/cron.d/re-command-cron from all users' persisted settings.
+    Each enabled user gets their own cron line with --user <username>."""
+    try:
+        all_users = user_manager.get_all_users()
+        cron_lines = []
+        for username in all_users:
+            settings = user_manager.get_user_settings(username)
+            if not settings.get('cron_enabled', True):
+                continue
+            hour = settings.get('cron_hour', 0)
+            day = settings.get('cron_day', 2)
+            cron_lines.append(
+                f"0 {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1"
+            )
+
+        cron_file = '/etc/cron.d/re-command-cron'
+        if cron_lines:
+            with open(cron_file, 'w') as f:
+                f.write('\n'.join(cron_lines) + '\n')
+            os.chmod(cron_file, 0o644)
+        else:
+            # No enabled users — remove cron file
+            if os.path.exists(cron_file):
+                os.remove(cron_file)
+
+        # Reload cron daemon to pick up changes
+        subprocess.run(["crontab", "-r"], check=False, capture_output=True)
+        if os.path.exists(cron_file):
+            subprocess.run(["crontab", cron_file], check=False, capture_output=True)
+        return True
+    except Exception as e:
+        print(f"Error rebuilding cron from settings: {e}")
+        return False
+
 def update_cron_schedule(new_schedule):
+    """Legacy helper — kept for backwards compatibility but prefer rebuild_cron_from_settings."""
     try:
         with open('/etc/cron.d/re-command-cron', 'r') as f:
             cron_line = f.read().strip()
@@ -370,11 +406,13 @@ def index():
     # Parse cron schedule to extract hour and day (use per-user settings if available)
     cron_hour = user_settings.get('cron_hour', 0)
     cron_day = user_settings.get('cron_day', 2)
+    cron_enabled = user_settings.get('cron_enabled', True)
 
     return render_template('index.html',
         cron_schedule=current_cron,
         cron_hour=cron_hour,
         cron_day=cron_day,
+        cron_enabled=cron_enabled,
         username=username,
         first_time=first_time,
         user_settings=json.dumps(user_settings),
@@ -452,7 +490,23 @@ def update_cron():
     if not new_schedule:
         return jsonify({"status": "error", "message": "Cron schedule is required"}), 400
 
-    if update_cron_schedule(new_schedule):
+    # Parse hour and day from cron schedule "0 HOUR * * DAY"
+    parts = new_schedule.split()
+    if len(parts) >= 5:
+        try:
+            cron_hour = int(parts[1])
+            cron_day = int(parts[4])
+        except ValueError:
+            return jsonify({"status": "error", "message": "Invalid cron schedule format"}), 400
+    else:
+        return jsonify({"status": "error", "message": "Invalid cron schedule format"}), 400
+
+    # Persist to user settings
+    username = get_current_user()
+    user_manager.update_user_settings(username, {"cron_hour": cron_hour, "cron_day": cron_day})
+
+    # Rebuild system cron from all users' settings
+    if rebuild_cron_from_settings():
         return jsonify({"status": "success", "message": "Cron schedule updated successfully."})
     else:
         return jsonify({"status": "error", "message": "Failed to update cron schedule."}), 500
@@ -800,29 +854,20 @@ async def get_fresh_releases():
 def toggle_cron():
     data = request.get_json()
     disabled = data.get('disabled', False)
-    cron_file = '/etc/cron.d/re-command-cron'
     try:
+        # Persist to user settings
+        username = get_current_user()
+        user_manager.update_user_settings(username, {"cron_enabled": not disabled})
+
+        # Rebuild system cron from all users' settings
+        rebuild_cron_from_settings()
+
         if disabled:
-            if os.path.exists(cron_file):
-                os.remove(cron_file)
-                subprocess.run(["crontab", "/etc/cron.d/re-command-cron"], check=False)
             return jsonify({"status": "success", "message": "Automatic downloads disabled."})
         else:
-            # If cron is being enabled
-            if not os.path.exists(cron_file):
-                # Create with default schedule if it doesn't exist
-                default_schedule = "0 0 * * 2"
-                default_command = "/usr/bin/python3 /app/re-command.py >> /var/log/re-command.log 2>&1"
-                with open(cron_file, 'w') as f:
-                    f.write(f"{default_schedule} {default_command}\n")
-                os.chmod(cron_file, 0o644) # Set permissions
-                subprocess.run(["crontab", cron_file], check=True)
-                return jsonify({"status": "success", "message": "Automatic downloads re-enabled with default schedule."})
-            else:
-                # If file already exists, cron is already considered enabled, just return success
-                return jsonify({"status": "success", "message": "Automatic downloads already enabled."})
+            return jsonify({"status": "success", "message": "Automatic downloads enabled."})
     except Exception as e:
-        traceback.print_exc() # Debugging traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": f"Error toggling cron: {e}"}), 500
 
 @app.route('/api/submit_listenbrainz_feedback', methods=['POST'])

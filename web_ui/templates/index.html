@@ -1039,7 +1039,7 @@
 
                         <div class="form-group">
                             <label>
-                                <input type="checkbox" id="disableCron">
+                                <input type="checkbox" id="disableCron" {% if not cron_enabled %}checked{% endif %}>
                                 Disable Automatic Downloads
                             </label>
                         </div>

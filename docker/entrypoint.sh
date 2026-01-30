@@ -91,13 +91,42 @@ echo "" >> config.py
 echo "DEEZER_MAX_CONCURRENT_REQUESTS = int(os.getenv(\"DEEZER_MAX_CONCURRENT_REQUESTS\", \"${RECOMMAND_DEEZER_MAX_CONCURRENT_REQUESTS:-3}\"))" >> config.py
 echo "" >> config.py
 
-# Set up cron job
-# Run every Tuesday at 00:00 (Usually guarantees that the LB playlist is released)
+# Set up cron job from persisted user settings (or defaults)
 mkdir -p /app/logs
 touch /app/logs/re-command.log
-# Run cleanup first, then recommendations
-echo "0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py >> /proc/1/fd/1 2>&1" > /etc/cron.d/re-command-cron
-chmod 0644 /etc/cron.d/re-command-cron
+# Rebuild cron from user_settings.json if it exists, otherwise use default
+SETTINGS_FILE="/app/data/user_settings.json"
+if [ -f "$SETTINGS_FILE" ]; then
+    echo "Restoring cron schedules from persisted user settings..."
+    /usr/local/bin/python3 -c "
+import json, os
+settings_file = '$SETTINGS_FILE'
+with open(settings_file, 'r') as f:
+    data = json.load(f)
+cron_lines = []
+for username, settings in data.items():
+    if not settings.get('cron_enabled', True):
+        continue
+    hour = settings.get('cron_hour', 0)
+    day = settings.get('cron_day', 2)
+    cron_lines.append(f'0 {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1')
+if cron_lines:
+    with open('/etc/cron.d/re-command-cron', 'w') as f:
+        f.write('\n'.join(cron_lines) + '\n')
+    os.chmod('/etc/cron.d/re-command-cron', 0o644)
+    print(f'Restored {len(cron_lines)} cron schedule(s)')
+else:
+    print('No enabled cron schedules found in user settings')
+    # Write default so cron has something
+    with open('/etc/cron.d/re-command-cron', 'w') as f:
+        f.write('0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py >> /proc/1/fd/1 2>&1\n')
+    os.chmod('/etc/cron.d/re-command-cron', 0o644)
+"
+else
+    echo "No user settings found, using default cron schedule (Tuesday 00:00)..."
+    echo "0 0 * * 2 root /usr/local/bin/python3 /app/re-command.py >> /proc/1/fd/1 2>&1" > /etc/cron.d/re-command-cron
+    chmod 0644 /etc/cron.d/re-command-cron
+fi
 
 # Replace ARL placeholder in streamrip_config.toml
 # Use temp file + cat to avoid sed -i rename failures on overlay/mounted filesystems
