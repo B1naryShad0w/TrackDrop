@@ -8,6 +8,7 @@ services:
       - ${MUSIC_PATH:-/home/user/Music}:/app/music
       - ${MUSIC_PATH:-/home/user/Music}/.tempfolder:/app/temp_downloads
       - ${DATA_PATH:-./data}:/app/data
+      - ${NAVIDROME_DATA_PATH:-/dev/null}:/app/navidrome_data:ro
     environment:
       # Navidrome Configuration (empty defaults, configure via web UI)
       - RECOMMAND_ROOT_ND=${RECOMMAND_ROOT_ND:-}
@@ -63,6 +64,9 @@ services:
       # Web UI session secret and user settings persistence
       - RECOMMAND_SECRET_KEY=${RECOMMAND_SECRET_KEY:-}
       - RECOMMAND_USER_SETTINGS_PATH=${RECOMMAND_USER_SETTINGS_PATH:-/app/data/user_settings.json}
+
+      # Navidrome database path (read-only, for checking ratings across all users)
+      - RECOMMAND_NAVIDROME_DB_PATH=${RECOMMAND_NAVIDROME_DB_PATH:-}
 
     restart: unless-stopped
     extra_hosts:

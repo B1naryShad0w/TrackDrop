@@ -60,6 +60,9 @@ DOWNLOAD_HISTORY_PATH = "/app/data/download_history.json"
 ADMIN_USER = ""
 ADMIN_PASSWORD = ""
 
+# Path to Navidrome's database (read-only, for checking ratings across all users)
+NAVIDROME_DB_PATH = ""
+
 # History Tracking
 PLAYLIST_HISTORY_FILE = "playlist_history.txt"
 

@@ -3,6 +3,7 @@ import hashlib
 import os
 import sys
 import shutil
+import sqlite3
 import asyncio
 import json
 import time
@@ -17,7 +18,7 @@ from mutagen.m4a import M4A
 from utils import sanitize_filename
 
 class NavidromeAPI:
-    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, llm_target_comment=None, listenbrainz_enabled=False, lastfm_enabled=False, llm_enabled=False, admin_user=None, admin_password=None):
+    def __init__(self, root_nd, user_nd, password_nd, music_library_path, target_comment, lastfm_target_comment, album_recommendation_comment=None, llm_target_comment=None, listenbrainz_enabled=False, lastfm_enabled=False, llm_enabled=False, admin_user=None, admin_password=None, navidrome_db_path=None):
         self.root_nd = root_nd
         self.user_nd = user_nd
         self.password_nd = password_nd
@@ -31,6 +32,7 @@ class NavidromeAPI:
         self.llm_enabled = llm_enabled
         self.admin_user = admin_user or ''
         self.admin_password = admin_password or ''
+        self.navidrome_db_path = navidrome_db_path or ''
 
     def _get_navidrome_auth_params(self):
         """Generates authentication parameters for Navidrome."""
@@ -91,11 +93,38 @@ class NavidromeAPI:
             return None
 
     def _get_max_rating_across_users(self, song_id):
-        """Check song rating across both the regular user and the admin user.
-        Returns the highest rating found (0 if unrated by all)."""
+        """Check song rating across ALL Navidrome users.
+        Uses direct SQLite read on Navidrome's DB (read-only) to query the annotation table.
+        Falls back to Subsonic API (regular + admin user) if DB path is not configured."""
+
+        # Try SQLite direct query first (checks all users)
+        if self.navidrome_db_path and os.path.exists(self.navidrome_db_path):
+            try:
+                conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
+                cursor = conn.cursor()
+                # annotation table: item_id, item_type, user_id, starred, starred_at, rating
+                # Check for max rating and any starred across all users
+                cursor.execute(
+                    "SELECT MAX(rating), MAX(CASE WHEN starred = 1 THEN 1 ELSE 0 END) "
+                    "FROM annotation WHERE item_id = ? AND item_type = 'media_file'",
+                    (song_id,)
+                )
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    max_rating = row[0] or 0
+                    any_starred = row[1] or 0
+                    # Starred counts as rating 5
+                    if any_starred:
+                        max_rating = max(max_rating, 5)
+                    return max_rating
+                return 0
+            except Exception as e:
+                print(f"  Warning: Could not query Navidrome DB: {e}. Falling back to API.")
+
+        # Fallback: check via Subsonic API (regular user + admin)
         max_rating = 0
 
-        # Check regular user
         salt, token = self._get_navidrome_auth_params()
         details = self._get_song_details(song_id, salt, token)
         if details:
@@ -103,9 +132,8 @@ class NavidromeAPI:
             user_rating = 5 if starred else details.get('userRating', 0)
             max_rating = max(max_rating, user_rating)
 
-        # Check admin user if different from regular user
         if self.admin_user and self.admin_user != self.user_nd:
-            admin_salt, admin_token, admin_user = self._get_admin_auth_params()
+            admin_user, admin_salt, admin_token = self._get_admin_auth_params()
             admin_details = self._get_song_details(song_id, admin_salt, admin_token, user=admin_user)
             if admin_details:
                 starred = admin_details.get("starred")

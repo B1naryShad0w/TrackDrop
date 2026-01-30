@@ -53,6 +53,7 @@ echo "" >> config.py
 # Admin credentials for library scan (startScan requires admin)
 echo "ADMIN_USER = os.getenv(\"ADMIN_USER\", \"${RECOMMAND_ADMIN_USER:-}\")" >> config.py
 echo "ADMIN_PASSWORD = os.getenv(\"ADMIN_PASSWORD\", \"${RECOMMAND_ADMIN_PASSWORD:-}\")" >> config.py
+echo "NAVIDROME_DB_PATH = \"${RECOMMAND_NAVIDROME_DB_PATH:-}\"" >> config.py
 echo "" >> config.py
 
 # Deezer Configuration (Optional - can be configured via web UI)

@@ -230,6 +230,7 @@ Then open `http://localhost:5000` in your browser.
 | `RECOMMAND_ADMIN_PASSWORD` | Admin password for library scan |
 | `RECOMMAND_SECRET_KEY` | Flask session secret key (auto-generated if not set) |
 | `RECOMMAND_USER_SETTINGS_PATH` | Path for per-user settings JSON (default: `/app/data/user_settings.json`) |
+| `RECOMMAND_NAVIDROME_DB_PATH` | Path to Navidrome's `navidrome.db` (read-only, for checking ratings across all users) |
 
 ### Configuration File (Local)
 
@@ -304,9 +305,11 @@ Set `RECOMMAND_PLAYLIST_MODE=api` to manage playlists via the Navidrome Subsonic
 - Playlists are created/updated directly in Navidrome (e.g., "ListenBrainz Recommendations")
 - Downloaded songs are tracked in a JSON file for cleanup purposes
 - Pre-existing library songs are included in playlists without being tracked for deletion
-- Cleanup checks ratings from Navidrome: 4-5 stars keeps the song, 1-3 stars deletes it
+- Cleanup checks ratings from Navidrome: 4-5 stars (or starred) by **any user** keeps the song, otherwise deletes it
 
 If you run one instance per user, set `RECOMMAND_ADMIN_USER` and `RECOMMAND_ADMIN_PASSWORD` so library scans can be triggered (the Subsonic `startScan` endpoint requires admin privileges).
+
+To check ratings across all Navidrome users during cleanup, mount Navidrome's data directory read-only and set `RECOMMAND_NAVIDROME_DB_PATH` to the database path (e.g., `/app/navidrome_data/navidrome.db`). Without this, only the configured user and admin ratings are checked.
 
 ### Data Persistence
 
