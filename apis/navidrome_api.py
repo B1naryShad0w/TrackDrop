@@ -69,11 +69,11 @@ class NavidromeAPI:
             print(f"Error fetching songs from Navidrome: {data['subsonic-response']['status']}")
             return []
 
-    def _get_song_details(self, song_id, salt, token):
+    def _get_song_details(self, song_id, salt, token, user=None):
         """Fetches details of a specific song from Navidrome."""
         url = f"{self.root_nd}/rest/getSong.view"
         params = {
-            'u': self.user_nd,
+            'u': user or self.user_nd,
             't': token,
             's': salt,
             'v': '1.16.1',
@@ -89,6 +89,30 @@ class NavidromeAPI:
         else:
             print(f"Error fetching song details from Navidrome: {data.get('subsonic-response', {}).get('status', 'Unknown')}")
             return None
+
+    def _get_max_rating_across_users(self, song_id):
+        """Check song rating across both the regular user and the admin user.
+        Returns the highest rating found (0 if unrated by all)."""
+        max_rating = 0
+
+        # Check regular user
+        salt, token = self._get_navidrome_auth_params()
+        details = self._get_song_details(song_id, salt, token)
+        if details:
+            starred = details.get("starred")
+            user_rating = 5 if starred else details.get('userRating', 0)
+            max_rating = max(max_rating, user_rating)
+
+        # Check admin user if different from regular user
+        if self.admin_user and self.admin_user != self.user_nd:
+            admin_salt, admin_token, admin_user = self._get_admin_auth_params()
+            admin_details = self._get_song_details(song_id, admin_salt, admin_token, user=admin_user)
+            if admin_details:
+                starred = admin_details.get("starred")
+                admin_rating = 5 if starred else admin_details.get('userRating', 0)
+                max_rating = max(max_rating, admin_rating)
+
+        return max_rating
 
     def _update_song_comment(self, file_path, new_comment):
         """Updates the comment of a song using Mutagen."""
@@ -1005,7 +1029,7 @@ class NavidromeAPI:
                 nd_id = track.get('navidrome_id', '')
                 file_rel_path = track.get('file_path', '')
 
-                # Get song details from Navidrome for rating
+                # Get song details from Navidrome for rating (check all users)
                 song_details = None
                 if nd_id:
                     song_details = self._get_song_details(nd_id, salt, token)
@@ -1016,8 +1040,8 @@ class NavidromeAPI:
                     tracks_to_remove.append(track)
                     continue
 
-                starred = song_details.get("starred")
-                user_rating = 5 if starred else song_details.get('userRating', 0)
+                # Check rating across all users (regular + admin)
+                user_rating = self._get_max_rating_across_users(nd_id)
 
                 if user_rating >= 4:
                     # Keep the file, remove from download history (it's now a permanent library file)
@@ -1098,6 +1122,83 @@ class NavidromeAPI:
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
         print("Empty folder removal completed.")
+
+    async def process_debug_cleanup(self, history_path):
+        """Debug cleanup: removes all songs not rated 4-5 stars, clears playlists and history.
+        No feedback is submitted. Returns a summary dict for the UI."""
+        salt, token = self._get_navidrome_auth_params()
+        history = self._load_download_history(history_path)
+
+        summary = {'deleted': [], 'kept': [], 'playlists_cleared': []}
+
+        if not history:
+            print("No download history found. Nothing to clean up.")
+            return summary
+
+        playlist_name_map = {
+            'ListenBrainz': 'ListenBrainz Recommendations',
+            'Last.fm': 'Last.fm Recommendations',
+            'LLM': 'LLM Recommendations',
+        }
+
+        for source_name in list(history.keys()):
+            tracks = history.get(source_name, [])
+            if not tracks:
+                continue
+
+            print(f"\n--- Debug Cleanup for source: {source_name} ({len(tracks)} tracked downloads) ---")
+
+            for track in tracks:
+                artist = track.get('artist', '')
+                title = track.get('title', '')
+                nd_id = track.get('navidrome_id', '')
+
+                song_details = None
+                if nd_id:
+                    song_details = self._get_song_details(nd_id, salt, token)
+
+                if song_details is None:
+                    print(f"  Song not found in Navidrome: {artist} - {title}. Removing from history.")
+                    summary['deleted'].append(f"{artist} - {title} (not found)")
+                    continue
+
+                # Check rating across all users (regular + admin)
+                user_rating = self._get_max_rating_across_users(nd_id)
+
+                if user_rating >= 4:
+                    print(f"  KEEP (rating={user_rating}): {artist} - {title}")
+                    summary['kept'].append(f"{artist} - {title} (rating={user_rating})")
+                else:
+                    file_path = self._find_actual_song_path(track.get('file_path', ''), song_details)
+                    if file_path and os.path.exists(file_path):
+                        self._delete_song(file_path)
+                    print(f"  DELETE (rating={user_rating}): {artist} - {title}")
+                    summary['deleted'].append(f"{artist} - {title} (rating={user_rating})")
+
+            # Clear the playlist
+            playlist_name = playlist_name_map.get(source_name, f"{source_name} Recommendations")
+            existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
+            if existing_playlist:
+                # Update playlist with empty song list to clear it
+                self._update_playlist(existing_playlist['id'], [], salt, token)
+                summary['playlists_cleared'].append(playlist_name)
+                print(f"  Cleared playlist: {playlist_name}")
+
+        # Clear all history
+        self._save_download_history(history_path, {})
+        print("Download history cleared.")
+
+        # Remove empty folders
+        print("Removing empty folders from music library...")
+        from utils import remove_empty_folders
+        remove_empty_folders(self.music_library_path)
+        print("Empty folder removal completed.")
+
+        # Trigger library scan
+        admin_salt, admin_token, admin_user = self._get_admin_auth_params()
+        self._start_scan(admin_salt, admin_token, admin_user)
+
+        return summary
 
     def organize_music_files(self, source_folder, destination_base_folder):
         """

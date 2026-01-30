@@ -691,6 +691,30 @@ def trigger_navidrome_cleanup():
         print(f"Error triggering Navidrome cleanup: {e}")
         return jsonify({"status": "error", "message": f"Error during Navidrome cleanup: {e}"}), 500
 
+@app.route('/api/trigger_debug_cleanup', methods=['POST'])
+@login_required
+def trigger_debug_cleanup():
+    """Debug: clear playlists and remove all songs not rated 4-5 stars."""
+    print("Attempting to trigger debug cleanup...")
+    try:
+        download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/data/download_history.json')
+        summary = asyncio.run(navidrome_api_global.process_debug_cleanup(
+            history_path=download_history_path
+        ))
+        msg_parts = []
+        if summary['deleted']:
+            msg_parts.append(f"Deleted {len(summary['deleted'])} songs")
+        if summary['kept']:
+            msg_parts.append(f"Kept {len(summary['kept'])} songs (rated 4-5)")
+        if summary['playlists_cleared']:
+            msg_parts.append(f"Cleared playlists: {', '.join(summary['playlists_cleared'])}")
+        message = '. '.join(msg_parts) if msg_parts else 'Nothing to clean up (empty history).'
+        return jsonify({"status": "success", "message": message, "summary": summary})
+    except Exception as e:
+        print(f"Error triggering debug cleanup: {e}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error during debug cleanup: {e}"}), 500
+
 @app.route('/api/get_fresh_releases', methods=['GET'])
 @login_required
 async def get_fresh_releases():

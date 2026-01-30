@@ -1044,34 +1044,18 @@
                             </label>
                         </div>
 
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="albumRecommendationEnabled">
-                                Download fresh releases as recommendations
-                                <span class="help-icon" title="When enabled, albums downloaded from fresh releases will be tagged with 'album_recommendation' and songs rated ≤3 stars will be removed during cleanup">ℹ️</span>
-                            </label>
-                        </div>
-
                         <button onclick="saveAutomationOptions()">Save Automation Options</button>
                     </div>
                 </details>
 
 <details>
-    <summary>Maintenance</summary>
+    <summary>Debug</summary>
     <div style="padding: 15px;">
         <div class="form-group">
-            <label>Navidrome Cleanup:</label>
-            <button onclick="triggerNavidromeCleanup()">Remove Tagged Songs</button>
+            <label>Debug Cleanup:</label>
+            <button onclick="triggerDebugCleanup()" style="background-color: var(--error-color);">Clear Playlists & Remove Unrated Songs</button>
             <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                Manually remove songs tagged with recommendation comments from Navidrome
-            </small>
-        </div>
-
-        <div class="form-group" style="margin-top: 20px;">
-            <label>Smart Playlist Creation:</label>
-            <button onclick="createSmartPlaylists()">Create Smart Playlists</button>
-            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                Create .nsp files for automatic recommendation playlists based on comment tags
+                Runs the cleanup logic: removes songs from playlists and deletes files for any song not rated 4-5 stars. Use this to test the cleanup process.
             </small>
         </div>
     </div>
@@ -1229,6 +1213,22 @@
                 toggleBtn.textContent = '▶';
             }
         }
+
+async function triggerDebugCleanup() {
+    if (!confirm('This will DELETE all songs not rated 4-5 stars, clear all recommendation playlists, and wipe the download history. Are you sure?')) return;
+    showMessage('info', 'Running debug cleanup...');
+    try {
+        const response = await fetch('/api/trigger_debug_cleanup', { method: 'POST' });
+        const data = await response.json();
+        showMessage(data.status, data.message);
+        if (data.summary) {
+            console.log('Debug cleanup summary:', data.summary);
+        }
+    } catch (error) {
+        console.error('Error during debug cleanup:', error);
+        showMessage('error', 'Failed to run debug cleanup');
+    }
+}
 
 async function triggerNavidromeCleanup() {
     const response = await fetch('/api/trigger_navidrome_cleanup', {
@@ -2172,7 +2172,6 @@ async function createSmartPlaylists() {
             const hour = document.getElementById('cronHour').value;
             const day = document.getElementById('cronDay').value;
             const disabled = document.getElementById('disableCron').checked;
-            const albumRecommendationEnabled = document.getElementById('albumRecommendationEnabled').checked;
 
             // Build cron schedule: "0 HOUR * * DAY" (runs at specified hour on specified day every week)
             const schedule = `0 ${hour} * * ${day}`;
@@ -2194,29 +2193,16 @@ async function createSmartPlaylists() {
                 });
                 const disableData = await disableResponse.json();
 
-                // Update album recommendation setting
-                const configResponse = await fetch('/api/update_config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ALBUM_RECOMMENDATION_ENABLED: albumRecommendationEnabled })
-                });
-                const configData = await configResponse.json();
-
                 // Show success message if all operations succeeded
-                if (cronData.status === 'success' && disableData.status === 'success' && configData.status === 'success') {
+                if (cronData.status === 'success' && disableData.status === 'success') {
                     showMessage('success', 'Automation options saved successfully.');
-                    // Update global variable
-                    window.albumRecommendationEnabled = albumRecommendationEnabled;
-                    // Reload the page to apply automation configuration changes
                     setTimeout(() => {
                         location.reload();
                     }, 1000);
                 } else {
-                    // Show error messages for failed operations
                     const errors = [];
                     if (cronData.status !== 'success') errors.push(`Cron: ${cronData.message}`);
                     if (disableData.status !== 'success') errors.push(`Disable: ${disableData.message}`);
-                    if (configData.status !== 'success') errors.push(`Config: ${configData.message}`);
                     showMessage('error', `Failed to save some automation options: ${errors.join(', ')}`);
                 }
             } catch (error) {
