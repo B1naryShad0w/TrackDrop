@@ -739,33 +739,67 @@ class NavidromeAPI:
 
     def _update_playlist(self, playlist_id, song_ids, salt, token):
         """Replace the contents of an existing playlist with the given song IDs.
-        Uses createPlaylist with playlistId to overwrite."""
-        url = f"{self.root_nd}/rest/createPlaylist.view"
-        params = {
-            'u': self.user_nd,
-            't': token,
-            's': salt,
-            'v': '1.16.1',
-            'c': 'python-script',
-            'f': 'json',
-            'playlistId': playlist_id
-        }
-        param_list = [(k, v) for k, v in params.items()]
-        for sid in song_ids:
-            param_list.append(('songId', sid))
-        try:
-            response = requests.get(url, params=param_list)
-            response.raise_for_status()
-            data = response.json()
-            if data.get('subsonic-response', {}).get('status') == 'ok':
-                print(f"Updated playlist (id={playlist_id}) with {len(song_ids)} tracks.")
-                return True
-            else:
-                print(f"Error updating playlist (id={playlist_id}): {data}")
+        First removes all existing songs via updatePlaylist songIndexToRemove,
+        then adds new ones via createPlaylist if any."""
+        # Step 1: Remove all existing songs
+        current_songs = self._get_playlist_songs(playlist_id, salt, token)
+        if current_songs:
+            print(f"  Removing {len(current_songs)} existing songs from playlist (id={playlist_id})...")
+            url = f"{self.root_nd}/rest/updatePlaylist.view"
+            params = {
+                'u': self.user_nd,
+                't': token,
+                's': salt,
+                'v': '1.16.1',
+                'c': 'python-script',
+                'f': 'json',
+                'playlistId': playlist_id
+            }
+            param_list = [(k, v) for k, v in params.items()]
+            for i in range(len(current_songs)):
+                param_list.append(('songIndexToRemove', i))
+            try:
+                response = requests.get(url, params=param_list)
+                response.raise_for_status()
+                data = response.json()
+                status = data.get('subsonic-response', {}).get('status')
+                if status != 'ok':
+                    print(f"  Error removing songs from playlist (id={playlist_id}): {data}")
+                    return False
+                print(f"  Removed {len(current_songs)} songs from playlist (id={playlist_id}).")
+            except Exception as e:
+                print(f"  Error removing songs from playlist (id={playlist_id}): {e}")
                 return False
-        except Exception as e:
-            print(f"Error updating playlist (id={playlist_id}): {e}")
-            return False
+
+        # Step 2: Add new songs if any
+        if song_ids:
+            print(f"  Adding {len(song_ids)} songs to playlist (id={playlist_id})...")
+            url = f"{self.root_nd}/rest/createPlaylist.view"
+            params = {
+                'u': self.user_nd,
+                't': token,
+                's': salt,
+                'v': '1.16.1',
+                'c': 'python-script',
+                'f': 'json',
+                'playlistId': playlist_id
+            }
+            param_list = [(k, v) for k, v in params.items()]
+            for sid in song_ids:
+                param_list.append(('songId', sid))
+            try:
+                response = requests.get(url, params=param_list)
+                response.raise_for_status()
+                data = response.json()
+                if data.get('subsonic-response', {}).get('status') != 'ok':
+                    print(f"  Error adding songs to playlist (id={playlist_id}): {data}")
+                    return False
+            except Exception as e:
+                print(f"  Error adding songs to playlist (id={playlist_id}): {e}")
+                return False
+
+        print(f"  Updated playlist (id={playlist_id}): now has {len(song_ids)} tracks.")
+        return True
 
     def _start_scan(self, _salt=None, _token=None):
         """Trigger a Navidrome library scan via the Subsonic API.
