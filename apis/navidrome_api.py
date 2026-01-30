@@ -92,55 +92,93 @@ class NavidromeAPI:
             print(f"Error fetching song details from Navidrome: {data.get('subsonic-response', {}).get('status', 'Unknown')}")
             return None
 
-    def _get_max_rating_across_users(self, song_id):
-        """Check song rating across ALL Navidrome users.
-        Uses direct SQLite read on Navidrome's DB (read-only) to query the annotation table.
-        Falls back to Subsonic API (regular + admin user) if DB path is not configured."""
+    def _check_song_protection(self, song_id):
+        """Check if a song is protected from deletion by any user interaction.
+        Returns a dict with:
+          'protected': bool - whether the song should be kept
+          'reasons': list of strings explaining why it's protected (or empty if not)
+          'max_rating': int - highest rating across all users
+        Checks: ratings >= 4, starred/favorited, in any user's non-recommendation playlist.
+        Uses direct SQLite read on Navidrome's DB. Falls back to Subsonic API."""
+
+        result = {'protected': False, 'reasons': [], 'max_rating': 0}
+        recommendation_playlist_names = {
+            'listenbrainz recommendations', 'last.fm recommendations', 'llm recommendations'
+        }
 
         # Try SQLite direct query first (checks all users)
         if self.navidrome_db_path and os.path.exists(self.navidrome_db_path):
             try:
                 conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
                 cursor = conn.cursor()
-                # annotation table: item_id, item_type, user_id, starred, starred_at, rating
-                # Check for max rating and any starred across all users
+
+                # Check ratings and starred across all users
                 cursor.execute(
-                    "SELECT MAX(rating), MAX(CASE WHEN starred = 1 THEN 1 ELSE 0 END) "
+                    "SELECT user_id, rating, starred, starred_at "
                     "FROM annotation WHERE item_id = ? AND item_type = 'media_file'",
                     (song_id,)
                 )
-                row = cursor.fetchone()
+                for row in cursor.fetchall():
+                    user_id, rating, starred, starred_at = row
+                    rating = rating or 0
+                    if rating >= 4:
+                        result['protected'] = True
+                        result['reasons'].append(f"rated {rating}/5 by user {user_id[:8]}...")
+                    result['max_rating'] = max(result['max_rating'], rating)
+                    if starred or starred_at:
+                        result['protected'] = True
+                        result['reasons'].append(f"starred/favorited by user {user_id[:8]}...")
+                        result['max_rating'] = max(result['max_rating'], 5)
+
+                # Check if song is in any non-recommendation playlist
+                cursor.execute(
+                    "SELECT p.name, p.owner_id FROM playlist p "
+                    "JOIN playlist_tracks pt ON p.id = pt.playlist_id "
+                    "WHERE pt.media_file_id = ?",
+                    (song_id,)
+                )
+                for row in cursor.fetchall():
+                    playlist_name, owner_id = row
+                    if playlist_name.lower() not in recommendation_playlist_names:
+                        result['protected'] = True
+                        result['reasons'].append(f"in playlist '{playlist_name}' (owner {owner_id[:8]}...)")
+
                 conn.close()
-                if row:
-                    max_rating = row[0] or 0
-                    any_starred = row[1] or 0
-                    # Starred counts as rating 5
-                    if any_starred:
-                        max_rating = max(max_rating, 5)
-                    return max_rating
-                return 0
+                return result
             except Exception as e:
-                print(f"  Warning: Could not query Navidrome DB: {e}. Falling back to API.")
+                print(f"  Warning: Could not query Navidrome DB: {e}. Falling back to API.", flush=True)
 
-        # Fallback: check via Subsonic API (regular user + admin)
-        max_rating = 0
-
+        # Fallback: check via Subsonic API (regular user + admin only)
         salt, token = self._get_navidrome_auth_params()
         details = self._get_song_details(song_id, salt, token)
         if details:
             starred = details.get("starred")
-            user_rating = 5 if starred else details.get('userRating', 0)
-            max_rating = max(max_rating, user_rating)
+            user_rating = details.get('userRating', 0)
+            if starred:
+                result['protected'] = True
+                result['reasons'].append(f"starred by {self.user_nd}")
+                result['max_rating'] = max(result['max_rating'], 5)
+            if user_rating >= 4:
+                result['protected'] = True
+                result['reasons'].append(f"rated {user_rating}/5 by {self.user_nd}")
+            result['max_rating'] = max(result['max_rating'], user_rating)
 
         if self.admin_user and self.admin_user != self.user_nd:
             admin_user, admin_salt, admin_token = self._get_admin_auth_params()
             admin_details = self._get_song_details(song_id, admin_salt, admin_token, user=admin_user)
             if admin_details:
                 starred = admin_details.get("starred")
-                admin_rating = 5 if starred else admin_details.get('userRating', 0)
-                max_rating = max(max_rating, admin_rating)
+                admin_rating = admin_details.get('userRating', 0)
+                if starred:
+                    result['protected'] = True
+                    result['reasons'].append(f"starred by {self.admin_user}")
+                    result['max_rating'] = max(result['max_rating'], 5)
+                if admin_rating >= 4:
+                    result['protected'] = True
+                    result['reasons'].append(f"rated {admin_rating}/5 by {self.admin_user}")
+                result['max_rating'] = max(result['max_rating'], admin_rating)
 
-        return max_rating
+        return result
 
     def _update_song_comment(self, file_path, new_comment):
         """Updates the comment of a song using Mutagen."""
@@ -198,35 +236,77 @@ class NavidromeAPI:
     def _find_actual_song_path(self, navidrome_relative_path, song_details=None):
         """
         Attempts to find the actual file path on disk given the Navidrome relative path.
-        Uses a much simpler and more reliable approach.
+        Uses multiple strategies with verbose debug logging.
         """
-        # First strat : path as-is first (works for most cases)
+        print(f"[PATH RESOLVE] Trying to find: '{navidrome_relative_path}'", flush=True)
+        print(f"[PATH RESOLVE] Music library: '{self.music_library_path}'", flush=True)
+
+        # Strategy 0: Query Navidrome DB for the absolute path
+        if self.navidrome_db_path and os.path.exists(self.navidrome_db_path) and song_details:
+            nd_id = song_details.get('id', '')
+            if nd_id:
+                try:
+                    conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT path FROM media_file WHERE id = ?", (nd_id,))
+                    row = cursor.fetchone()
+                    conn.close()
+                    if row and row[0]:
+                        db_path = row[0]
+                        print(f"[PATH RESOLVE] DB full path: '{db_path}'", flush=True)
+                        if os.path.exists(db_path):
+                            print(f"[PATH RESOLVE] FOUND via DB absolute path", flush=True)
+                            return db_path
+                        # Try joining with music library
+                        joined = os.path.join(self.music_library_path, db_path)
+                        print(f"[PATH RESOLVE] Trying joined: '{joined}'", flush=True)
+                        if os.path.exists(joined):
+                            print(f"[PATH RESOLVE] FOUND via DB path joined with library", flush=True)
+                            return joined
+                except Exception as e:
+                    print(f"[PATH RESOLVE] DB query failed: {e}", flush=True)
+
+        # Strategy 1: path as-is
         expected_full_path = os.path.join(self.music_library_path, navidrome_relative_path)
+        print(f"[PATH RESOLVE] Strategy 1 (as-is): '{expected_full_path}' exists={os.path.exists(expected_full_path)}", flush=True)
         if os.path.exists(expected_full_path):
             return expected_full_path
 
-        # Second strat : reconstructing song details from metadata
+        # Strategy 2: reconstructing from song details metadata
         if song_details:
             artist = sanitize_filename(song_details.get('artist', ''))
             album = sanitize_filename(song_details.get('album', ''))
             title = sanitize_filename(song_details.get('title', ''))
+            suffix = song_details.get('suffix', 'flac')
 
             if artist and album and title:
-                reconstructed_path = os.path.join(artist, album, f"{title}.mp3")
-                reconstructed_full_path = os.path.join(self.music_library_path, reconstructed_path)
-                if os.path.exists(reconstructed_full_path):
-                    return reconstructed_full_path
+                for ext in [suffix, 'flac', 'mp3', 'ogg', 'm4a']:
+                    reconstructed_path = os.path.join(self.music_library_path, artist, album, f"{title}.{ext}")
+                    if os.path.exists(reconstructed_path):
+                        print(f"[PATH RESOLVE] FOUND via metadata reconstruction: '{reconstructed_path}'", flush=True)
+                        return reconstructed_path
 
-                # Trying with track number
-                track = song_details.get('track', '')
-                if track:
-                    reconstructed_path_with_track = os.path.join(artist, album, f"{track} - {title}.mp3")
-                    reconstructed_full_path_with_track = os.path.join(self.music_library_path, reconstructed_path_with_track)
-                    if os.path.exists(reconstructed_full_path_with_track):
-                        return reconstructed_full_path_with_track
+                    track = song_details.get('track', '')
+                    if track:
+                        reconstructed_path_with_track = os.path.join(self.music_library_path, artist, album, f"{track} - {title}.{ext}")
+                        if os.path.exists(reconstructed_path_with_track):
+                            print(f"[PATH RESOLVE] FOUND via metadata+track: '{reconstructed_path_with_track}'", flush=True)
+                            return reconstructed_path_with_track
 
-        # Third strat : more complex logic function if needed
-        return self._find_actual_song_path_fallback(navidrome_relative_path)
+        # Strategy 3: scan the artist/album directory for any matching file
+        path_parts = navidrome_relative_path.split('/')
+        if len(path_parts) >= 2:
+            artist_dir = os.path.join(self.music_library_path, path_parts[0])
+            album_dir = os.path.join(artist_dir, path_parts[1]) if len(path_parts) >= 3 else artist_dir
+            print(f"[PATH RESOLVE] Strategy 3: checking dir '{album_dir}' exists={os.path.isdir(album_dir)}", flush=True)
+            if os.path.isdir(album_dir):
+                files = os.listdir(album_dir)
+                print(f"[PATH RESOLVE] Files in dir: {files}", flush=True)
+
+        # Strategy 4: fallback complex logic
+        result = self._find_actual_song_path_fallback(navidrome_relative_path)
+        print(f"[PATH RESOLVE] Fallback result: {result}", flush=True)
+        return result
 
     def _find_actual_song_path_fallback(self, navidrome_relative_path):
         """
@@ -1102,10 +1182,11 @@ class NavidromeAPI:
                     tracks_to_remove.append(track)
                     continue
 
-                # Check rating across all users (regular + admin)
-                user_rating = self._get_max_rating_across_users(nd_id)
+                # Check protection across all users
+                protection = self._check_song_protection(nd_id)
+                user_rating = protection['max_rating']
 
-                if user_rating >= 4:
+                if protection['protected']:
                     # Keep the file, remove from download history (it's now a permanent library file)
                     print(f"  KEEP (rating={user_rating}): {artist} - {title}")
                     kept_songs.append(f"{artist} - {title} (rating={user_rating})")
@@ -1188,9 +1269,9 @@ class NavidromeAPI:
     async def process_debug_cleanup(self, history_path):
         """Debug cleanup:
         - Only deletes FILES for songs tracked in download history (songs re-command downloaded)
-          that are not rated 4-5 stars by any user.
+          that are not protected (rated, starred, in a user playlist).
         - Purges ALL songs from recommendation playlists regardless.
-        - Clears download history.
+        - Only removes successfully-deleted songs from download history.
         No feedback is submitted. Returns a summary dict for the UI."""
         import sys
 
@@ -1217,13 +1298,16 @@ class NavidromeAPI:
             print(f"[DEBUG CLEANUP] (Run a playlist generation first to populate the download history)", flush=True)
         sys.stdout.flush()
 
-        summary = {'deleted': [], 'kept': [], 'playlists_cleared': []}
+        summary = {'deleted': [], 'kept': [], 'failed': [], 'playlists_cleared': []}
 
         playlist_name_map = {
             'ListenBrainz': 'ListenBrainz Recommendations',
             'Last.fm': 'Last.fm Recommendations',
             'LLM': 'LLM Recommendations',
         }
+
+        # Track which history entries to keep (songs that were NOT successfully deleted)
+        remaining_history = {}
 
         # Step 1: Process download history - only delete files we actually downloaded
         if history:
@@ -1234,6 +1318,7 @@ class NavidromeAPI:
                 if not tracks:
                     continue
 
+                remaining_tracks = []
                 print(f"\n[DEBUG CLEANUP] Source: {source_name} ({len(tracks)} tracked downloads)", flush=True)
 
                 for track in tracks:
@@ -1241,41 +1326,58 @@ class NavidromeAPI:
                     title = track.get('title', '')
                     nd_id = track.get('navidrome_id', '')
                     file_rel_path = track.get('file_path', '')
+                    label = f"{artist} - {title}"
 
-                    print(f"[DEBUG CLEANUP]   Checking: {artist} - {title} (id={nd_id}, path={file_rel_path})", flush=True)
+                    print(f"[DEBUG CLEANUP]   Checking: {label} (id={nd_id}, path={file_rel_path})", flush=True)
 
                     if not nd_id:
-                        print(f"[DEBUG CLEANUP]     No navidrome_id, skipping file deletion.", flush=True)
-                        summary['deleted'].append(f"{artist} - {title} (no id)")
+                        print(f"[DEBUG CLEANUP]     No navidrome_id - keeping in history", flush=True)
+                        summary['failed'].append(f"{label} (no navidrome_id)")
+                        remaining_tracks.append(track)
                         continue
 
                     song_details = self._get_song_details(nd_id, salt, token)
                     if song_details is None:
-                        print(f"[DEBUG CLEANUP]     Not found in Navidrome (already deleted?).", flush=True)
-                        summary['deleted'].append(f"{artist} - {title} (not found)")
+                        print(f"[DEBUG CLEANUP]     Not found in Navidrome (already deleted?) - removing from history", flush=True)
+                        summary['deleted'].append(f"{label} (already gone from Navidrome)")
                         continue
 
-                    print(f"[DEBUG CLEANUP]     Song found in Navidrome: path={song_details.get('path','')}", flush=True)
+                    print(f"[DEBUG CLEANUP]     Song exists in Navidrome: path={song_details.get('path','')}", flush=True)
 
-                    # Check rating across all users
-                    user_rating = self._get_max_rating_across_users(nd_id)
-                    print(f"[DEBUG CLEANUP]     Max rating across all users: {user_rating}", flush=True)
+                    # Check protection across all users
+                    protection = self._check_song_protection(nd_id)
+                    if protection['protected']:
+                        reasons = '; '.join(protection['reasons'])
+                        print(f"[DEBUG CLEANUP]     PROTECTED - keeping file and history entry", flush=True)
+                        print(f"[DEBUG CLEANUP]     Reasons: {reasons}", flush=True)
+                        summary['kept'].append(f"{label} ({reasons})")
+                        remaining_tracks.append(track)
+                        continue
 
-                    if user_rating >= 4:
-                        print(f"[DEBUG CLEANUP]     KEEP (rating={user_rating}): {artist} - {title}", flush=True)
-                        summary['kept'].append(f"{artist} - {title} (rating={user_rating})")
-                    else:
-                        file_path = self._find_actual_song_path(file_rel_path, song_details)
-                        print(f"[DEBUG CLEANUP]     Resolved file path: {file_path}", flush=True)
-                        if file_path and os.path.exists(file_path):
-                            if self._delete_song(file_path):
-                                print(f"[DEBUG CLEANUP]     DELETED file: {file_path}", flush=True)
-                            else:
-                                print(f"[DEBUG CLEANUP]     FAILED to delete file: {file_path}", flush=True)
+                    print(f"[DEBUG CLEANUP]     NOT protected (max_rating={protection['max_rating']}) - attempting deletion", flush=True)
+
+                    # Try to find and delete the file
+                    file_path = self._find_actual_song_path(file_rel_path, song_details)
+                    if file_path and os.path.exists(file_path):
+                        if self._delete_song(file_path):
+                            print(f"[DEBUG CLEANUP]     DELETED: {file_path}", flush=True)
+                            summary['deleted'].append(f"{label} (file deleted: {file_path})")
+                            # Don't add to remaining_tracks - successfully deleted
                         else:
-                            print(f"[DEBUG CLEANUP]     File not found on disk: {artist} - {title} (rel_path={file_rel_path}, resolved={file_path})", flush=True)
-                        summary['deleted'].append(f"{artist} - {title} (rating={user_rating})")
+                            print(f"[DEBUG CLEANUP]     FAILED to delete: {file_path}", flush=True)
+                            summary['failed'].append(f"{label} (delete failed: {file_path})")
+                            remaining_tracks.append(track)
+                    else:
+                        print(f"[DEBUG CLEANUP]     FILE NOT FOUND on disk - cannot delete", flush=True)
+                        print(f"[DEBUG CLEANUP]     Tried relative path: {file_rel_path}", flush=True)
+                        print(f"[DEBUG CLEANUP]     Resolved to: {file_path}", flush=True)
+                        summary['failed'].append(f"{label} (file not found on disk)")
+                        remaining_tracks.append(track)
+
                     sys.stdout.flush()
+
+                if remaining_tracks:
+                    remaining_history[source_name] = remaining_tracks
         else:
             print(f"\n[DEBUG CLEANUP] Step 1: SKIPPED - no download history entries to process", flush=True)
 
@@ -1295,9 +1397,10 @@ class NavidromeAPI:
             print(f"[DEBUG CLEANUP]   Cleared playlist: {playlist_name}", flush=True)
             sys.stdout.flush()
 
-        # Step 3: Clear all history
-        self._save_download_history(history_path, {})
-        print(f"\n[DEBUG CLEANUP] Step 3: Download history cleared ({history_path})", flush=True)
+        # Step 3: Save remaining history (only entries that were NOT successfully deleted)
+        self._save_download_history(history_path, remaining_history)
+        kept_count = sum(len(v) for v in remaining_history.values())
+        print(f"\n[DEBUG CLEANUP] Step 3: Updated download history - {kept_count} entries remaining", flush=True)
 
         # Step 4: Remove empty folders
         print(f"[DEBUG CLEANUP] Step 4: Removing empty folders from {self.music_library_path}", flush=True)
@@ -1311,13 +1414,17 @@ class NavidromeAPI:
 
         print(f"\n{'='*60}", flush=True)
         print(f"[DEBUG CLEANUP] === SUMMARY ===", flush=True)
-        print(f"[DEBUG CLEANUP]   Files deleted: {len(summary['deleted'])}", flush=True)
+        print(f"[DEBUG CLEANUP]   Successfully deleted: {len(summary['deleted'])}", flush=True)
         for d in summary['deleted']:
             print(f"[DEBUG CLEANUP]     - {d}", flush=True)
-        print(f"[DEBUG CLEANUP]   Files kept (rated 4-5): {len(summary['kept'])}", flush=True)
+        print(f"[DEBUG CLEANUP]   Protected (kept): {len(summary['kept'])}", flush=True)
         for k in summary['kept']:
             print(f"[DEBUG CLEANUP]     - {k}", flush=True)
+        print(f"[DEBUG CLEANUP]   Failed/skipped: {len(summary['failed'])}", flush=True)
+        for f in summary['failed']:
+            print(f"[DEBUG CLEANUP]     - {f}", flush=True)
         print(f"[DEBUG CLEANUP]   Playlists cleared: {', '.join(summary['playlists_cleared']) if summary['playlists_cleared'] else 'none'}", flush=True)
+        print(f"[DEBUG CLEANUP]   History entries remaining: {kept_count}", flush=True)
         print(f"{'='*60}", flush=True)
         sys.stdout.flush()
 

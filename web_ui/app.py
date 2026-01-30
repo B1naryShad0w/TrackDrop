@@ -714,7 +714,9 @@ def trigger_debug_cleanup():
         if summary['deleted']:
             msg_parts.append(f"Deleted {len(summary['deleted'])} songs")
         if summary['kept']:
-            msg_parts.append(f"Kept {len(summary['kept'])} songs (rated 4-5)")
+            msg_parts.append(f"Kept {len(summary['kept'])} songs (protected)")
+        if summary.get('failed'):
+            msg_parts.append(f"Failed/skipped {len(summary['failed'])} songs")
         if summary['playlists_cleared']:
             msg_parts.append(f"Cleared playlists: {', '.join(summary['playlists_cleared'])}")
         message = '. '.join(msg_parts) if msg_parts else 'Nothing to clean up (empty history).'
