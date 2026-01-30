@@ -68,6 +68,7 @@ class TrackDownloader:
                 # consistency with the actual release. Streamrip already embeds
                 # Deezer metadata but only the primary artist — we fix multi-artist.
                 tag_artist = song_info.get('deezer_artist', song_info['artist'])
+                tag_artists = song_info.get('deezer_artists')
                 tag_title = song_info.get('deezer_title', song_info['title'])
                 tag_album_artist = song_info.get('deezer_album_artist')
                 self.tagger.tag_track(
@@ -79,7 +80,8 @@ class TrackDownloader:
                     song_info['recording_mbid'],
                     song_info['source'],
                     song_info.get('album_art'),
-                    album_artist=tag_album_artist
+                    album_artist=tag_album_artist,
+                    artists=tag_artists
                 )
             else:
                 # Tags mode: tag with recommendation source metadata and add
@@ -118,6 +120,8 @@ class TrackDownloader:
                 # Store Deezer's full metadata for consistent tagging
                 if deezer_details.get('artist'):
                     song_info['deezer_artist'] = deezer_details['artist']
+                if deezer_details.get('artists'):
+                    song_info['deezer_artists'] = deezer_details['artists']
                 if deezer_details.get('album_artist'):
                     song_info['deezer_album_artist'] = deezer_details['album_artist']
                 if deezer_details.get('title'):

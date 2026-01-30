@@ -197,7 +197,7 @@ class Tagger:
         except Exception as e:
             print(f"Error embedding album art into {file_path}: {e}")
 
-    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None, is_album_recommendation=False, album_artist=None):
+    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None, is_album_recommendation=False, album_artist=None, artists=None):
         """Tags a track with metadata using Mutagen and embeds album art."""
         
         # If title is not provided, try to extract it from the filename
@@ -245,15 +245,16 @@ class Tagger:
                 audio.tags.add(TPE1(encoding=3, text=[artist]))
                 if album_artist:
                     audio.tags.add(TPE2(encoding=3, text=[album_artist]))
+                if artists and len(artists) > 1:
+                    # Plural ARTISTS tag via TXXX for multi-valued artist support
+                    audio.tags.add(TXXX(encoding=3, desc='ARTISTS', text=artists))
                 audio.tags.add(TIT2(encoding=3, text=[title]))
                 audio.tags.add(TALB(encoding=3, text=[album]))
                 audio.tags.add(TDRC(encoding=3, text=[release_date]))
                 audio.tags.add(COMM(encoding=3, lang='eng', desc='', text=[comment]))
-                
+
                 if recording_mbid:
-                    # Using TXXX for custom text information
                     audio.tags.add(TXXX(encoding=3, desc='MUSICBRAINZ_RECORDINGID', text=[recording_mbid]))
-                    # Also set UFID with the MusicBrainz URL
                     audio.tags.add(UFID(owner='http://musicbrainz.org', data=f'http://musicbrainz.org/recording/{recording_mbid}'.encode('utf-8')))
 
             elif file_path.lower().endswith('.flac'):
@@ -261,6 +262,9 @@ class Tagger:
                 audio['artist'] = [artist]
                 if album_artist:
                     audio['albumartist'] = [album_artist]
+                if artists and len(artists) > 1:
+                    # Plural ARTISTS tag: each entry is a separate value
+                    audio['artists'] = artists
                 audio['title'] = [title]
                 audio['album'] = [album]
                 audio['date'] = [release_date]
@@ -273,6 +277,8 @@ class Tagger:
                 audio['artist'] = [artist]
                 if album_artist:
                     audio['albumartist'] = [album_artist]
+                if artists and len(artists) > 1:
+                    audio['artists'] = artists
                 audio['title'] = [title]
                 audio['album'] = [album]
                 audio['date'] = [release_date]
