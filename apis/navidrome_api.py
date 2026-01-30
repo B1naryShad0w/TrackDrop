@@ -1223,8 +1223,7 @@ class NavidromeAPI:
         print("Empty folder removal completed.")
 
         # Trigger library scan
-        admin_salt, admin_token, admin_user = self._get_admin_auth_params()
-        self._start_scan(admin_salt, admin_token, admin_user)
+        self._start_scan()
 
         return summary
 
