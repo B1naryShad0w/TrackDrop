@@ -836,7 +836,7 @@
             </svg>
         </div>
         <!-- Spacer to clear header icons -->
-        <div style="height: 30px;"></div>
+        <div style="height: 40px;"></div>
 
         <div id="message" class="message" style="display: none;"></div>
 
@@ -865,6 +865,12 @@
             </div>
         </div>
 
+        <div id="runNowSection" class="playlist-section" style="display: none; border-top: none; padding-top: 0; margin-top: 0;">
+            <button id="runNowBtn" onclick="runNow()" style="width: 100%; background-color: #3a3a5a; border: 1px solid var(--border-color); color: var(--text-color); font-size: 0.95em; padding: 10px;">
+                Fetch All Recommendations Now
+            </button>
+        </div>
+
         <div id="freshReleasesSection" class="playlist-section" style="display: none;">
             <div class="playlist-header">
                 <h2>Fresh Releases</h2>
@@ -882,8 +888,8 @@
                 </div>
             </div>
             <div id="listenBrainzButtons" class="playlist-controls">
-                <button onclick="discoverListenBrainzPlaylist()">Discover Weekly Playlist</button>
-                <button onclick="downloadListenBrainzPlaylistDirect()">Download Weekly Playlist</button>
+                <button onclick="discoverListenBrainzPlaylist()">Discover Weekly</button>
+                <button onclick="downloadListenBrainzPlaylistDirect()">Download Weekly</button>
             </div>
             <div id="listenBrainzPlaylist" class="playlist-content"></div>
         </div>
@@ -897,8 +903,8 @@
                 </div>
             </div>
             <div id="lastFmButtons" class="playlist-controls">
-                <button onclick="discoverLastFmPlaylist()">Discover Weekly Playlist</button>
-                <button onclick="downloadLastFmPlaylistDirect()">Download Weekly Playlist</button>
+                <button onclick="discoverLastFmPlaylist()">Discover Weekly</button>
+                <button onclick="downloadLastFmPlaylistDirect()">Download Weekly</button>
             </div>
             <div id="lastFmPlaylist" class="playlist-content"></div>
         </div>
@@ -1431,7 +1437,7 @@ async function createSmartPlaylists() {
             // Create new abort controller for this request
             llmAbortController = new AbortController();
 
-            playlistDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100px;"><div class="spinner" style="margin-right: 8px;"></div><span>Querying the LLM for recommendations... (this can take a while)</span><button id="cancelLlmBtn" style="margin-left: 15px; padding: 5px 10px; background-color: var(--error-color); color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="cancelLlmQuery()">Cancel</button></div>';
+            playlistDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100px;"><div class="spinner" style="margin-right: 8px;"></div><span>Querying the LLM for suggestions... (this can take a while)</span><button id="cancelLlmBtn" style="margin-left: 15px; padding: 5px 10px; background-color: var(--error-color); color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="cancelLlmQuery()">Cancel</button></div>';
             statusDiv.textContent = '';
             toggleBtn.style.display = 'none';
 
@@ -1487,7 +1493,7 @@ async function createSmartPlaylists() {
                     lazyLoadAlbumArts('llmPlaylist');
                 } else {
                     playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
-                    statusDiv.textContent = 'No recommendations found';
+                    statusDiv.textContent = 'No tracks found';
                 }
             } catch (error) {
                 if (error.name === 'AbortError') {
@@ -1594,10 +1600,10 @@ async function createSmartPlaylists() {
                     // Setup intersection observer for lazy loading album art
                     statusDiv.textContent = `${data.recommendations.length} songs fetched from ListenBrainz`;
                     toggleBtn.style.display = 'inline-block';
-                    showMessage('info', `Found ${data.recommendations.length} ListenBrainz recommendations.`);
+                    showMessage('info', `Found ${data.recommendations.length} ListenBrainz weekly tracks.`);
                 } else {
                     playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
-                    statusDiv.textContent = 'No recommendations found';
+                    statusDiv.textContent = 'No tracks found';
                     showMessage(data.status, data.message);
                 }
                 // Call lazy load function for all album arts after rendering
@@ -1699,10 +1705,10 @@ async function createSmartPlaylists() {
                     }
                     statusDiv.textContent = `${data.recommendations.length} songs fetched from Last.fm`;
                     toggleBtn.style.display = 'inline-block';
-                    showMessage('info', `Found ${data.recommendations.length} Last.fm recommendations.`);
+                    showMessage('info', `Found ${data.recommendations.length} Last.fm weekly tracks.`);
                 } else {
                     playlistDiv.innerHTML = `<div class="playlist-item">${data.message}</div>`;
-                    statusDiv.textContent = 'No recommendations found';
+                    statusDiv.textContent = 'No tracks found';
                     showMessage(data.status, data.message);
                 }
             } catch (error) {
@@ -2180,6 +2186,14 @@ async function createSmartPlaylists() {
             } else {
                 downloadFromLinkSection.style.display = 'none';
             }
+
+            // Show "Run Now" button if any recommendation source is enabled
+            const runNowSection = document.getElementById('runNowSection');
+            if (hasListenBrainz || hasLastFm || config.LLM_ENABLED) {
+                runNowSection.style.display = 'block';
+            } else {
+                runNowSection.style.display = 'none';
+            }
         }
 
         async function saveAutomationOptions() {
@@ -2225,6 +2239,23 @@ async function createSmartPlaylists() {
                 console.error('Error saving automation options:', error);
                 showMessage('error', 'Failed to save automation options');
             }
+        }
+
+        async function runNow() {
+            const btn = document.getElementById('runNowBtn');
+            btn.disabled = true;
+            btn.textContent = 'Fetching recommendations...';
+            try {
+                const response = await fetch('/api/run_now', { method: 'POST' });
+                const data = await response.json();
+                showMessage(data.status, data.message);
+                openDownloadQueueModal();
+            } catch (error) {
+                console.error('Error running now:', error);
+                showMessage('error', 'Failed to start recommendation fetch');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Fetch All Recommendations Now';
         }
 
         async function downloadFromLink() {

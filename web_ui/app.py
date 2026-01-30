@@ -719,7 +719,7 @@ def trigger_listenbrainz_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'ListenBrainz Playlist',
+            'artist': 'ListenBrainz Weekly',
             'title': 'Multiple Tracks',
             'status': 'in_progress',
             'start_time': datetime.now().isoformat(),
@@ -777,7 +777,7 @@ def trigger_lastfm_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
-            'artist': 'Last.fm Playlist',
+            'artist': 'Last.fm Weekly',
             'title': 'Multiple Tracks',
             'status': 'in_progress',
             'start_time': datetime.now().isoformat(),
@@ -922,6 +922,36 @@ async def get_fresh_releases():
         response = jsonify({"status": "error", "message": f"Error getting ListenBrainz fresh releases: {e}"}), 500
         response[0].headers['Server-Timing'] = ", ".join(server_timing_metrics)
         return response
+
+@app.route('/api/run_now', methods=['POST'])
+@login_required
+def run_now():
+    """Run the full recommendation pipeline immediately (same as cron)."""
+    try:
+        username = get_current_user()
+        download_id = str(uuid.uuid4())
+        downloads_queue[download_id] = {
+            'id': download_id,
+            'artist': 'All Sources',
+            'title': 'Weekly Recommendations',
+            'status': 'in_progress',
+            'start_time': datetime.now().isoformat(),
+            'message': 'Fetching recommendations from all sources...',
+            'current_track_count': 0,
+            'total_track_count': None,
+        }
+        subprocess.Popen([
+            sys.executable, '/app/re-command.py',
+            '--source', 'all',
+            '--bypass-playlist-check',
+            '--download-id', download_id,
+            '--user', username,
+        ])
+        return jsonify({"status": "success", "message": "Fetching recommendations from all enabled sources in the background."})
+    except Exception as e:
+        print(f"Error running now: {e}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error: {e}"}), 500
 
 @app.route('/api/toggle_cron', methods=['POST'])
 @login_required
@@ -1120,7 +1150,7 @@ def trigger_llm_download():
     download_id = str(uuid.uuid4())
     downloads_queue[download_id] = {
         'id': download_id,
-        'artist': 'LLM Playlist',
+        'artist': 'LLM Weekly',
         'title': f'{len(recommendations)} Tracks',
         'status': 'in_progress',
         'start_time': datetime.now().isoformat(),
@@ -1393,7 +1423,7 @@ def create_smart_playlists():
         if LISTENBRAINZ_ENABLED:
             playlist_templates.append({
                 "filename": "lb.nsp",
-                "name": "ListenBrainz Recommendations",
+                "name": "ListenBrainz Weekly",
                 "comment": "Tracks where comment is lb_recommendation",
                 "comment_value": TARGET_COMMENT,
                 "source": "ListenBrainz"
@@ -1403,7 +1433,7 @@ def create_smart_playlists():
         if LASTFM_ENABLED:
             playlist_templates.append({
                 "filename": "lastfm.nsp",
-                "name": "Last.fm Recommendations",
+                "name": "Last.fm Weekly",
                 "comment": "Tracks where comment is lastfm_recommendation",
                 "comment_value": LASTFM_TARGET_COMMENT,
                 "source": "Last.fm"
@@ -1413,7 +1443,7 @@ def create_smart_playlists():
         if LLM_ENABLED:
             playlist_templates.append({
                 "filename": "llm.nsp",
-                "name": "LLM Recommendations",
+                "name": "LLM Weekly",
                 "comment": "Tracks where comment is llm_recommendation",
                 "comment_value": LLM_TARGET_COMMENT,
                 "source": "LLM"
@@ -1423,7 +1453,7 @@ def create_smart_playlists():
         if ALBUM_RECOMMENDATION_ENABLED:
             playlist_templates.append({
                 "filename": "album.nsp",
-                "name": "Album Recommendations",
+                "name": "Album Weekly",
                 "comment": "Tracks where comment is album_recommendation",
                 "comment_value": ALBUM_RECOMMENDATION_COMMENT,
                 "source": "Album Recommendations"
