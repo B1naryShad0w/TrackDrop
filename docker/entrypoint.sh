@@ -109,19 +109,18 @@ fi
 # Replace downloads folder in streamrip_config.toml
 sed 's|folder = "/home/ubuntu/StreamripDownloads"|folder = "/app/temp_downloads"|' "$STREAMRIP_CONFIG" > "${STREAMRIP_CONFIG}.tmp" && cat "${STREAMRIP_CONFIG}.tmp" > "$STREAMRIP_CONFIG" && rm "${STREAMRIP_CONFIG}.tmp"
 
-# Set Deezer quality to 0 (autoselect) in streamrip_config.toml
-sed '/^\[deezer\]/,/^\[[a-z]*\]/ s/quality = [0-9]*/quality = 0/' "$STREAMRIP_CONFIG" > "${STREAMRIP_CONFIG}.tmp" && cat "${STREAMRIP_CONFIG}.tmp" > "$STREAMRIP_CONFIG" && rm "${STREAMRIP_CONFIG}.tmp"
+# Set Deezer quality to 2 (FLAC lossless) in streamrip_config.toml
+sed '/^\[deezer\]/,/^\[[a-z]*\]/ s/quality = [0-9]*/quality = 2/' "$STREAMRIP_CONFIG" > "${STREAMRIP_CONFIG}.tmp" && cat "${STREAMRIP_CONFIG}.tmp" > "$STREAMRIP_CONFIG" && rm "${STREAMRIP_CONFIG}.tmp"
 
-# Deemix Configuration
+# Deemix Configuration - set maxBitrate to 9 (FLAC) for lossless downloads
 DEEMIX_CONFIG_PATH="/root/.config/deemix/config.json"
 if [ ! -f "$DEEMIX_CONFIG_PATH" ]; then
     echo "Creating default deemix config.json"
     mkdir -p "$(dirname "$DEEMIX_CONFIG_PATH")"
-    echo '{"maxBitrate": "1"}' > "$DEEMIX_CONFIG_PATH"
+    echo '{"maxBitrate": "9"}' > "$DEEMIX_CONFIG_PATH"
 else
     echo "Updating deemix config.json"
-    # Use jq to update maxBitrate for free deezer accounts (remove this line if you have a premium account)
-    jq '.maxBitrate = "1"' "$DEEMIX_CONFIG_PATH" > "$DEEMIX_CONFIG_PATH.tmp" && mv "$DEEMIX_CONFIG_PATH.tmp" "$DEEMIX_CONFIG_PATH"
+    jq '.maxBitrate = "9"' "$DEEMIX_CONFIG_PATH" > "$DEEMIX_CONFIG_PATH.tmp" && mv "$DEEMIX_CONFIG_PATH.tmp" "$DEEMIX_CONFIG_PATH"
 fi
 
 # Start syslog service (required for cron)
