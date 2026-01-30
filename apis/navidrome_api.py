@@ -242,8 +242,19 @@ class NavidromeAPI:
         print(f"[PATH RESOLVE] Trying to find: '{navidrome_relative_path}'", flush=True)
         print(f"[PATH RESOLVE] Music library: '{self.music_library_path}'", flush=True)
 
-        # Strategy 0: Query Navidrome DB for the path it has on record
-        db_path = None
+        # Build a list of candidate relative paths to try
+        candidates = []
+
+        # Source 1: Navidrome's actual path from the Subsonic API (most reliable)
+        if song_details and song_details.get('path'):
+            api_path = song_details['path']
+            candidates.append(api_path)
+            # Strip common Navidrome prefixes to get relative path
+            for prefix in ['/music/', '/data/music/', '/data/', '/media/', 'music/']:
+                if api_path.startswith(prefix):
+                    candidates.append(api_path[len(prefix):])
+
+        # Source 2: Query Navidrome DB for the path
         if self.navidrome_db_path and os.path.exists(self.navidrome_db_path) and song_details:
             nd_id = song_details.get('id', '')
             if nd_id:
@@ -256,27 +267,27 @@ class NavidromeAPI:
                     if row and row[0]:
                         db_path = row[0]
                         print(f"[PATH RESOLVE] DB path: '{db_path}'", flush=True)
+                        candidates.append(db_path)
+                        for prefix in ['/music/', '/data/music/', '/data/', '/media/', 'music/']:
+                            if db_path.startswith(prefix):
+                                candidates.append(db_path[len(prefix):])
                 except Exception as e:
                     print(f"[PATH RESOLVE] DB query failed: {e}", flush=True)
 
-        # Build a list of candidate relative paths to try joining with music_library_path
-        candidates = []
-
-        # From DB path: try as-is, then strip known prefixes
-        if db_path:
-            candidates.append(db_path)
-            # Strip common absolute prefixes (e.g. /music/, /data/music/)
-            # to get the artist/album/file relative part
-            for prefix in ['/music/', '/data/music/', '/data/', '/media/']:
-                if db_path.startswith(prefix):
-                    candidates.append(db_path[len(prefix):])
-
-        # The relative path from the Subsonic API / download history
+        # Source 3: The relative path from the download history
         if navidrome_relative_path:
             candidates.append(navidrome_relative_path)
 
+        # Deduplicate while preserving order
+        seen = set()
+        unique_candidates = []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                unique_candidates.append(c)
+
         # Try each candidate joined with music_library_path
-        for candidate in candidates:
+        for candidate in unique_candidates:
             # Try as absolute path first
             if os.path.isabs(candidate) and os.path.exists(candidate):
                 print(f"[PATH RESOLVE] FOUND as absolute: '{candidate}'", flush=True)
@@ -288,40 +299,43 @@ class NavidromeAPI:
                 return full
 
         # Strategy 2: scan the artist/album directory for files matching the title
-        # Use the best relative path we have (DB stripped or API path)
-        best_rel = candidates[-1] if candidates else navidrome_relative_path
-        path_parts = best_rel.split('/')
-        # Find artist/album dirs - skip leading empty parts from absolute paths
-        path_parts = [p for p in path_parts if p]
+        # Try each candidate path to find the right artist/album directory
+        for rel_path in unique_candidates:
+            path_parts = [p for p in rel_path.split('/') if p]
+            if len(path_parts) < 2:
+                continue
 
-        if len(path_parts) >= 2:
-            # Try to find the artist/album directory
-            artist_name = path_parts[0]
-            album_name = path_parts[1] if len(path_parts) >= 3 else None
-            artist_dir = os.path.join(self.music_library_path, artist_name)
+            # Walk backwards to find a valid artist/album dir
+            # The file structure is: [optional_prefix/]artist/album/file.ext
+            for start_idx in range(len(path_parts) - 2):
+                artist_name = path_parts[start_idx]
+                album_name = path_parts[start_idx + 1] if start_idx + 2 < len(path_parts) else None
+                if not album_name:
+                    continue
 
-            if os.path.isdir(artist_dir):
-                album_dir = os.path.join(artist_dir, album_name) if album_name else artist_dir
-                if os.path.isdir(album_dir):
-                    files = os.listdir(album_dir)
-                    print(f"[PATH RESOLVE] Scanning dir '{album_dir}': {files}", flush=True)
+                album_dir = os.path.join(self.music_library_path, artist_name, album_name)
+                if not os.path.isdir(album_dir):
+                    continue
 
-                    # If only one audio file, that's probably it
-                    audio_exts = ('.flac', '.mp3', '.ogg', '.m4a', '.aac', '.wma')
-                    audio_files = [f for f in files if any(f.lower().endswith(e) for e in audio_exts)]
-                    if len(audio_files) == 1:
-                        found = os.path.join(album_dir, audio_files[0])
-                        print(f"[PATH RESOLVE] FOUND (only audio file in dir): '{found}'", flush=True)
-                        return found
+                files = os.listdir(album_dir)
+                audio_exts = ('.flac', '.mp3', '.ogg', '.m4a', '.aac', '.wma')
+                audio_files = [f for f in files if any(f.lower().endswith(e) for e in audio_exts)]
+                print(f"[PATH RESOLVE] Scanning dir '{album_dir}': {audio_files}", flush=True)
 
-                    # Try matching by title from song_details
-                    if song_details:
-                        song_title = song_details.get('title', '').lower()
-                        for f in audio_files:
-                            if song_title and song_title in f.lower():
-                                found = os.path.join(album_dir, f)
-                                print(f"[PATH RESOLVE] FOUND (title match): '{found}'", flush=True)
-                                return found
+                # If only one audio file, that's probably it
+                if len(audio_files) == 1:
+                    found = os.path.join(album_dir, audio_files[0])
+                    print(f"[PATH RESOLVE] FOUND (only audio file in dir): '{found}'", flush=True)
+                    return found
+
+                # Try matching by title from song_details
+                if song_details:
+                    song_title = song_details.get('title', '').lower()
+                    for f in audio_files:
+                        if song_title and song_title in f.lower():
+                            found = os.path.join(album_dir, f)
+                            print(f"[PATH RESOLVE] FOUND (title match): '{found}'", flush=True)
+                            return found
 
         # Strategy 3: fallback complex logic
         result = self._find_actual_song_path_fallback(navidrome_relative_path)
