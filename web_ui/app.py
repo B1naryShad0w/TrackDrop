@@ -1330,7 +1330,7 @@ def trigger_track_download():
 
 @app.route('/api/download_from_link', methods=['POST'])
 @login_required
-async def download_from_link():
+def download_from_link():
     print("Attempting to download from link...")
     try:
         data = request.get_json()
@@ -1353,9 +1353,9 @@ async def download_from_link():
             'start_time': datetime.now().isoformat(),
             'message': 'Download initiated.'
         }
-        
+
         # Use globally initialized link_downloader
-        result = await link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id)
+        result = asyncio.run(link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id))
 
         if result:
             update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.")
