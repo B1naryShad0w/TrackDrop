@@ -62,6 +62,22 @@ class TrackDownloader:
             return None
 
         if downloaded_file_path:
+            # Look up MusicBrainz artist IDs for all sources
+            artist_mbids = []
+            recording_mbid = song_info.get('recording_mbid')
+            try:
+                from apis.listenbrainz_api import ListenBrainzAPI
+                lb_api = ListenBrainzAPI(root_lb="", token_lb="", user_lb="", listenbrainz_enabled=False)
+                recording_mbid, artist_mbids = await lb_api.lookup_mbids(
+                    song_info['artist'], song_info['title'], recording_mbid
+                )
+                if recording_mbid:
+                    song_info['recording_mbid'] = recording_mbid
+                if artist_mbids:
+                    print(f"  Found {len(artist_mbids)} artist MBID(s) for {song_info['artist']} - {song_info['title']}")
+            except Exception as e:
+                print(f"  Warning: Could not look up MBIDs: {e}", file=sys.stderr)
+
             playlist_mode = getattr(config, 'PLAYLIST_MODE', 'tags')
             if playlist_mode == 'api':
                 # API mode: tag with Deezer's metadata (all contributors) for
@@ -80,7 +96,8 @@ class TrackDownloader:
                     song_info['source'],
                     song_info.get('album_art'),
                     album_artist=tag_album_artist,
-                    artists=tag_artists
+                    artists=tag_artists,
+                    artist_mbids=artist_mbids
                 )
             else:
                 # Tags mode: tag with recommendation source metadata and add
@@ -93,7 +110,8 @@ class TrackDownloader:
                     song_info['release_date'],
                     song_info['recording_mbid'],
                     song_info['source'],
-                    song_info.get('album_art')
+                    song_info.get('album_art'),
+                    artist_mbids=artist_mbids
                 )
                 self.tagger.add_comment_to_file(
                     downloaded_file_path,

@@ -197,7 +197,7 @@ class Tagger:
         except Exception as e:
             print(f"Error embedding album art into {file_path}: {e}")
 
-    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None, is_album_recommendation=False, album_artist=None, artists=None):
+    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None, is_album_recommendation=False, album_artist=None, artists=None, artist_mbids=None):
         """Tags a track with metadata using Mutagen and embeds album art."""
         
         # If title is not provided, try to extract it from the filename
@@ -257,6 +257,8 @@ class Tagger:
                 if recording_mbid:
                     audio.tags.add(TXXX(encoding=3, desc='MUSICBRAINZ_RECORDINGID', text=[recording_mbid]))
                     audio.tags.add(UFID(owner='http://musicbrainz.org', data=f'http://musicbrainz.org/recording/{recording_mbid}'.encode('utf-8')))
+                if artist_mbids:
+                    audio.tags.add(TXXX(encoding=3, desc='MUSICBRAINZ_ARTISTID', text=artist_mbids))
 
             elif file_path.lower().endswith('.flac'):
                 # For FLAC, use Vorbis comments
@@ -275,6 +277,8 @@ class Tagger:
                 audio['comment'] = [comment]
                 if recording_mbid:
                     audio['musicbrainz_recordingid'] = recording_mbid
+                if artist_mbids:
+                    audio['musicbrainz_artistid'] = artist_mbids
 
             elif file_path.lower().endswith(('.ogg', '.oga')):
                 # For OggVorbis, use Vorbis comments
@@ -292,6 +296,8 @@ class Tagger:
                 audio['comment'] = [comment]
                 if recording_mbid:
                     audio['musicbrainz_recordingid'] = recording_mbid
+                if artist_mbids:
+                    audio['musicbrainz_artistid'] = artist_mbids
 
             elif file_path.lower().endswith('.m4a'):
                 # For M4A, use iTunes-style atoms (no standard plural tag — use separator)
@@ -308,6 +314,8 @@ class Tagger:
                 if recording_mbid:
                     # M4A does not have a standard tag for MusicBrainz ID, use a custom one
                     audio['----:com.apple.iTunes:MusicBrainz Recording Id'] = [recording_mbid.encode('utf-8')]
+                if artist_mbids:
+                    audio['----:com.apple.iTunes:MusicBrainz Artist Id'] = [mbid.encode('utf-8') for mbid in artist_mbids]
 
             else:
                 print(f"Unsupported file type for tagging: {file_path}")
