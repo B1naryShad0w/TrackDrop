@@ -3,7 +3,8 @@
 export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # Fix permissions for mounted volumes
-chown -R 1000:1000 /app/music /app/temp_downloads
+mkdir -p /app/data
+chown -R 1000:1000 /app/music /app/temp_downloads /app/data
 
 # Generate config.py from environment variables
 echo "# Generated config.py from Docker environment variables" > config.py
@@ -46,7 +47,7 @@ echo "" >> config.py
 
 # Playlist Mode
 echo "PLAYLIST_MODE = os.getenv(\"PLAYLIST_MODE\", \"${RECOMMAND_PLAYLIST_MODE:-tags}\")" >> config.py
-echo "DOWNLOAD_HISTORY_PATH = os.getenv(\"DOWNLOAD_HISTORY_PATH\", \"${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/download_history.json}\")" >> config.py
+echo "DOWNLOAD_HISTORY_PATH = os.getenv(\"DOWNLOAD_HISTORY_PATH\", \"${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/data/download_history.json}\")" >> config.py
 echo "" >> config.py
 
 # Admin credentials for library scan (startScan requires admin)

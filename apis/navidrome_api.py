@@ -874,20 +874,35 @@ class NavidromeAPI:
 
     # ---- API Playlist Mode: Update playlists after download ----
 
-    def update_api_playlists(self, downloaded_songs_info, history_path):
+    def update_api_playlists(self, all_recommendations, history_path, downloaded_songs_info=None):
         """After downloading, update Navidrome API playlists for each source.
         - Triggers a scan so new files get IDs
-        - Groups tracks by source
+        - Groups ALL recommended tracks by source (not just downloaded ones)
         - For each source, finds/creates a playlist and sets its contents
+        - Only records actually-downloaded songs in the download history
+
+        Args:
+            all_recommendations: ALL songs from the recommendation list (downloaded + pre-existing)
+            history_path: Path to the download history JSON
+            downloaded_songs_info: Only the songs that were actually downloaded (for history tracking)
         """
+        if downloaded_songs_info is None:
+            downloaded_songs_info = []
+
         salt, token = self._get_navidrome_auth_params()
 
-        # Trigger scan and wait
-        print("Triggering library scan for newly downloaded files...")
-        self._start_scan()
-        self._wait_for_scan()
+        # Build a set of actually-downloaded songs for quick lookup
+        downloaded_set = set()
+        for s in downloaded_songs_info:
+            downloaded_set.add((s.get('artist', '').lower(), s.get('title', '').lower()))
 
-        # Group songs by source
+        # Trigger scan and wait (so newly downloaded files get IDs)
+        if downloaded_songs_info:
+            print("Triggering library scan for newly downloaded files...")
+            self._start_scan()
+            self._wait_for_scan()
+
+        # Group ALL recommended songs by source
         source_map = {
             'listenbrainz': 'ListenBrainz Recommendations',
             'last.fm': 'Last.fm Recommendations',
@@ -895,14 +910,12 @@ class NavidromeAPI:
         }
 
         tracks_by_source = {}
-        for song in downloaded_songs_info:
+        for song in all_recommendations:
             src = song.get('source', 'Unknown').lower()
             playlist_name = source_map.get(src, f"{song.get('source', 'Unknown')} Recommendations")
             if playlist_name not in tracks_by_source:
                 tracks_by_source[playlist_name] = []
             tracks_by_source[playlist_name].append(song)
-
-        history = self._load_download_history(history_path)
 
         for playlist_name, songs in tracks_by_source.items():
             print(f"\n--- Updating API playlist: {playlist_name} ---")
@@ -911,17 +924,21 @@ class NavidromeAPI:
                 nd_song = self._search_song_in_navidrome(song['artist'], song['title'], salt, token)
                 if nd_song:
                     song_ids.append(nd_song['id'])
-                    # Record in download history
-                    source_key = song.get('source', 'Unknown')
-                    self.add_to_download_history(history_path, source_key, {
-                        'artist': song['artist'],
-                        'title': song['title'],
-                        'album': song.get('album', ''),
-                        'navidrome_id': nd_song['id'],
-                        'file_path': nd_song.get('path', ''),
-                        'recording_mbid': song.get('recording_mbid', ''),
-                        'downloaded_at': time.strftime('%Y-%m-%dT%H:%M:%S')
-                    })
+                    # Only record in download history if we actually downloaded this song
+                    was_downloaded = (song.get('artist', '').lower(), song.get('title', '').lower()) in downloaded_set
+                    if was_downloaded:
+                        source_key = song.get('source', 'Unknown')
+                        self.add_to_download_history(history_path, source_key, {
+                            'artist': song['artist'],
+                            'title': song['title'],
+                            'album': song.get('album', ''),
+                            'navidrome_id': nd_song['id'],
+                            'file_path': nd_song.get('path', ''),
+                            'recording_mbid': song.get('recording_mbid', ''),
+                            'downloaded_at': time.strftime('%Y-%m-%dT%H:%M:%S')
+                        })
+                    else:
+                        print(f"  Pre-existing in library: {song['artist']} - {song['title']} (id={nd_song['id']})")
                 else:
                     print(f"  Could not find '{song['artist']} - {song['title']}' in Navidrome after scan.")
 

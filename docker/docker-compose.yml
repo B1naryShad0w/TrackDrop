@@ -7,6 +7,7 @@ services:
     volumes:
       - ${MUSIC_PATH:-/home/user/Music}:/app/music
       - ${MUSIC_PATH:-/home/user/Music}/.tempfolder:/app/temp_downloads
+      - ${DATA_PATH:-./data}:/app/data
     environment:
       # Navidrome Configuration (empty defaults, configure via web UI)
       - RECOMMAND_ROOT_ND=${RECOMMAND_ROOT_ND:-}
@@ -53,11 +54,15 @@ services:
 
       # API Playlist Mode
       - RECOMMAND_PLAYLIST_MODE=${RECOMMAND_PLAYLIST_MODE:-tags}
-      - RECOMMAND_DOWNLOAD_HISTORY_PATH=${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/download_history.json}
+      - RECOMMAND_DOWNLOAD_HISTORY_PATH=${RECOMMAND_DOWNLOAD_HISTORY_PATH:-/app/data/download_history.json}
 
       # Admin credentials for library scan (startScan requires admin privileges)
       - RECOMMAND_ADMIN_USER=${RECOMMAND_ADMIN_USER:-}
       - RECOMMAND_ADMIN_PASSWORD=${RECOMMAND_ADMIN_PASSWORD:-}
+
+      # Web UI session secret and user settings persistence
+      - RECOMMAND_SECRET_KEY=${RECOMMAND_SECRET_KEY:-}
+      - RECOMMAND_USER_SETTINGS_PATH=${RECOMMAND_USER_SETTINGS_PATH:-/app/data/user_settings.json}
 
     restart: unless-stopped
     extra_hosts:

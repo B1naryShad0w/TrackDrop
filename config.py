@@ -54,7 +54,7 @@ LLM_TARGET_COMMENT = 'llm_recommendation'
 PLAYLIST_MODE = "tags"
 
 # Download History JSON path (used in API playlist mode to track downloaded files)
-DOWNLOAD_HISTORY_PATH = "/app/download_history.json"
+DOWNLOAD_HISTORY_PATH = "/app/data/download_history.json"
 
 # Admin credentials for library scan (startScan requires admin privileges)
 ADMIN_USER = ""

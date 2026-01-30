@@ -236,9 +236,16 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             if playlist_mode == 'api':
                 print("\n[API mode] Updating Navidrome API playlists...")
                 download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
-                navidrome_api.update_api_playlists(downloaded_songs_info, download_history_path)
+                # Pass ALL recommendations so pre-existing library songs also get added to the playlist
+                navidrome_api.update_api_playlists(unique_recommendations, download_history_path, downloaded_songs_info)
         else:
             print("\nNo new songs were downloaded.")
+            # In API mode, still update playlists with pre-existing library songs
+            playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
+            if playlist_mode == 'api':
+                print("\n[API mode] Updating Navidrome API playlists with pre-existing songs...")
+                download_history_path = globals().get('DOWNLOAD_HISTORY_PATH', '/app/download_history.json')
+                navidrome_api.update_api_playlists(unique_recommendations, download_history_path, [])
     else:
         print("\nNo new recommendations found from enabled sources.")
 
