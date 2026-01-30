@@ -146,10 +146,7 @@ def rebuild_cron_from_settings():
             if os.path.exists(cron_file):
                 os.remove(cron_file)
 
-        # Reload cron daemon to pick up changes
-        subprocess.run(["crontab", "-r"], check=False, capture_output=True)
-        if os.path.exists(cron_file):
-            subprocess.run(["crontab", cron_file], check=False, capture_output=True)
+        # cron daemon automatically picks up changes to /etc/cron.d/ files
         return True
     except Exception as e:
         print(f"Error rebuilding cron from settings: {e}")
@@ -167,8 +164,6 @@ def update_cron_schedule(new_schedule):
             new_cron_line = f"{new_schedule} {command_part}"
             with open('/etc/cron.d/re-command-cron', 'w') as f:
                 f.write(new_cron_line + '\n')
-
-            subprocess.run(["crontab", "/etc/cron.d/re-command-cron"], check=True)
             return True
     except Exception as e:
         print(f"Error updating cron schedule: {e}")
