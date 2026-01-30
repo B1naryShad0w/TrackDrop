@@ -62,21 +62,38 @@ class TrackDownloader:
             return None
 
         if downloaded_file_path:
-            # Always tag with recommendation source metadata so file tags and
-            # folder organization match (Deezer metadata can differ from source)
-            self.tagger.tag_track(
-                downloaded_file_path,
-                song_info['artist'],
-                song_info['title'],
-                song_info['album'],
-                song_info['release_date'],
-                song_info['recording_mbid'],
-                song_info['source'],
-                song_info.get('album_art')
-            )
-            # In tags mode, also add comment tag for source-based cleanup
             playlist_mode = getattr(config, 'PLAYLIST_MODE', 'tags')
-            if playlist_mode != 'api':
+            if playlist_mode == 'api':
+                # API mode: tag with Deezer's metadata (all contributors) for
+                # consistency with the actual release. Streamrip already embeds
+                # Deezer metadata but only the primary artist — we fix multi-artist.
+                tag_artist = song_info.get('deezer_artist', song_info['artist'])
+                tag_title = song_info.get('deezer_title', song_info['title'])
+                tag_album_artist = song_info.get('deezer_album_artist')
+                self.tagger.tag_track(
+                    downloaded_file_path,
+                    tag_artist,
+                    tag_title,
+                    song_info['album'],
+                    song_info['release_date'],
+                    song_info['recording_mbid'],
+                    song_info['source'],
+                    song_info.get('album_art'),
+                    album_artist=tag_album_artist
+                )
+            else:
+                # Tags mode: tag with recommendation source metadata and add
+                # comment tag for source-based cleanup
+                self.tagger.tag_track(
+                    downloaded_file_path,
+                    song_info['artist'],
+                    song_info['title'],
+                    song_info['album'],
+                    song_info['release_date'],
+                    song_info['recording_mbid'],
+                    song_info['source'],
+                    song_info.get('album_art')
+                )
                 self.tagger.add_comment_to_file(
                     downloaded_file_path,
                     comment
@@ -98,6 +115,13 @@ class TrackDownloader:
                 song_info['album'] = deezer_details.get('album', song_info['album'])
                 song_info['release_date'] = deezer_details.get('release_date', song_info['release_date'])
                 song_info['album_art'] = deezer_details.get('album_art', song_info.get('album_art'))
+                # Store Deezer's full metadata for consistent tagging
+                if deezer_details.get('artist'):
+                    song_info['deezer_artist'] = deezer_details['artist']
+                if deezer_details.get('album_artist'):
+                    song_info['deezer_album_artist'] = deezer_details['album_artist']
+                if deezer_details.get('title'):
+                    song_info['deezer_title'] = deezer_details['title']
         return deezer_link
 
     def _download_track_deemix(self, deezer_link, song_info, temp_download_folder):

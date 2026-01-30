@@ -197,7 +197,7 @@ class Tagger:
         except Exception as e:
             print(f"Error embedding album art into {file_path}: {e}")
 
-    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None, is_album_recommendation=False):
+    def tag_track(self, file_path, artist, title, album, release_date, recording_mbid, source, album_art_url=None, is_album_recommendation=False, album_artist=None):
         """Tags a track with metadata using Mutagen and embeds album art."""
         
         # If title is not provided, try to extract it from the filename
@@ -241,7 +241,10 @@ class Tagger:
                 if audio.tags is None:
                     audio.tags = ID3()
                 
+                from mutagen.id3 import TPE2
                 audio.tags.add(TPE1(encoding=3, text=[artist]))
+                if album_artist:
+                    audio.tags.add(TPE2(encoding=3, text=[album_artist]))
                 audio.tags.add(TIT2(encoding=3, text=[title]))
                 audio.tags.add(TALB(encoding=3, text=[album]))
                 audio.tags.add(TDRC(encoding=3, text=[release_date]))
@@ -255,27 +258,33 @@ class Tagger:
 
             elif file_path.lower().endswith('.flac'):
                 # For FLAC, use Vorbis comments
-                audio['artist'] = artist
-                audio['title'] = title
-                audio['album'] = album
-                audio['date'] = release_date
-                audio['comment'] = comment
+                audio['artist'] = [artist]
+                if album_artist:
+                    audio['albumartist'] = [album_artist]
+                audio['title'] = [title]
+                audio['album'] = [album]
+                audio['date'] = [release_date]
+                audio['comment'] = [comment]
                 if recording_mbid:
                     audio['musicbrainz_recordingid'] = recording_mbid
 
             elif file_path.lower().endswith(('.ogg', '.oga')):
                 # For OggVorbis, use Vorbis comments
-                audio['artist'] = artist
-                audio['title'] = title
-                audio['album'] = album
-                audio['date'] = release_date
-                audio['comment'] = comment
+                audio['artist'] = [artist]
+                if album_artist:
+                    audio['albumartist'] = [album_artist]
+                audio['title'] = [title]
+                audio['album'] = [album]
+                audio['date'] = [release_date]
+                audio['comment'] = [comment]
                 if recording_mbid:
                     audio['musicbrainz_recordingid'] = recording_mbid
 
             elif file_path.lower().endswith('.m4a'):
                 # For M4A, use iTunes-style atoms
                 audio['\xa9ART'] = [artist]
+                if album_artist:
+                    audio['aART'] = [album_artist]
                 audio['\xa9nam'] = [title]
                 audio['\xa9alb'] = [album]
                 audio['\xa9day'] = [release_date]

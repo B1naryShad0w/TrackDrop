@@ -1487,73 +1487,49 @@ class NavidromeAPI:
 
                     try:
                         # Extract metadata based on file type
+                        # Use album artist for folder structure (falls back to artist)
+                        def _get_tag(tags, key, default=''):
+                            val = tags.get(key)
+                            if val:
+                                return val[0] if isinstance(val, list) else str(val)
+                            return default
+
                         if file_ext == '.mp3':
                             audio = ID3(file_path)
                             artist = str(audio.get('TPE1', ['Unknown Artist'])[0])
+                            folder_artist = str(audio.get('TPE2', [artist])[0])
                             album = str(audio.get('TALB', ['Unknown Album'])[0])
                             title = str(audio.get('TIT2', [os.path.splitext(filename)[0]])[0])
                         elif file_ext == '.flac':
                             audio = FLAC(file_path)
-                            artist_tag = audio.get('artist')
-                            if artist_tag:
-                                artist = artist_tag[0] if isinstance(artist_tag, list) else str(artist_tag)
-                            else:
-                                artist = 'Unknown Artist'
-                            album_tag = audio.get('album')
-                            if album_tag:
-                                album = album_tag[0] if isinstance(album_tag, list) else str(album_tag)
-                            else:
-                                album = 'Unknown Album'
-                            title_tag = audio.get('title')
-                            if title_tag:
-                                title = title_tag[0] if isinstance(title_tag, list) else str(title_tag)
-                            else:
-                                title = os.path.splitext(filename)[0]
+                            artist = _get_tag(audio, 'artist', 'Unknown Artist')
+                            folder_artist = _get_tag(audio, 'albumartist', artist)
+                            album = _get_tag(audio, 'album', 'Unknown Album')
+                            title = _get_tag(audio, 'title', os.path.splitext(filename)[0])
                         elif file_ext in ('.m4a', '.aac'):
                             audio = M4A(file_path)
-                            artist_tag = audio.get('\xa9ART')
-                            if artist_tag:
-                                artist = artist_tag[0] if isinstance(artist_tag, list) else str(artist_tag)
-                            else:
-                                artist = 'Unknown Artist'
-                            album_tag = audio.get('\xa9alb')
-                            if album_tag:
-                                album = album_tag[0] if isinstance(album_tag, list) else str(album_tag)
-                            else:
-                                album = 'Unknown Album'
-                            title_tag = audio.get('\xa9nam')
-                            if title_tag:
-                                title = title_tag[0] if isinstance(title_tag, list) else str(title_tag)
-                            else:
-                                title = os.path.splitext(filename)[0]
+                            artist = _get_tag(audio, '\xa9ART', 'Unknown Artist')
+                            folder_artist = _get_tag(audio, 'aART', artist)
+                            album = _get_tag(audio, '\xa9alb', 'Unknown Album')
+                            title = _get_tag(audio, '\xa9nam', os.path.splitext(filename)[0])
                         elif file_ext in ('.ogg', '.wma'):
                             audio = OggVorbis(file_path)
-                            artist_tag = audio.get('artist')
-                            if artist_tag:
-                                artist = artist_tag[0] if isinstance(artist_tag, list) else str(artist_tag)
-                            else:
-                                artist = 'Unknown Artist'
-                            album_tag = audio.get('album')
-                            if album_tag:
-                                album = album_tag[0] if isinstance(album_tag, list) else str(album_tag)
-                            else:
-                                album = 'Unknown Album'
-                            title_tag = audio.get('title')
-                            if title_tag:
-                                title = title_tag[0] if isinstance(title_tag, list) else str(title_tag)
-                            else:
-                                title = os.path.splitext(filename)[0]
+                            artist = _get_tag(audio, 'artist', 'Unknown Artist')
+                            folder_artist = _get_tag(audio, 'albumartist', artist)
+                            album = _get_tag(audio, 'album', 'Unknown Album')
+                            title = _get_tag(audio, 'title', os.path.splitext(filename)[0])
                         else:
                             # Fallback for unsupported formats
                             artist = "Unknown Artist"
+                            folder_artist = artist
                             album = "Unknown Album"
                             title = os.path.splitext(filename)[0]
 
-                        artist = sanitize_filename(artist)
+                        folder_artist = sanitize_filename(folder_artist)
                         album = sanitize_filename(album)
                         title = sanitize_filename(title)
 
-                        artist_folder = os.path.join(destination_base_folder, artist)
+                        artist_folder = os.path.join(destination_base_folder, folder_artist)
                         album_folder = os.path.join(artist_folder, album)
 
                         new_filename = f"{title}{file_ext}"

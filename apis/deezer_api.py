@@ -119,10 +119,25 @@ class DeezerAPI:
 
                 if data and data.get("album") and data["album"].get("title"):
                     album_cover = data["album"].get("cover_xl", data["album"].get("cover_big", data["album"].get("cover_medium", data["album"].get("cover", None))))
+
+                    # Build full artist string from contributors (includes all artists)
+                    contributors = data.get("contributors", [])
+                    if contributors:
+                        artist_name = ", ".join(c.get("name", "") for c in contributors if c.get("name"))
+                    else:
+                        # Fallback to primary artist
+                        artist_name = data.get("artist", {}).get("name", "")
+
+                    # Album artist is typically the primary artist
+                    album_artist = data.get("artist", {}).get("name", artist_name)
+
                     return {
                         "album": data["album"]["title"],
                         "release_date": data.get("release_date"),
-                        "album_art": album_cover
+                        "album_art": album_cover,
+                        "artist": artist_name,
+                        "album_artist": album_artist,
+                        "title": data.get("title", ""),
                     }
                 else:
                     print(f"Album information not found for track ID {track_id}")
