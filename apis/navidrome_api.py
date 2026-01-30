@@ -1152,9 +1152,11 @@ class NavidromeAPI:
         print("Empty folder removal completed.")
 
     async def process_debug_cleanup(self, history_path):
-        """Debug cleanup: removes all songs not rated 4-5 stars from recommendation playlists,
-        deletes their files, clears playlists and history.
-        Works by scanning the actual playlists in Navidrome (not just download history).
+        """Debug cleanup:
+        - Only deletes FILES for songs tracked in download history (songs re-command downloaded)
+          that are not rated 4-5 stars by any user.
+        - Purges ALL songs from recommendation playlists regardless.
+        - Clears download history.
         No feedback is submitted. Returns a summary dict for the UI."""
         salt, token = self._get_navidrome_auth_params()
         history = self._load_download_history(history_path)
@@ -1167,114 +1169,85 @@ class NavidromeAPI:
             'LLM': 'LLM Recommendations',
         }
 
-        # Process every recommendation playlist, regardless of download history
-        for source_name, playlist_name in playlist_name_map.items():
-            print(f"\n--- Debug Cleanup: scanning playlist '{playlist_name}' ---")
+        # Step 1: Process download history - only delete files we actually downloaded
+        if history:
+            print(f"\n--- Debug Cleanup: processing download history ({sum(len(v) for v in history.values())} tracked songs) ---")
+            for source_name in list(history.keys()):
+                tracks = history.get(source_name, [])
+                if not tracks:
+                    continue
 
+                print(f"\n  Source: {source_name} ({len(tracks)} tracked downloads)")
+
+                for track in tracks:
+                    artist = track.get('artist', '')
+                    title = track.get('title', '')
+                    nd_id = track.get('navidrome_id', '')
+                    file_rel_path = track.get('file_path', '')
+
+                    print(f"  Checking: {artist} - {title} (id={nd_id})")
+
+                    if not nd_id:
+                        print(f"    No navidrome_id, skipping file deletion.")
+                        summary['deleted'].append(f"{artist} - {title} (no id)")
+                        continue
+
+                    song_details = self._get_song_details(nd_id, salt, token)
+                    if song_details is None:
+                        print(f"    Not found in Navidrome (already deleted?).")
+                        summary['deleted'].append(f"{artist} - {title} (not found)")
+                        continue
+
+                    # Check rating across all users
+                    user_rating = self._get_max_rating_across_users(nd_id)
+                    print(f"    Max rating across users: {user_rating}")
+
+                    if user_rating >= 4:
+                        print(f"    KEEP (rating={user_rating}): {artist} - {title}")
+                        summary['kept'].append(f"{artist} - {title} (rating={user_rating})")
+                    else:
+                        file_path = self._find_actual_song_path(file_rel_path, song_details)
+                        if file_path and os.path.exists(file_path):
+                            if self._delete_song(file_path):
+                                print(f"    DELETED file: {file_path}")
+                            else:
+                                print(f"    FAILED to delete file: {file_path}")
+                        else:
+                            print(f"    File not found on disk: {artist} - {title} (path: {file_rel_path})")
+                        summary['deleted'].append(f"{artist} - {title} (rating={user_rating})")
+        else:
+            print("\n--- Debug Cleanup: no download history found, skipping file deletion ---")
+
+        # Step 2: Purge all recommendation playlists (remove all songs, don't delete files)
+        print(f"\n--- Debug Cleanup: purging recommendation playlists ---")
+        for source_name, playlist_name in playlist_name_map.items():
             existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
             if not existing_playlist:
                 print(f"  Playlist '{playlist_name}' not found, skipping.")
                 continue
 
-            playlist_songs = self._get_playlist_songs(existing_playlist['id'], salt, token)
-            print(f"  Found {len(playlist_songs)} songs in playlist.")
-
-            if not playlist_songs:
-                # Playlist exists but is empty
-                summary['playlists_cleared'].append(playlist_name)
-                print(f"  Playlist already empty.")
-                continue
-
-            for song in playlist_songs:
-                nd_id = song.get('id', '')
-                artist = song.get('artist', 'Unknown')
-                title = song.get('title', 'Unknown')
-                song_path_relative = song.get('path', '')
-
-                print(f"  Checking: {artist} - {title} (id={nd_id})")
-
-                # Check rating across all users
-                user_rating = self._get_max_rating_across_users(nd_id)
-                print(f"    Max rating across users: {user_rating}")
-
-                if user_rating >= 4:
-                    print(f"    KEEP (rating={user_rating}): {artist} - {title}")
-                    summary['kept'].append(f"{artist} - {title} (rating={user_rating})")
-                else:
-                    # Delete the file
-                    file_path = self._find_actual_song_path(song_path_relative, song)
-                    if file_path and os.path.exists(file_path):
-                        if self._delete_song(file_path):
-                            print(f"    DELETED file: {file_path}")
-                        else:
-                            print(f"    FAILED to delete file: {file_path}")
-                    else:
-                        print(f"    File not found on disk for: {artist} - {title} (path: {song_path_relative})")
-                    summary['deleted'].append(f"{artist} - {title} (rating={user_rating})")
-
-            # Clear the playlist
+            song_count = existing_playlist.get('songCount', 0)
+            print(f"  Clearing playlist '{playlist_name}' ({song_count} songs)")
             self._update_playlist(existing_playlist['id'], [], salt, token)
-            summary['playlists_cleared'].append(playlist_name)
+            summary['playlists_cleared'].append(f"{playlist_name} ({song_count} songs)")
             print(f"  Cleared playlist: {playlist_name}")
 
-        # Also process any songs in download history that aren't in playlists
-        if history:
-            print(f"\n--- Debug Cleanup: processing download history ---")
-            for source_name in list(history.keys()):
-                tracks = history.get(source_name, [])
-                for track in tracks:
-                    artist = track.get('artist', '')
-                    title = track.get('title', '')
-                    nd_id = track.get('navidrome_id', '')
-
-                    if not nd_id:
-                        print(f"  Skipping history entry without navidrome_id: {artist} - {title}")
-                        continue
-
-                    # Skip if already processed via playlist
-                    already_processed = any(
-                        f"{artist} - {title}" in entry
-                        for entry in summary['deleted'] + summary['kept']
-                    )
-                    if already_processed:
-                        continue
-
-                    print(f"  Checking history entry: {artist} - {title} (id={nd_id})")
-                    song_details = self._get_song_details(nd_id, salt, token)
-                    if song_details is None:
-                        print(f"    Not found in Navidrome, skipping.")
-                        summary['deleted'].append(f"{artist} - {title} (not found)")
-                        continue
-
-                    user_rating = self._get_max_rating_across_users(nd_id)
-                    print(f"    Max rating: {user_rating}")
-
-                    if user_rating >= 4:
-                        print(f"    KEEP (rating={user_rating})")
-                        summary['kept'].append(f"{artist} - {title} (rating={user_rating})")
-                    else:
-                        file_path = self._find_actual_song_path(track.get('file_path', ''), song_details)
-                        if file_path and os.path.exists(file_path):
-                            self._delete_song(file_path)
-                            print(f"    DELETED file: {file_path}")
-                        summary['deleted'].append(f"{artist} - {title} (rating={user_rating})")
-
-        # Clear all history
+        # Step 3: Clear all history
         self._save_download_history(history_path, {})
         print("\nDownload history cleared.")
 
-        # Remove empty folders
+        # Step 4: Remove empty folders
         print("Removing empty folders from music library...")
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
         print("Empty folder removal completed.")
 
-        # Trigger library scan
+        # Step 5: Trigger library scan
         self._start_scan()
 
         print(f"\n=== Debug Cleanup Summary ===")
-        print(f"  Deleted: {len(summary['deleted'])} songs")
-        print(f"  Kept: {len(summary['kept'])} songs")
+        print(f"  Files deleted: {len(summary['deleted'])}")
+        print(f"  Files kept (rated 4-5): {len(summary['kept'])}")
         print(f"  Playlists cleared: {', '.join(summary['playlists_cleared']) if summary['playlists_cleared'] else 'none'}")
 
         return summary
