@@ -149,7 +149,9 @@ def rebuild_cron_from_settings():
         # cron daemon automatically picks up changes to /etc/cron.d/ files
         return True
     except Exception as e:
-        print(f"Error rebuilding cron from settings: {e}")
+        import traceback
+        print(f"Error rebuilding cron from settings: {e}", flush=True)
+        traceback.print_exc()
         return False
 
 def update_cron_schedule(new_schedule):
