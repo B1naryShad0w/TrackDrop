@@ -25,6 +25,7 @@ DEFAULT_SETTINGS = {
     "lastfm_api_key": "",
     "lastfm_api_secret": "",
     "lastfm_session_key": "",
+    "cron_minute": 0,
     "cron_hour": 0,
     "cron_day": 2,
     "cron_enabled": True,

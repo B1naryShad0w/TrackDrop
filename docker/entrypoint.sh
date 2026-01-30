@@ -107,9 +107,10 @@ cron_lines = []
 for username, settings in data.items():
     if not settings.get('cron_enabled', True):
         continue
+    minute = settings.get('cron_minute', 0)
     hour = settings.get('cron_hour', 0)
     day = settings.get('cron_day', 2)
-    cron_lines.append(f'0 {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1')
+    cron_lines.append(f'{minute} {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1')
 if cron_lines:
     with open('/etc/cron.d/re-command-cron', 'w') as f:
         f.write('\n'.join(cron_lines) + '\n')

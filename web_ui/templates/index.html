@@ -1021,7 +1021,13 @@
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
                                 <select id="cronHour" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
                                     {% for hour in range(24) %}
-                                    <option value="{{ hour }}" {% if hour == cron_hour %}selected{% endif %}>{{ "%02d"|format(hour) }}:00</option>
+                                    <option value="{{ hour }}" {% if hour == cron_hour %}selected{% endif %}>{{ "%02d"|format(hour) }}</option>
+                                    {% endfor %}
+                                </select>
+                                :
+                                <select id="cronMinute" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
+                                    {% for minute in range(0, 60, 5) %}
+                                    <option value="{{ minute }}" {% if minute == cron_minute %}selected{% endif %}>{{ "%02d"|format(minute) }}</option>
                                     {% endfor %}
                                 </select>
                                 <select id="cronDay" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
@@ -1379,9 +1385,10 @@ async function createSmartPlaylists() {
 
         async function updateCron() {
             const hour = document.getElementById('cronHour').value;
+            const minute = document.getElementById('cronMinute').value;
             const day = document.getElementById('cronDay').value;
-            // Build cron schedule: "0 HOUR * * DAY" (runs at specified hour on specified day every week)
-            const schedule = `0 ${hour} * * ${day}`;
+            // Build cron schedule: "MINUTE HOUR * * DAY"
+            const schedule = `${minute} ${hour} * * ${day}`;
             const response = await fetch('/api/update_cron', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2170,11 +2177,12 @@ async function createSmartPlaylists() {
 
         async function saveAutomationOptions() {
             const hour = document.getElementById('cronHour').value;
+            const minute = document.getElementById('cronMinute').value;
             const day = document.getElementById('cronDay').value;
             const disabled = document.getElementById('disableCron').checked;
 
-            // Build cron schedule: "0 HOUR * * DAY" (runs at specified hour on specified day every week)
-            const schedule = `0 ${hour} * * ${day}`;
+            // Build cron schedule: "MINUTE HOUR * * DAY"
+            const schedule = `${minute} ${hour} * * ${day}`;
 
             try {
                 // Update cron schedule

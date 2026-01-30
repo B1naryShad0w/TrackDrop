@@ -129,10 +129,11 @@ def rebuild_cron_from_settings():
             settings = user_manager.get_user_settings(username)
             if not settings.get('cron_enabled', True):
                 continue
+            minute = settings.get('cron_minute', 0)
             hour = settings.get('cron_hour', 0)
             day = settings.get('cron_day', 2)
             cron_lines.append(
-                f"0 {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1"
+                f"{minute} {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1"
             )
 
         cron_file = '/etc/cron.d/re-command-cron'
@@ -404,12 +405,14 @@ def index():
     current_cron = get_current_cron_schedule()
 
     # Parse cron schedule to extract hour and day (use per-user settings if available)
+    cron_minute = user_settings.get('cron_minute', 0)
     cron_hour = user_settings.get('cron_hour', 0)
     cron_day = user_settings.get('cron_day', 2)
     cron_enabled = user_settings.get('cron_enabled', True)
 
     return render_template('index.html',
         cron_schedule=current_cron,
+        cron_minute=cron_minute,
         cron_hour=cron_hour,
         cron_day=cron_day,
         cron_enabled=cron_enabled,
@@ -490,10 +493,11 @@ def update_cron():
     if not new_schedule:
         return jsonify({"status": "error", "message": "Cron schedule is required"}), 400
 
-    # Parse hour and day from cron schedule "0 HOUR * * DAY"
+    # Parse minute, hour and day from cron schedule "MINUTE HOUR * * DAY"
     parts = new_schedule.split()
     if len(parts) >= 5:
         try:
+            cron_minute = int(parts[0])
             cron_hour = int(parts[1])
             cron_day = int(parts[4])
         except ValueError:
@@ -503,7 +507,7 @@ def update_cron():
 
     # Persist to user settings
     username = get_current_user()
-    user_manager.update_user_settings(username, {"cron_hour": cron_hour, "cron_day": cron_day})
+    user_manager.update_user_settings(username, {"cron_minute": cron_minute, "cron_hour": cron_hour, "cron_day": cron_day})
 
     # Rebuild system cron from all users' settings
     if rebuild_cron_from_settings():
