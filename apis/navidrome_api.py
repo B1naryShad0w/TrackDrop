@@ -1192,8 +1192,30 @@ class NavidromeAPI:
         - Purges ALL songs from recommendation playlists regardless.
         - Clears download history.
         No feedback is submitted. Returns a summary dict for the UI."""
+        import sys
+
+        print(f"\n{'='*60}", flush=True)
+        print(f"[DEBUG CLEANUP] Starting debug cleanup", flush=True)
+        print(f"[DEBUG CLEANUP] History path: {history_path}", flush=True)
+        print(f"[DEBUG CLEANUP] History file exists: {os.path.exists(history_path)}", flush=True)
+        print(f"[DEBUG CLEANUP] Music library path: {self.music_library_path}", flush=True)
+        print(f"[DEBUG CLEANUP] Navidrome DB path: {self.navidrome_db_path}", flush=True)
+        print(f"{'='*60}", flush=True)
+
         salt, token = self._get_navidrome_auth_params()
+        print(f"[DEBUG CLEANUP] Auth params obtained (salt={salt[:4]}...)", flush=True)
+
         history = self._load_download_history(history_path)
+        print(f"[DEBUG CLEANUP] Loaded history: {len(history)} sources", flush=True)
+        if history:
+            for src, tracks in history.items():
+                print(f"[DEBUG CLEANUP]   Source '{src}': {len(tracks)} tracks", flush=True)
+                for t in tracks:
+                    print(f"[DEBUG CLEANUP]     - {t.get('artist','')} - {t.get('title','')} | nd_id={t.get('navidrome_id','')} | path={t.get('file_path','')}", flush=True)
+        else:
+            print(f"[DEBUG CLEANUP] History is EMPTY - no files will be deleted", flush=True)
+            print(f"[DEBUG CLEANUP] (Run a playlist generation first to populate the download history)", flush=True)
+        sys.stdout.flush()
 
         summary = {'deleted': [], 'kept': [], 'playlists_cleared': []}
 
@@ -1205,13 +1227,14 @@ class NavidromeAPI:
 
         # Step 1: Process download history - only delete files we actually downloaded
         if history:
-            print(f"\n--- Debug Cleanup: processing download history ({sum(len(v) for v in history.values())} tracked songs) ---")
+            total_tracks = sum(len(v) for v in history.values())
+            print(f"\n[DEBUG CLEANUP] Step 1: Processing {total_tracks} tracked downloads for file deletion", flush=True)
             for source_name in list(history.keys()):
                 tracks = history.get(source_name, [])
                 if not tracks:
                     continue
 
-                print(f"\n  Source: {source_name} ({len(tracks)} tracked downloads)")
+                print(f"\n[DEBUG CLEANUP] Source: {source_name} ({len(tracks)} tracked downloads)", flush=True)
 
                 for track in tracks:
                     artist = track.get('artist', '')
@@ -1219,70 +1242,84 @@ class NavidromeAPI:
                     nd_id = track.get('navidrome_id', '')
                     file_rel_path = track.get('file_path', '')
 
-                    print(f"  Checking: {artist} - {title} (id={nd_id})")
+                    print(f"[DEBUG CLEANUP]   Checking: {artist} - {title} (id={nd_id}, path={file_rel_path})", flush=True)
 
                     if not nd_id:
-                        print(f"    No navidrome_id, skipping file deletion.")
+                        print(f"[DEBUG CLEANUP]     No navidrome_id, skipping file deletion.", flush=True)
                         summary['deleted'].append(f"{artist} - {title} (no id)")
                         continue
 
                     song_details = self._get_song_details(nd_id, salt, token)
                     if song_details is None:
-                        print(f"    Not found in Navidrome (already deleted?).")
+                        print(f"[DEBUG CLEANUP]     Not found in Navidrome (already deleted?).", flush=True)
                         summary['deleted'].append(f"{artist} - {title} (not found)")
                         continue
 
+                    print(f"[DEBUG CLEANUP]     Song found in Navidrome: path={song_details.get('path','')}", flush=True)
+
                     # Check rating across all users
                     user_rating = self._get_max_rating_across_users(nd_id)
-                    print(f"    Max rating across users: {user_rating}")
+                    print(f"[DEBUG CLEANUP]     Max rating across all users: {user_rating}", flush=True)
 
                     if user_rating >= 4:
-                        print(f"    KEEP (rating={user_rating}): {artist} - {title}")
+                        print(f"[DEBUG CLEANUP]     KEEP (rating={user_rating}): {artist} - {title}", flush=True)
                         summary['kept'].append(f"{artist} - {title} (rating={user_rating})")
                     else:
                         file_path = self._find_actual_song_path(file_rel_path, song_details)
+                        print(f"[DEBUG CLEANUP]     Resolved file path: {file_path}", flush=True)
                         if file_path and os.path.exists(file_path):
                             if self._delete_song(file_path):
-                                print(f"    DELETED file: {file_path}")
+                                print(f"[DEBUG CLEANUP]     DELETED file: {file_path}", flush=True)
                             else:
-                                print(f"    FAILED to delete file: {file_path}")
+                                print(f"[DEBUG CLEANUP]     FAILED to delete file: {file_path}", flush=True)
                         else:
-                            print(f"    File not found on disk: {artist} - {title} (path: {file_rel_path})")
+                            print(f"[DEBUG CLEANUP]     File not found on disk: {artist} - {title} (rel_path={file_rel_path}, resolved={file_path})", flush=True)
                         summary['deleted'].append(f"{artist} - {title} (rating={user_rating})")
+                    sys.stdout.flush()
         else:
-            print("\n--- Debug Cleanup: no download history found, skipping file deletion ---")
+            print(f"\n[DEBUG CLEANUP] Step 1: SKIPPED - no download history entries to process", flush=True)
 
         # Step 2: Purge all recommendation playlists (remove all songs, don't delete files)
-        print(f"\n--- Debug Cleanup: purging recommendation playlists ---")
+        print(f"\n[DEBUG CLEANUP] Step 2: Purging recommendation playlists", flush=True)
         for source_name, playlist_name in playlist_name_map.items():
+            print(f"[DEBUG CLEANUP]   Looking for playlist: '{playlist_name}'", flush=True)
             existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
             if not existing_playlist:
-                print(f"  Playlist '{playlist_name}' not found, skipping.")
+                print(f"[DEBUG CLEANUP]   Playlist '{playlist_name}' not found, skipping.", flush=True)
                 continue
 
             song_count = existing_playlist.get('songCount', 0)
-            print(f"  Clearing playlist '{playlist_name}' ({song_count} songs)")
+            print(f"[DEBUG CLEANUP]   Found playlist '{playlist_name}' (id={existing_playlist['id']}, {song_count} songs) - clearing...", flush=True)
             self._update_playlist(existing_playlist['id'], [], salt, token)
             summary['playlists_cleared'].append(f"{playlist_name} ({song_count} songs)")
-            print(f"  Cleared playlist: {playlist_name}")
+            print(f"[DEBUG CLEANUP]   Cleared playlist: {playlist_name}", flush=True)
+            sys.stdout.flush()
 
         # Step 3: Clear all history
         self._save_download_history(history_path, {})
-        print("\nDownload history cleared.")
+        print(f"\n[DEBUG CLEANUP] Step 3: Download history cleared ({history_path})", flush=True)
 
         # Step 4: Remove empty folders
-        print("Removing empty folders from music library...")
+        print(f"[DEBUG CLEANUP] Step 4: Removing empty folders from {self.music_library_path}", flush=True)
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
-        print("Empty folder removal completed.")
+        print(f"[DEBUG CLEANUP] Empty folder removal completed.", flush=True)
 
         # Step 5: Trigger library scan
+        print(f"[DEBUG CLEANUP] Step 5: Triggering Navidrome library scan", flush=True)
         self._start_scan()
 
-        print(f"\n=== Debug Cleanup Summary ===")
-        print(f"  Files deleted: {len(summary['deleted'])}")
-        print(f"  Files kept (rated 4-5): {len(summary['kept'])}")
-        print(f"  Playlists cleared: {', '.join(summary['playlists_cleared']) if summary['playlists_cleared'] else 'none'}")
+        print(f"\n{'='*60}", flush=True)
+        print(f"[DEBUG CLEANUP] === SUMMARY ===", flush=True)
+        print(f"[DEBUG CLEANUP]   Files deleted: {len(summary['deleted'])}", flush=True)
+        for d in summary['deleted']:
+            print(f"[DEBUG CLEANUP]     - {d}", flush=True)
+        print(f"[DEBUG CLEANUP]   Files kept (rated 4-5): {len(summary['kept'])}", flush=True)
+        for k in summary['kept']:
+            print(f"[DEBUG CLEANUP]     - {k}", flush=True)
+        print(f"[DEBUG CLEANUP]   Playlists cleared: {', '.join(summary['playlists_cleared']) if summary['playlists_cleared'] else 'none'}", flush=True)
+        print(f"{'='*60}", flush=True)
+        sys.stdout.flush()
 
         return summary
 

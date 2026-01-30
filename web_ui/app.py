@@ -699,9 +699,14 @@ def trigger_navidrome_cleanup():
 @login_required
 def trigger_debug_cleanup():
     """Debug: clear playlists and remove all songs not rated 4-5 stars."""
-    print("Attempting to trigger debug cleanup...")
+    import sys
+    username = get_current_user()
+    print(f"[DEBUG CLEANUP] Triggered by user: {username}", flush=True)
+    sys.stdout.flush()
     try:
-        download_history_path = get_user_history_path(get_current_user())
+        download_history_path = get_user_history_path(username)
+        print(f"[DEBUG CLEANUP] Using history path: {download_history_path}", flush=True)
+        sys.stdout.flush()
         summary = asyncio.run(navidrome_api_global.process_debug_cleanup(
             history_path=download_history_path
         ))
