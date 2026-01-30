@@ -1040,6 +1040,17 @@
                                     <option value="6" {% if cron_day == 6 %}selected{% endif %}>Saturday</option>
                                 </select>
                             </div>
+                            <div style="margin-bottom: 10px;">
+                                <label for="cronTimezone" style="font-size: 0.9em;">Timezone:</label>
+                                <select id="cronTimezone" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color); width: 100%; margin-top: 4px;">
+                                    {% for tz in timezones %}
+                                    <option value="{{ tz }}" {% if tz == cron_timezone %}selected{% endif %}>{{ tz }}</option>
+                                    {% endfor %}
+                                </select>
+                                <small style="color: #b0b0b0; display: block; margin-top: 4px;">
+                                    Select your local timezone. The schedule will be converted to UTC for the container.
+                                </small>
+                            </div>
                             <input type="hidden" id="cronInput" value="{{ cron_schedule }}">
                         </div>
 
@@ -1387,12 +1398,13 @@ async function createSmartPlaylists() {
             const hour = document.getElementById('cronHour').value;
             const minute = document.getElementById('cronMinute').value;
             const day = document.getElementById('cronDay').value;
+            const timezone = document.getElementById('cronTimezone').value;
             // Build cron schedule: "MINUTE HOUR * * DAY"
             const schedule = `${minute} ${hour} * * ${day}`;
             const response = await fetch('/api/update_cron', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ schedule: schedule })
+                body: JSON.stringify({ schedule: schedule, timezone: timezone })
             });
             const data = await response.json();
             showMessage(data.status, data.message);
@@ -2180,6 +2192,7 @@ async function createSmartPlaylists() {
             const minute = document.getElementById('cronMinute').value;
             const day = document.getElementById('cronDay').value;
             const disabled = document.getElementById('disableCron').checked;
+            const timezone = document.getElementById('cronTimezone').value;
 
             // Build cron schedule: "MINUTE HOUR * * DAY"
             const schedule = `${minute} ${hour} * * ${day}`;
@@ -2189,7 +2202,7 @@ async function createSmartPlaylists() {
                 const cronResponse = await fetch('/api/update_cron', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ schedule: schedule })
+                    body: JSON.stringify({ schedule: schedule, timezone: timezone })
                 });
                 const cronData = await cronResponse.json();
 

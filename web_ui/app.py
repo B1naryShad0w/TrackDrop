@@ -10,6 +10,7 @@ import time
 import threading
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -31,6 +32,63 @@ app.secret_key = os.environ.get('RECOMMAND_SECRET_KEY') or os.urandom(24)
 
 # User manager for per-user settings
 user_manager = UserManager()
+
+# Common timezones for the UI dropdown
+TIMEZONE_LIST = [
+    "UTC",
+    "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
+    "Canada/Atlantic", "Canada/Eastern", "Canada/Central", "Canada/Mountain", "Canada/Pacific",
+    "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Amsterdam", "Europe/Brussels",
+    "Europe/Madrid", "Europe/Rome", "Europe/Zurich", "Europe/Vienna", "Europe/Stockholm",
+    "Europe/Oslo", "Europe/Copenhagen", "Europe/Helsinki", "Europe/Warsaw", "Europe/Prague",
+    "Europe/Budapest", "Europe/Bucharest", "Europe/Athens", "Europe/Istanbul", "Europe/Moscow",
+    "Asia/Dubai", "Asia/Kolkata", "Asia/Bangkok", "Asia/Singapore", "Asia/Shanghai",
+    "Asia/Hong_Kong", "Asia/Tokyo", "Asia/Seoul",
+    "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Perth",
+    "Pacific/Auckland", "Pacific/Fiji",
+    "America/Sao_Paulo", "America/Argentina/Buenos_Aires", "America/Mexico_City",
+    "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos",
+]
+
+
+def convert_local_to_utc(minute, hour, day_of_week, timezone_str):
+    """Convert a local time + day-of-week to UTC for cron scheduling.
+
+    Returns (utc_minute, utc_hour, utc_day_of_week).
+    Uses a reference date to compute the offset so DST is handled for the
+    *current* period (cron doesn't shift with DST automatically, but this
+    gives the user a correct result at save-time).
+    """
+    from datetime import datetime, timedelta
+    try:
+        local_tz = ZoneInfo(timezone_str)
+    except Exception:
+        # Unknown timezone — treat as UTC
+        return minute, hour, day_of_week
+
+    # Pick a reference date that falls on the chosen day_of_week
+    # Start from today and find the next occurrence of that weekday
+    today = datetime.now()
+    # days until target weekday (0=Mon in Python, but cron uses 0=Sun)
+    # Convert cron day (0=Sun,1=Mon,...6=Sat) to Python weekday (0=Mon,...6=Sun)
+    python_weekday = (day_of_week - 1) % 7  # cron 0(Sun)->6, 1(Mon)->0, etc.
+    days_ahead = (python_weekday - today.weekday()) % 7
+    ref_date = today + timedelta(days=days_ahead)
+
+    # Create a naive datetime in the user's local timezone
+    from datetime import datetime as dt
+    local_dt = dt(ref_date.year, ref_date.month, ref_date.day, hour, minute, tzinfo=local_tz)
+    utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+
+    utc_minute = utc_dt.minute
+    utc_hour = utc_dt.hour
+
+    # Compute day shift
+    day_diff = (utc_dt.date() - local_dt.replace(tzinfo=None).date()).days
+    utc_day = (day_of_week + day_diff) % 7
+
+    return utc_minute, utc_hour, utc_day
+
 
 # Global dictionary to store download queue status
 # Key: download_id (UUID), Value: { 'artist', 'title', 'status', 'start_time', 'message' }
@@ -132,8 +190,11 @@ def rebuild_cron_from_settings():
             minute = settings.get('cron_minute', 0)
             hour = settings.get('cron_hour', 0)
             day = settings.get('cron_day', 2)
+            timezone = settings.get('cron_timezone', 'UTC')
+            # Convert user's local time to UTC for the container's cron
+            utc_minute, utc_hour, utc_day = convert_local_to_utc(minute, hour, day, timezone)
             cron_lines.append(
-                f"{minute} {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1"
+                f"{utc_minute} {utc_hour} * * {utc_day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1"
             )
 
         cron_file = '/etc/cron.d/re-command-cron'
@@ -406,6 +467,7 @@ def index():
     cron_hour = user_settings.get('cron_hour', 0)
     cron_day = user_settings.get('cron_day', 2)
     cron_enabled = user_settings.get('cron_enabled', True)
+    cron_timezone = user_settings.get('cron_timezone', 'UTC')
 
     return render_template('index.html',
         cron_schedule=current_cron,
@@ -413,6 +475,8 @@ def index():
         cron_hour=cron_hour,
         cron_day=cron_day,
         cron_enabled=cron_enabled,
+        cron_timezone=cron_timezone,
+        timezones=TIMEZONE_LIST,
         username=username,
         first_time=first_time,
         user_settings=json.dumps(user_settings),
@@ -502,9 +566,15 @@ def update_cron():
     else:
         return jsonify({"status": "error", "message": "Invalid cron schedule format"}), 400
 
-    # Persist to user settings
+    # Persist to user settings (store the user's LOCAL time + timezone)
+    timezone = data.get('timezone', 'UTC')
     username = get_current_user()
-    user_manager.update_user_settings(username, {"cron_minute": cron_minute, "cron_hour": cron_hour, "cron_day": cron_day})
+    user_manager.update_user_settings(username, {
+        "cron_minute": cron_minute,
+        "cron_hour": cron_hour,
+        "cron_day": cron_day,
+        "cron_timezone": timezone,
+    })
 
     # Rebuild system cron from all users' settings
     if rebuild_cron_from_settings():

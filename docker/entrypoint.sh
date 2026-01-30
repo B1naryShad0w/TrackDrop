@@ -100,6 +100,24 @@ if [ -f "$SETTINGS_FILE" ]; then
     echo "Restoring cron schedules from persisted user settings..."
     /usr/local/bin/python3 -c "
 import json, os
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+def convert_local_to_utc(minute, hour, day_of_week, timezone_str):
+    try:
+        local_tz = ZoneInfo(timezone_str)
+    except Exception:
+        return minute, hour, day_of_week
+    today = datetime.now()
+    python_weekday = (day_of_week - 1) % 7
+    days_ahead = (python_weekday - today.weekday()) % 7
+    ref_date = today + timedelta(days=days_ahead)
+    local_dt = datetime(ref_date.year, ref_date.month, ref_date.day, hour, minute, tzinfo=local_tz)
+    utc_dt = local_dt.astimezone(ZoneInfo('UTC'))
+    day_diff = (utc_dt.date() - local_dt.replace(tzinfo=None).date()).days
+    utc_day = (day_of_week + day_diff) % 7
+    return utc_dt.minute, utc_dt.hour, utc_day
+
 settings_file = '$SETTINGS_FILE'
 with open(settings_file, 'r') as f:
     data = json.load(f)
@@ -110,7 +128,9 @@ for username, settings in data.items():
     minute = settings.get('cron_minute', 0)
     hour = settings.get('cron_hour', 0)
     day = settings.get('cron_day', 2)
-    cron_lines.append(f'{minute} {hour} * * {day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1')
+    timezone = settings.get('cron_timezone', 'UTC')
+    utc_minute, utc_hour, utc_day = convert_local_to_utc(minute, hour, day, timezone)
+    cron_lines.append(f'{utc_minute} {utc_hour} * * {utc_day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1')
 if cron_lines:
     with open('/etc/cron.d/re-command-cron', 'w') as f:
         f.write('\n'.join(cron_lines) + '\n')

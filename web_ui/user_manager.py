@@ -28,6 +28,7 @@ DEFAULT_SETTINGS = {
     "cron_minute": 0,
     "cron_hour": 0,
     "cron_day": 2,
+    "cron_timezone": "UTC",
     "cron_enabled": True,
     "playlist_sources": ["listenbrainz", "lastfm"],
     "first_time_setup_done": False,
