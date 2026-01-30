@@ -1422,14 +1422,26 @@ class NavidromeAPI:
         kept_count = sum(len(v) for v in remaining_history.values())
         print(f"\n[DEBUG CLEANUP] Step 3: Updated download history - {kept_count} entries remaining", flush=True)
 
-        # Step 4: Remove empty folders
-        print(f"[DEBUG CLEANUP] Step 4: Removing empty folders from {self.music_library_path}", flush=True)
+        # Step 4: Clear streamrip download databases so deleted songs can be re-downloaded
+        print(f"[DEBUG CLEANUP] Step 4: Clearing streamrip download databases", flush=True)
+        for db_file in ['/app/temp_downloads/downloads.db', '/app/temp_downloads/failed_downloads.db']:
+            if os.path.exists(db_file):
+                try:
+                    os.remove(db_file)
+                    print(f"[DEBUG CLEANUP]   Removed: {db_file}", flush=True)
+                except OSError as e:
+                    print(f"[DEBUG CLEANUP]   Failed to remove {db_file}: {e}", flush=True)
+            else:
+                print(f"[DEBUG CLEANUP]   Not found (already clean): {db_file}", flush=True)
+
+        # Step 5: Remove empty folders
+        print(f"[DEBUG CLEANUP] Step 5: Removing empty folders from {self.music_library_path}", flush=True)
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
         print(f"[DEBUG CLEANUP] Empty folder removal completed.", flush=True)
 
-        # Step 5: Trigger library scan
-        print(f"[DEBUG CLEANUP] Step 5: Triggering Navidrome library scan", flush=True)
+        # Step 6: Trigger library scan
+        print(f"[DEBUG CLEANUP] Step 6: Triggering Navidrome library scan", flush=True)
         self._start_scan()
 
         print(f"\n{'='*60}", flush=True)
