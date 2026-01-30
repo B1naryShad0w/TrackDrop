@@ -7,9 +7,9 @@ import imghdr
 from mutagen.id3 import ID3, COMM, APIC, TPE1, TALB, TIT2, TDRC, TXXX, UFID, error as ID3Error
 from mutagen import File, MutagenError
 from mutagen.mp3 import MP3
-from mutagen.flac import FLAC
+from mutagen.flac import FLAC, Picture
 from mutagen.oggvorbis import OggVorbis
-from mutagen.m4a import M4A
+from mutagen.mp4 import MP4, MP4Cover
 from streamrip.db import Database, Downloads, Failed
 from config import *
 
@@ -117,7 +117,7 @@ class Tagger:
 
             elif file_path.lower().endswith('.m4a'):
                 # For M4A, use iTunes-style atoms
-                audio = M4A(file_path)
+                audio = MP4(file_path)
                 audio['\xa9cmt'] = [comment]
                 audio.save()
                 print(f"Added iTunes comment to M4A file: {file_path}")
@@ -164,29 +164,29 @@ class Tagger:
                 print(f"Embedded album art into MP3: {file_path}")
             elif file_path.lower().endswith('.flac'):
                 audio = FLAC(file_path)
-                image = FLAC.Picture()
+                image = Picture()
                 image.data = image_data
                 image.type = 3
                 image.mime = mime_type
+                audio.clear_pictures()
                 audio.add_picture(image)
                 audio.save()
                 print(f"Embedded album art into FLAC: {file_path}")
             elif file_path.lower().endswith(('.ogg', '.oga')):
                 audio = OggVorbis(file_path)
-                image = OggVorbis.Picture()
+                image = Picture()
                 image.data = image_data
                 image.type = 3
                 image.mime = mime_type
-                audio.add_picture(image)
+                import base64
+                encoded = base64.b64encode(image.write()).decode('ascii')
+                audio['metadata_block_picture'] = [encoded]
                 audio.save()
                 print(f"Embedded album art into OggVorbis: {file_path}")
             elif file_path.lower().endswith('.m4a'):
-                audio = M4A(file_path)
-                image = M4A.Picture()
-                image.data = image_data
-                image.type = 3
-                image.mime = mime_type
-                audio.tags['covr'] = [image]
+                audio = MP4(file_path)
+                img_format = MP4Cover.FORMAT_JPEG if image_type == 'jpeg' else MP4Cover.FORMAT_PNG
+                audio.tags['covr'] = [MP4Cover(image_data, imageformat=img_format)]
                 audio.save()
                 print(f"Embedded album art into M4A: {file_path}")
             else:
