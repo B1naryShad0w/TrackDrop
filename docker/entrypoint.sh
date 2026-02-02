@@ -61,11 +61,6 @@ echo "SPOTIFY_CLIENT_ID = os.getenv(\"SPOTIFY_CLIENT_ID\", \"${RECOMMAND_SPOTIFY
 echo "SPOTIFY_CLIENT_SECRET = os.getenv(\"SPOTIFY_CLIENT_SECRET\", \"${RECOMMAND_SPOTIFY_CLIENT_SECRET:-}\")" >> config.py
 echo "" >> config.py
 
-# Tidal API Configuration (for playlist extraction)
-echo "TIDAL_CLIENT_ID = os.getenv(\"TIDAL_CLIENT_ID\", \"${RECOMMAND_TIDAL_CLIENT_ID:-}\")" >> config.py
-echo "TIDAL_CLIENT_SECRET = os.getenv(\"TIDAL_CLIENT_SECRET\", \"${RECOMMAND_TIDAL_CLIENT_SECRET:-}\")" >> config.py
-echo "" >> config.py
-
 # Deezer Configuration (Optional - can be configured via web UI)
 echo "DEEZER_ARL = os.getenv(\"DEEZER_ARL\", \"${RECOMMAND_DEEZER_ARL:-}\")" >> config.py
 echo "" >> config.py
