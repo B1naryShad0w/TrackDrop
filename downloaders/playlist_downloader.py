@@ -1,6 +1,6 @@
 """Playlist URL download support.
 
-Extracts tracklists from playlist URLs (Deezer, Spotify, YouTube),
+Extracts tracklists from playlist URLs (Deezer, Spotify, Tidal, YouTube),
 downloads each track individually via the existing TrackDownloader pipeline,
 skips tracks already in Navidrome, creates a Navidrome playlist, and
 writes a download history file for cleanup.
@@ -190,6 +190,50 @@ def _parse_artist_title(raw_title: str) -> tuple[str, str]:
     return "Unknown", raw_title.strip()
 
 
+def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]:
+    """Fetch tracks from a public Tidal playlist using the public GraphQL API.
+    Returns (playlist_name, [{'artist': ..., 'title': ...}, ...])
+    """
+    query = """
+    query ($playlistId: String!, $countryCode: String!) {
+        playlist(uuid: $playlistId) {
+            title
+            tracks(countryCode: $countryCode) {
+                artists { name }
+                title
+            }
+        }
+    }
+    """
+    try:
+        resp = requests.post(
+            "https://gqlapi.tidal.com/",
+            json={"query": query, "variables": {"playlistId": playlist_uuid, "countryCode": "US"}},
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        playlist_data = data.get("data", {}).get("playlist")
+        if not playlist_data:
+            print(f"Tidal GraphQL returned no playlist data for {playlist_uuid}", file=sys.stderr)
+            return f"Tidal Playlist {playlist_uuid}", []
+
+        playlist_name = playlist_data.get("title", f"Tidal Playlist {playlist_uuid}")
+        tracks = []
+        for t in playlist_data.get("tracks", []):
+            artists = [a["name"] for a in t.get("artists", []) if a.get("name")]
+            artist_str = ", ".join(artists) if artists else "Unknown"
+            tracks.append({
+                "artist": artist_str,
+                "title": t.get("title", "Unknown"),
+            })
+        return playlist_name, tracks
+    except Exception as e:
+        print(f"Failed to extract Tidal playlist: {e}", file=sys.stderr)
+        return f"Tidal Playlist {playlist_uuid}", []
+
+
 def extract_playlist_tracks(url: str) -> tuple[str, str, List[dict]]:
     """Detect platform from URL and extract playlist tracks.
     Returns (platform, playlist_name, tracks_list).
@@ -219,6 +263,12 @@ def extract_playlist_tracks(url: str) -> tuple[str, str, List[dict]]:
         name, tracks = _extract_spotify_playlist_tracks(m.group(1))
         return "spotify", name, tracks
 
+    # Tidal
+    m = re.search(r"(?:listen\.tidal\.com|tidal\.com)/(?:browse/)?playlist/([0-9a-zA-Z-]+)", url)
+    if m:
+        name, tracks = _extract_tidal_playlist_tracks(m.group(1))
+        return "tidal", name, tracks
+
     # YouTube / YouTube Music
     m = re.search(r"(?:music\.youtube\.com|youtube\.com)/playlist\?list=([a-zA-Z0-9_-]+)", url)
     if m:
@@ -234,6 +284,7 @@ def is_playlist_url(url: str) -> bool:
         r"deezer\.com(?:/[a-z]{2})?/playlist/\d+",
         r"link\.deezer\.com/s/[a-zA-Z0-9]+",
         r"open\.spotify\.com/playlist/[a-zA-Z0-9]+",
+        r"(?:listen\.tidal\.com|tidal\.com)/(?:browse/)?playlist/[0-9a-zA-Z-]+",
         r"(?:music\.youtube\.com|youtube\.com)/playlist\?list=[a-zA-Z0-9_-]+",
     ]
     for pat in patterns:

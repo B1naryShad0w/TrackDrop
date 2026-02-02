@@ -2456,6 +2456,7 @@ async function createSmartPlaylists() {
             return /deezer\.com(?:\/[a-z]{2})?\/playlist\/\d+/.test(url) ||
                    /link\.deezer\.com\/s\/[a-zA-Z0-9]+/.test(url) ||
                    /open\.spotify\.com\/playlist\/[a-zA-Z0-9]+/.test(url) ||
+                   /(?:listen\.)?tidal\.com\/(?:browse\/)?playlist\/[0-9a-zA-Z-]+/.test(url) ||
                    /(?:music\.)?youtube\.com\/playlist\?list=[a-zA-Z0-9_-]+/.test(url);
         }
 
