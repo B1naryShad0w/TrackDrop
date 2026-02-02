@@ -2778,6 +2778,9 @@ async function createSmartPlaylists() {
             const data = await resp.json();
             showMessage(data.status, data.message);
             openDownloadQueueModal();
+            // Periodically refresh the monitored list to show updated track count / last sync
+            const refreshInterval = setInterval(() => loadMonitoredPlaylists(), 10000);
+            setTimeout(() => clearInterval(refreshInterval), 120000);
         }
 
         async function removeMonitoredPlaylist(id) {

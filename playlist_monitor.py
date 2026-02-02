@@ -103,14 +103,32 @@ def remove_monitored_playlist(playlist_id: str) -> bool:
     return False
 
 
+def mark_synced(playlist_id: str, track_count: int = None):
+    """Update last_synced (and optionally last_track_count) for a monitored playlist."""
+    playlists = _load_playlists()
+    for p in playlists:
+        if p["id"] == playlist_id:
+            p["last_synced"] = datetime.now().isoformat()
+            if track_count is not None:
+                p["last_track_count"] = track_count
+            break
+    _save_playlists(playlists)
+
+
 def _sync_playlist(entry: dict, navidrome_api, update_status_fn):
     """Run a sync for a single monitored playlist."""
-    from downloaders.playlist_downloader import download_playlist
+    from downloaders.playlist_downloader import download_playlist, extract_playlist_tracks
 
     download_id = str(uuid.uuid4())
     print(f"[PlaylistMonitor] Syncing: {entry['name']} ({entry['url']})")
 
+    track_count = None
     try:
+        # Get track count before downloading
+        _, _, tracks = extract_playlist_tracks(entry["url"])
+        if tracks:
+            track_count = len(tracks)
+
         asyncio.run(
             download_playlist(
                 url=entry["url"],
@@ -123,13 +141,7 @@ def _sync_playlist(entry: dict, navidrome_api, update_status_fn):
     except Exception as e:
         print(f"[PlaylistMonitor] Error syncing {entry['name']}: {e}", file=sys.stderr)
 
-    # Update last_synced timestamp
-    playlists = _load_playlists()
-    for p in playlists:
-        if p["id"] == entry["id"]:
-            p["last_synced"] = datetime.now().isoformat()
-            break
-    _save_playlists(playlists)
+    mark_synced(entry["id"], track_count)
 
 
 def _scheduler_loop(navidrome_api, update_status_fn, downloads_queue):

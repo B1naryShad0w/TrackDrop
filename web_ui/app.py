@@ -26,7 +26,7 @@ from downloaders.link_downloader import LinkDownloader
 from downloaders.playlist_downloader import is_playlist_url, download_playlist, extract_playlist_tracks
 from playlist_monitor import (
     get_monitored_playlists, add_monitored_playlist, update_monitored_playlist,
-    remove_monitored_playlist, start_scheduler,
+    remove_monitored_playlist, start_scheduler, mark_synced,
 )
 from utils import Tagger
 from web_ui.user_manager import UserManager, login_required, get_current_user
@@ -1403,14 +1403,16 @@ def download_from_link():
                 # If user chose to monitor, add after first successful download
                 if monitor:
                     from downloaders.playlist_downloader import extract_playlist_tracks as _extract
-                    platform, name, _ = _extract(link)
+                    platform, name, tracks = _extract(link)
                     name = playlist_name_override or name
                     if not name or name.startswith("Unknown"):
                         name = link
-                    add_monitored_playlist(
+                    entry = add_monitored_playlist(
                         url=link, name=name, platform=platform,
                         username=username, poll_interval_hours=poll_interval_hours,
                     )
+                    # Update with track count and sync time from just-completed download
+                    mark_synced(entry["id"], len(tracks) if tracks else None)
 
             threading.Thread(target=_run_playlist_download, daemon=True).start()
             msg = "Playlist download started."
@@ -1558,18 +1560,30 @@ def api_sync_monitored_playlist(playlist_id):
         'skipped_count': 0,
         'failed_count': 0,
     }
-    threading.Thread(
-        target=lambda: asyncio.run(
-            download_playlist(
-                url=entry['url'],
-                username=entry['username'],
-                navidrome_api=navidrome_api_global,
-                download_id=download_id,
-                update_status_fn=update_download_status,
+    def _run_sync():
+        from downloaders.playlist_downloader import extract_playlist_tracks as _ext
+        track_count = None
+        try:
+            _, _, tracks = _ext(entry['url'])
+            if tracks:
+                track_count = len(tracks)
+        except Exception:
+            pass
+        try:
+            asyncio.run(
+                download_playlist(
+                    url=entry['url'],
+                    username=entry['username'],
+                    navidrome_api=navidrome_api_global,
+                    download_id=download_id,
+                    update_status_fn=update_download_status,
+                )
             )
-        ),
-        daemon=True,
-    ).start()
+        except Exception as e:
+            print(f"Error in manual sync for {entry['name']}: {e}", file=sys.stderr)
+        mark_synced(entry['id'], track_count)
+
+    threading.Thread(target=_run_sync, daemon=True).start()
     return jsonify({"status": "success", "message": f"Sync started for {entry['name']}"})
 
 
