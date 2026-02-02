@@ -436,6 +436,14 @@ async def download_playlist(
     all_navidrome_ids = []
     newly_downloaded = []
 
+    # Build lookup from playlist history: tracks we already downloaded and matched
+    history_lookup = {}
+    for ht in history.get("tracks", []):
+        nid = ht.get("navidrome_id")
+        if nid:
+            key = (ht.get("artist", "").lower().strip(), ht.get("title", "").lower().strip())
+            history_lookup[key] = nid
+
     for i, track in enumerate(playlist_tracks):
         artist = track.get("artist", "Unknown")
         title = track.get("title", "Unknown")
@@ -447,7 +455,21 @@ async def download_playlist(
                 f"Processing {i+1}/{total}: {label}",
                 title=playlist_name, current=downloaded_count, total=total)
 
-        # Check if already in Navidrome
+        # Check playlist history first (deterministic, no fuzzy matching)
+        history_key = (artist.lower().strip(), title.lower().strip())
+        history_nid = history_lookup.get(history_key)
+        if history_nid:
+            print(f"  Found in playlist history: {label} (id={history_nid})")
+            all_navidrome_ids.append(history_nid)
+            skipped_count += 1
+            track_statuses[i]["status"] = "skipped"
+            track_statuses[i]["message"] = "Already in library"
+            _update("in_progress",
+                    f"Processing {i+1}/{total}: {label} (already in library)",
+                    title=playlist_name, current=downloaded_count, total=total)
+            continue
+
+        # Fallback: search Navidrome by artist/title
         existing = navidrome_api._search_song_in_navidrome(artist, title, salt, token)
         if existing:
             print(f"  Already in Navidrome: {label} (id={existing['id']})")
