@@ -321,11 +321,14 @@ def _tidal_embed_extract(playlist_uuid: str) -> tuple[List[dict], str]:
                     )
                     if js_resp.status_code == 200:
                         js_text = js_resp.text
-                        # Look for client IDs, tokens, API URLs
-                        token_matches = _re.findall(r'["\']([a-zA-Z0-9]{20,40})["\']', js_text)
-                        api_matches = _re.findall(r'(api\.tidal\.com[^"\']*|listen\.tidal\.com[^"\']*)', js_text)
-                        client_id_matches = _re.findall(r'(?:clientId|client_id|token)["\s:=]+["\']([^"\']+)["\']', js_text, _re.IGNORECASE)
-                        print(f"DEBUG Tidal JS bundle ({script_url}): found {len(token_matches)} token-like strings, API URLs: {api_matches[:5]}, clientId matches: {client_id_matches[:5]}", file=sys.stderr)
+                        # Dump all token-like strings (20-40 alphanum chars)
+                        token_matches = _re.findall(r'["\']([a-zA-Z0-9_-]{16,40})["\']', js_text)
+                        print(f"DEBUG Tidal JS tokens: {token_matches}", file=sys.stderr)
+                        # Look for context around "token", "clientId", "apiKey", "x-tidal"
+                        for keyword in ['token', 'clientId', 'client_id', 'apiKey', 'x-tidal', 'Authorization']:
+                            contexts = _re.findall(rf'.{{0,60}}{keyword}.{{0,60}}', js_text, _re.IGNORECASE)
+                            if contexts:
+                                print(f"DEBUG Tidal JS '{keyword}' contexts: {contexts[:3]}", file=sys.stderr)
                 except Exception as e:
                     print(f"DEBUG Failed to fetch Tidal JS bundle: {e}", file=sys.stderr)
 
