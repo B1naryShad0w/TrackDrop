@@ -205,11 +205,34 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         total = len(unique_recommendations)
         source_name = "ListenBrainz" if "listenbrainz" in source.lower() else "Last.fm"
         title = f"Downloading {source_name} Playlist"
-        update_status_file(download_id, "in_progress", f"Starting download of {total} tracks.", title, current_track_count=0, total_track_count=total)
+
+        track_statuses = [
+            {"artist": s.get("artist", "Unknown"), "title": s.get("title", "Unknown"), "status": "pending", "message": ""}
+            for s in unique_recommendations
+        ]
         downloaded_songs_info = []
+        failed_count = 0
+
+        def _update_rec(status, message):
+            update_status_file(
+                download_id, status, message, title,
+                current_track_count=len(downloaded_songs_info),
+                total_track_count=total,
+                tracks=track_statuses,
+                downloaded_count=len(downloaded_songs_info),
+                failed_count=failed_count,
+                download_type="playlist",
+            )
+
+        _update_rec("in_progress", f"Starting download of {total} tracks.")
+
         with tqdm(unique_recommendations, desc="Downloading Recommendations", unit="song") as pbar:
             for i, song_info in enumerate(pbar):
-                tqdm.write(f"Processing: {song_info['artist']} - {song_info['title']} (Source: {song_info['source']})")
+                label = f"{song_info['artist']} - {song_info['title']}"
+                tqdm.write(f"Processing: {label} (Source: {song_info['source']})")
+                track_statuses[i]["status"] = "in_progress"
+                track_statuses[i]["message"] = "Searching Deezer..."
+                _update_rec("in_progress", f"Downloading {i+1}/{total}: {label}")
                 try:
                     # Determine if this is a ListenBrainz recommendation
                     lb_recommendation = song_info.get('source', '').lower() == 'listenbrainz'
@@ -217,12 +240,19 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                     if downloaded_file_path:
                         song_info['downloaded_path'] = downloaded_file_path
                         downloaded_songs_info.append(song_info)
-                        # Update progress
-                        update_status_file(download_id, "in_progress", f"Downloaded {len(downloaded_songs_info)} of {total} tracks.", title, current_track_count=len(downloaded_songs_info), total_track_count=total)
+                        track_statuses[i]["status"] = "completed"
+                        track_statuses[i]["message"] = "Downloaded"
+                        _update_rec("in_progress", f"Downloaded {i+1}/{total}: {label}")
                     else:
-                        tqdm.write(f"Skipping download for {song_info['artist']} - {song_info['title']} (download failed).")
+                        failed_count += 1
+                        track_statuses[i]["status"] = "failed"
+                        track_statuses[i]["message"] = "Not found on Deezer"
+                        tqdm.write(f"Skipping download for {label} (download failed).")
                 except Exception as e:
-                    tqdm.write(f"Error processing {song_info['artist']} - {song_info['title']}: {e}")
+                    failed_count += 1
+                    track_statuses[i]["status"] = "failed"
+                    track_statuses[i]["message"] = str(e)[:80]
+                    tqdm.write(f"Error processing {label}: {e}")
 
         if downloaded_songs_info:
             print("\nSuccessfully downloaded and tagged the following songs:")
@@ -257,10 +287,19 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
 
     print("Script finished.")
     downloaded_count = len(downloaded_songs_info) if 'downloaded_songs_info' in locals() else 0
+    final_failed = failed_count if 'failed_count' in locals() else 0
     total_count = len(unique_recommendations)
     message = f"Downloaded {downloaded_count} of {total_count} tracks."
+    if final_failed:
+        message += f" {final_failed} failed."
     title = "Download Complete"
-    update_status_file(download_id, "completed", message, title, current_track_count=downloaded_count, total_track_count=total_count)
+    final_tracks = track_statuses if 'track_statuses' in locals() else None
+    update_status_file(
+        download_id, "completed", message, title,
+        current_track_count=downloaded_count, total_track_count=total_count,
+        tracks=final_tracks, downloaded_count=downloaded_count,
+        failed_count=final_failed, download_type="playlist",
+    )
     return downloaded_count, total_count
 
 async def process_fresh_releases_albums(download_id=None):

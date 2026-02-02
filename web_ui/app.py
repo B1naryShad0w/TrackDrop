@@ -745,7 +745,11 @@ def trigger_listenbrainz_download():
             'start_time': datetime.now().isoformat(),
             'message': 'Download initiated.',
             'current_track_count': 0,
-            'total_track_count': None  # Will be updated when recommendations are fetched
+            'total_track_count': None,
+            'download_type': 'playlist',
+            'tracks': [],
+            'downloaded_count': 0,
+            'failed_count': 0,
         }
 
         # Execute re-command.py in a separate process for non-blocking download, bypassing playlist check
@@ -803,9 +807,13 @@ def trigger_lastfm_download():
             'start_time': datetime.now().isoformat(),
             'message': 'Download initiated.',
             'current_track_count': 0,
-            'total_track_count': None  # Will be updated when recommendations are fetched
+            'total_track_count': None,
+            'download_type': 'playlist',
+            'tracks': [],
+            'downloaded_count': 0,
+            'failed_count': 0,
         }
-        
+
         # Execute re-command.py in a separate process for non-blocking download
         subprocess.Popen([
             sys.executable, '/app/re-command.py',
@@ -1176,7 +1184,14 @@ def trigger_llm_download():
         'start_time': datetime.now().isoformat(),
         'message': 'Download initiated.',
         'current_track_count': 0,
-        'total_track_count': len(recommendations)
+        'total_track_count': len(recommendations),
+        'download_type': 'playlist',
+        'tracks': [
+            {"artist": s.get("artist", "Unknown"), "title": s.get("title", "Unknown"), "status": "pending", "message": ""}
+            for s in recommendations
+        ],
+        'downloaded_count': 0,
+        'failed_count': 0,
     }
 
     # Execute downloads in a background thread
@@ -1757,45 +1772,55 @@ async def download_llm_recommendations_background(recommendations, download_id):
     """Helper function to download tracks from LLM recommendations in the background."""
     tagger = Tagger(album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT)
     track_downloader = TrackDownloader(tagger)
-    
+
     total_tracks = len(recommendations)
     downloaded_count = 0
-    for i, song in enumerate(recommendations):
+    failed_count = 0
+    track_statuses = [
+        {"artist": s.get("artist", "Unknown"), "title": s.get("title", "Unknown"), "status": "pending", "message": ""}
+        for s in recommendations
+    ]
+
+    def _update_llm(status, message):
         update_download_status(
-            download_id, 
-            'in_progress', 
-            f"Downloading track {i+1}/{total_tracks}: {song['artist']} - {song['title']}",
+            download_id, status, message,
             current_track_count=downloaded_count,
-            total_track_count=total_tracks
+            total_track_count=total_tracks,
+            tracks=track_statuses,
+            downloaded_count=downloaded_count,
+            failed_count=failed_count,
+            download_type="playlist",
         )
-        
+
+    _update_llm("in_progress", f"Starting download of {total_tracks} tracks.")
+
+    for i, song in enumerate(recommendations):
+        label = f"{song.get('artist', 'Unknown')} - {song.get('title', 'Unknown')}"
+        track_statuses[i]["status"] = "in_progress"
+        track_statuses[i]["message"] = "Searching Deezer..."
+        _update_llm("in_progress", f"Downloading {i+1}/{total_tracks}: {label}")
+
         song['source'] = 'LLM'
         song['recording_mbid'] = '' # Not available from LLM
         song['release_date'] = '' # Not available from LLM
-        
+
         downloaded_path = await track_downloader.download_track(song)
-        
+
         if downloaded_path:
             downloaded_count += 1
-            update_download_status(
-                download_id,
-                'in_progress',
-                f"Downloaded track {i+1}/{total_tracks}",
-                current_track_count=downloaded_count
-            )
+            track_statuses[i]["status"] = "completed"
+            track_statuses[i]["message"] = "Downloaded"
+            _update_llm("in_progress", f"Downloaded {i+1}/{total_tracks}: {label}")
         else:
-            print(f"Failed to download LLM recommendation: {song['artist']} - {song['title']}")
+            failed_count += 1
+            track_statuses[i]["status"] = "failed"
+            track_statuses[i]["message"] = "Not found on Deezer"
+            print(f"Failed to download LLM recommendation: {label}")
 
     # Organize files after all downloads are attempted
     navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
 
-    # Set final status
-    update_download_status(
-        download_id, 
-        'completed', 
-        f"Download complete. Processed {downloaded_count}/{total_tracks} tracks.",
-        current_track_count=downloaded_count
-    )
+    _update_llm("completed", f"Download complete. {downloaded_count} downloaded, {failed_count} failed.")
 
 if __name__ == '__main__':
     download_poller_thread = threading.Thread(target=poll_download_statuses, daemon=True)
