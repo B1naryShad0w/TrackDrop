@@ -34,6 +34,10 @@ services:
       - RECOMMAND_LLM_MODEL_NAME=${RECOMMAND_LLM_MODEL_NAME:-}
       - RECOMMAND_LLM_BASE_URL=${RECOMMAND_LLM_BASE_URL:-}
 
+      # Spotify API Configuration (for playlist extraction - free, no user login)
+      - RECOMMAND_SPOTIFY_CLIENT_ID=${RECOMMAND_SPOTIFY_CLIENT_ID:-}
+      - RECOMMAND_SPOTIFY_CLIENT_SECRET=${RECOMMAND_SPOTIFY_CLIENT_SECRET:-}
+
       # Deezer Configuration (empty, configurable via web UI)
       - RECOMMAND_DEEZER_ARL=${RECOMMAND_DEEZER_ARL:-}
 
