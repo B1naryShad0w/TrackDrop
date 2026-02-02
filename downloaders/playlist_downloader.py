@@ -60,28 +60,42 @@ def _extract_deezer_playlist_tracks(playlist_id: str) -> tuple[str, List[dict]]:
     return playlist_name, tracks
 
 
-def _get_spotify_anonymous_token() -> Optional[str]:
-    """Get an anonymous Spotify access token for public data."""
+def _get_spotify_client_token() -> Optional[str]:
+    """Get a Spotify access token using Client Credentials flow.
+    Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET env vars or config."""
+    import base64
+    client_id = os.getenv("SPOTIFY_CLIENT_ID", "") or getattr(__import__("config"), "SPOTIFY_CLIENT_ID", "")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "") or getattr(__import__("config"), "SPOTIFY_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        print("Spotify Client Credentials not configured. "
+              "Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to enable Spotify playlist support.",
+              file=sys.stderr)
+        return None
     try:
-        resp = requests.get(
-            "https://open.spotify.com/get_access_token?reason=transport&productType=embed",
+        auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        resp = requests.post(
+            "https://accounts.spotify.com/api/token",
+            headers={
+                "Authorization": f"Basic {auth}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={"grant_type": "client_credentials"},
             timeout=10,
-            headers={"User-Agent": "Mozilla/5.0"},
         )
         if resp.status_code == 200:
-            return resp.json().get("accessToken")
+            return resp.json().get("access_token")
+        print(f"Spotify token request failed ({resp.status_code}): {resp.text[:200]}", file=sys.stderr)
     except Exception as e:
-        print(f"Failed to get Spotify anonymous token: {e}", file=sys.stderr)
+        print(f"Failed to get Spotify client token: {e}", file=sys.stderr)
     return None
 
 
 def _extract_spotify_playlist_tracks(playlist_id: str) -> tuple[str, List[dict]]:
-    """Fetch tracks from a public Spotify playlist using an anonymous token.
+    """Fetch tracks from a public Spotify playlist using Client Credentials.
     Returns (playlist_name, [{'artist': ..., 'title': ...}, ...])
     """
-    token = _get_spotify_anonymous_token()
+    token = _get_spotify_client_token()
     if not token:
-        print("Could not obtain Spotify anonymous token.", file=sys.stderr)
         return f"Spotify Playlist {playlist_id}", []
 
     headers = {"Authorization": f"Bearer {token}"}

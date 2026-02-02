@@ -31,6 +31,10 @@ LLM_API_KEY = ""
 LLM_MODEL_NAME = ""
 LLM_BASE_URL = ""
 
+# Spotify API Configuration (for playlist extraction - Client Credentials flow)
+SPOTIFY_CLIENT_ID = ""
+SPOTIFY_CLIENT_SECRET = ""
+
 # Deezer Configuration
 DEEZER_ARL = ""
 

@@ -56,6 +56,11 @@ echo "ADMIN_PASSWORD = os.getenv(\"ADMIN_PASSWORD\", \"${RECOMMAND_ADMIN_PASSWOR
 echo "NAVIDROME_DB_PATH = \"${RECOMMAND_NAVIDROME_DB_PATH:-}\"" >> config.py
 echo "" >> config.py
 
+# Spotify API Configuration (for playlist extraction)
+echo "SPOTIFY_CLIENT_ID = os.getenv(\"SPOTIFY_CLIENT_ID\", \"${RECOMMAND_SPOTIFY_CLIENT_ID:-}\")" >> config.py
+echo "SPOTIFY_CLIENT_SECRET = os.getenv(\"SPOTIFY_CLIENT_SECRET\", \"${RECOMMAND_SPOTIFY_CLIENT_SECRET:-}\")" >> config.py
+echo "" >> config.py
+
 # Deezer Configuration (Optional - can be configured via web UI)
 echo "DEEZER_ARL = os.getenv(\"DEEZER_ARL\", \"${RECOMMAND_DEEZER_ARL:-}\")" >> config.py
 echo "" >> config.py
