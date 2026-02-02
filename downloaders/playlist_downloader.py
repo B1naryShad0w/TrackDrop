@@ -221,36 +221,39 @@ def _get_tidal_client_token() -> Optional[str]:
 
 
 def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]:
-    """Fetch tracks from a Tidal playlist via the official Developer API.
-    Uses Client Credentials flow (TIDAL_CLIENT_ID / TIDAL_CLIENT_SECRET)
-    against the v1 API which supports public playlist access.
+    """Fetch tracks from a Tidal playlist.
+
+    Strategy:
+    1. Try the Tidal embed page — it loads track data in the HTML/JS
+       without authentication.
+    2. Fall back to the Developer API (client credentials + v1) if
+       embed scraping fails and credentials are configured.
+
     Returns (playlist_name, [{'artist': ..., 'title': ...}, ...])
     """
+    # --- Strategy 1: Embed page scraping (no auth needed) ---
+    tracks, name = _tidal_embed_extract(playlist_uuid)
+    if tracks:
+        return name, tracks
+
+    # --- Strategy 2: Developer API with client credentials ---
     token = _get_tidal_client_token()
     if not token:
         return f"Tidal Playlist {playlist_uuid}", []
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     try:
-        # Try v1 API first (supports playlist access with bearer token)
         resp = requests.get(
             f"https://api.tidal.com/v1/playlists/{playlist_uuid}",
-            headers=headers, params={"countryCode": "US"},
-            timeout=15,
+            headers=headers, params={"countryCode": "US"}, timeout=15,
         )
         if resp.status_code != 200:
-            print(f"Tidal v1 playlist metadata failed ({resp.status_code}): {resp.text[:500]}", file=sys.stderr)
+            print(f"Tidal API playlist failed ({resp.status_code}): {resp.text[:500]}", file=sys.stderr)
             return f"Tidal Playlist {playlist_uuid}", []
 
         pl_data = resp.json()
         playlist_name = pl_data.get("title", f"Tidal Playlist {playlist_uuid}")
         total_tracks = pl_data.get("numberOfTracks", 0)
-
-        # Fetch tracks with pagination
         tracks = []
         offset = 0
         limit = 100
@@ -262,7 +265,7 @@ def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]
                 timeout=15,
             )
             if tresp.status_code != 200:
-                print(f"Tidal v1 playlist tracks failed ({tresp.status_code}): {tresp.text[:500]}", file=sys.stderr)
+                print(f"Tidal API playlist tracks failed ({tresp.status_code}): {tresp.text[:500]}", file=sys.stderr)
                 break
             items = tresp.json().get("items", [])
             if not items:
@@ -270,17 +273,110 @@ def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]
             for t in items:
                 artists = [a.get("name", "") for a in t.get("artists", []) if a.get("name")]
                 artist_str = ", ".join(artists) if artists else t.get("artist", {}).get("name", "Unknown")
-                tracks.append({
-                    "artist": artist_str,
-                    "title": t.get("title", "Unknown"),
-                })
+                tracks.append({"artist": artist_str, "title": t.get("title", "Unknown")})
             offset += limit
-
         return playlist_name, tracks
-
     except Exception as e:
         print(f"Failed to extract Tidal playlist: {e}", file=sys.stderr)
         return f"Tidal Playlist {playlist_uuid}", []
+
+
+def _tidal_embed_extract(playlist_uuid: str) -> tuple[List[dict], str]:
+    """Try to extract track data from Tidal's embed page.
+    Returns (tracks_list, playlist_name) or ([], "") on failure."""
+    try:
+        resp = requests.get(
+            f"https://embed.tidal.com/playlists/{playlist_uuid}",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            print(f"Tidal embed page returned {resp.status_code}", file=sys.stderr)
+            return [], ""
+
+        html = resp.text
+
+        # Debug: dump a portion so we can see what's available
+        print(f"DEBUG Tidal embed page size: {len(html)} bytes", file=sys.stderr)
+
+        # Look for JSON data embedded in script tags (common patterns)
+        # Try __NEXT_DATA__, window.__DATA__, or inline JSON
+        import re as _re
+        tracks = []
+        playlist_name = f"Tidal Playlist {playlist_uuid}"
+
+        # Pattern 1: __NEXT_DATA__ or similar JSON blob
+        for pattern in [
+            r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+            r'window\.__DATA__\s*=\s*({.*?});',
+            r'window\.__INITIAL_STATE__\s*=\s*({.*?});',
+            r'"tracks"\s*:\s*(\[.*?\])',
+        ]:
+            match = _re.search(pattern, html, _re.DOTALL)
+            if match:
+                print(f"DEBUG Tidal embed matched pattern: {pattern[:40]}", file=sys.stderr)
+                try:
+                    blob = json.loads(match.group(1))
+                    tracks, playlist_name = _parse_tidal_json_blob(blob, playlist_uuid)
+                    if tracks:
+                        return tracks, playlist_name
+                except json.JSONDecodeError:
+                    pass
+
+        # Pattern 2: meta tags for playlist title
+        title_match = _re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
+        if title_match:
+            playlist_name = title_match.group(1)
+
+        # Pattern 3: structured track entries in HTML
+        # Look for track titles/artists in the rendered HTML
+        track_matches = _re.findall(
+            r'data-track-title="([^"]+)"[^>]*data-track-artist="([^"]+)"', html
+        )
+        if track_matches:
+            for title, artist in track_matches:
+                tracks.append({"artist": artist, "title": title})
+            return tracks, playlist_name
+
+        # Dump first 2000 chars for debugging if nothing matched
+        print(f"DEBUG Tidal embed first 2000 chars: {html[:2000]}", file=sys.stderr)
+        return [], ""
+
+    except Exception as e:
+        print(f"Tidal embed extraction failed: {e}", file=sys.stderr)
+        return [], ""
+
+
+def _parse_tidal_json_blob(blob, playlist_uuid: str) -> tuple[List[dict], str]:
+    """Try to extract tracks from a JSON blob found in the embed page."""
+    tracks = []
+    playlist_name = f"Tidal Playlist {playlist_uuid}"
+
+    # Handle various JSON structures
+    if isinstance(blob, list):
+        # Direct track array
+        for t in blob:
+            if isinstance(t, dict) and ("title" in t or "name" in t):
+                title = t.get("title", t.get("name", "Unknown"))
+                artist = t.get("artist", {}).get("name", "") if isinstance(t.get("artist"), dict) else t.get("artist", "Unknown")
+                if isinstance(t.get("artists"), list):
+                    artist = ", ".join(a.get("name", "") for a in t["artists"] if a.get("name"))
+                tracks.append({"artist": artist or "Unknown", "title": title})
+    elif isinstance(blob, dict):
+        # Look for playlist name
+        if "title" in blob:
+            playlist_name = blob["title"]
+        elif "name" in blob:
+            playlist_name = blob["name"]
+
+        # Recurse into common keys
+        for key in ["tracks", "items", "data", "playlist", "props", "pageProps"]:
+            if key in blob:
+                sub_tracks, sub_name = _parse_tidal_json_blob(blob[key], playlist_uuid)
+                if sub_tracks:
+                    return sub_tracks, sub_name if sub_name != f"Tidal Playlist {playlist_uuid}" else playlist_name
+
+    return tracks, playlist_name
 
 
 def extract_playlist_tracks(url: str) -> tuple[str, str, List[dict]]:
