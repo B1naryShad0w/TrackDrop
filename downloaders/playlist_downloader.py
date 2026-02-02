@@ -296,50 +296,39 @@ def _tidal_embed_extract(playlist_uuid: str) -> tuple[List[dict], str]:
 
         html = resp.text
 
-        # Debug: dump a portion so we can see what's available
         print(f"DEBUG Tidal embed page size: {len(html)} bytes", file=sys.stderr)
 
-        # Look for JSON data embedded in script tags (common patterns)
-        # Try __NEXT_DATA__, window.__DATA__, or inline JSON
         import re as _re
-        tracks = []
-        playlist_name = f"Tidal Playlist {playlist_uuid}"
 
-        # Pattern 1: __NEXT_DATA__ or similar JSON blob
-        for pattern in [
-            r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
-            r'window\.__DATA__\s*=\s*({.*?});',
-            r'window\.__INITIAL_STATE__\s*=\s*({.*?});',
-            r'"tracks"\s*:\s*(\[.*?\])',
-        ]:
-            match = _re.search(pattern, html, _re.DOTALL)
-            if match:
-                print(f"DEBUG Tidal embed matched pattern: {pattern[:40]}", file=sys.stderr)
+        # The embed page loads track data via JS. Look for script files
+        # that contain the embed player's built-in API token/logic.
+        script_urls = _re.findall(r'<script[^>]+src="(/embed-resources/js/[^"]+)"', html)
+        print(f"DEBUG Tidal embed script URLs: {script_urls}", file=sys.stderr)
+
+        # Also dump any inline scripts that might contain tokens or config
+        inline_scripts = _re.findall(r'<script>(.*?)</script>', html, _re.DOTALL)
+        for i, script in enumerate(inline_scripts):
+            print(f"DEBUG Tidal embed inline script {i}: {script.strip()[:500]}", file=sys.stderr)
+
+        # Try fetching the main JS bundle to find the API token/client ID
+        for script_url in script_urls:
+            if 'main' in script_url or 'app' in script_url or 'index' in script_url:
                 try:
-                    blob = json.loads(match.group(1))
-                    tracks, playlist_name = _parse_tidal_json_blob(blob, playlist_uuid)
-                    if tracks:
-                        return tracks, playlist_name
-                except json.JSONDecodeError:
-                    pass
+                    js_resp = requests.get(
+                        f"https://embed.tidal.com{script_url}",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=15,
+                    )
+                    if js_resp.status_code == 200:
+                        js_text = js_resp.text
+                        # Look for client IDs, tokens, API URLs
+                        token_matches = _re.findall(r'["\']([a-zA-Z0-9]{20,40})["\']', js_text)
+                        api_matches = _re.findall(r'(api\.tidal\.com[^"\']*|listen\.tidal\.com[^"\']*)', js_text)
+                        client_id_matches = _re.findall(r'(?:clientId|client_id|token)["\s:=]+["\']([^"\']+)["\']', js_text, _re.IGNORECASE)
+                        print(f"DEBUG Tidal JS bundle ({script_url}): found {len(token_matches)} token-like strings, API URLs: {api_matches[:5]}, clientId matches: {client_id_matches[:5]}", file=sys.stderr)
+                except Exception as e:
+                    print(f"DEBUG Failed to fetch Tidal JS bundle: {e}", file=sys.stderr)
 
-        # Pattern 2: meta tags for playlist title
-        title_match = _re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
-        if title_match:
-            playlist_name = title_match.group(1)
-
-        # Pattern 3: structured track entries in HTML
-        # Look for track titles/artists in the rendered HTML
-        track_matches = _re.findall(
-            r'data-track-title="([^"]+)"[^>]*data-track-artist="([^"]+)"', html
-        )
-        if track_matches:
-            for title, artist in track_matches:
-                tracks.append({"artist": artist, "title": title})
-            return tracks, playlist_name
-
-        # Dump first 2000 chars for debugging if nothing matched
-        print(f"DEBUG Tidal embed first 2000 chars: {html[:2000]}", file=sys.stderr)
         return [], ""
 
     except Exception as e:
