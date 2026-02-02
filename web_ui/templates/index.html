@@ -1307,7 +1307,24 @@
     <div id="playlistModeOverlay" class="pl-popup-overlay">
         <div class="pl-popup">
             <h3>Download Playlist</h3>
-            <p id="playlistModeUrl"></p>
+            <p id="playlistModeName" style="font-weight: 500; margin-bottom: 4px;"></p>
+            <p id="playlistModeUrl" style="font-size: 0.8em; color: #888; word-break: break-all;"></p>
+            <p id="playlistModeTrackCount" style="font-size: 0.85em; color: #b0b0b0; margin-bottom: 12px;"></p>
+
+            <!-- Duplicate name warning -->
+            <div id="playlistDuplicateSection" style="display: none; margin-bottom: 14px; padding: 10px; background: rgba(255,170,0,0.1); border-radius: 8px; border: 1px solid rgba(255,170,0,0.3);">
+                <p style="color: #ffa600; font-size: 0.9em; margin: 0 0 8px;">A playlist with this name already exists in Navidrome.</p>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <label style="font-size: 0.85em; cursor: pointer;">
+                        <input type="radio" name="playlistDuplicateAction" value="overwrite" checked> Overwrite existing
+                    </label>
+                    <label style="font-size: 0.85em; cursor: pointer;">
+                        <input type="radio" name="playlistDuplicateAction" value="rename"> Use different name
+                    </label>
+                </div>
+                <input type="text" id="playlistRenameInput" style="display: none; width: 100%; padding: 8px; border-radius: 4px; background: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color); box-sizing: border-box;" placeholder="Enter new playlist name">
+            </div>
+
             <div class="pl-popup-btns">
                 <button class="btn-monitor" onclick="submitPlaylistDownload(true)">
                     Download &amp; Monitor for new tracks
@@ -2553,9 +2570,38 @@ async function createSmartPlaylists() {
         // --- Playlist mode popup state ---
         let _pendingPlaylistLink = '';
 
-        function _showPlaylistPopup(url) {
+        async function _showPlaylistPopup(url) {
             _pendingPlaylistLink = url;
             document.getElementById('playlistModeUrl').textContent = url;
+
+            // Reset duplicate section
+            const dupSection = document.getElementById('playlistDuplicateSection');
+            dupSection.style.display = 'none';
+            document.getElementById('playlistRenameInput').style.display = 'none';
+            document.getElementById('playlistRenameInput').value = '';
+            document.querySelectorAll('input[name="playlistDuplicateAction"]').forEach(r => { if (r.value === 'overwrite') r.checked = true; });
+
+            // Call preflight to check for duplicates
+            try {
+                const resp = await fetch('/api/playlist_preflight', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const result = await resp.json();
+                if (result.status === 'success') {
+                    document.getElementById('playlistModeUrl').textContent = `${result.name} (${result.track_count} tracks) — ${url}`;
+                    if (result.exists) {
+                        dupSection.style.display = 'block';
+                        document.getElementById('playlistRenameInput').value = result.name + ' (2)';
+                    }
+                    // Store the original name for later use
+                    dupSection.dataset.originalName = result.name;
+                }
+            } catch (e) {
+                console.error('Preflight error:', e);
+            }
+
             document.getElementById('playlistIntervalSection').classList.add('open');
             document.getElementById('playlistModeOverlay').classList.add('open');
         }
@@ -2570,8 +2616,15 @@ async function createSmartPlaylists() {
             if (e.target === this) _hidePlaylistPopup();
         });
 
+        // Toggle rename input visibility based on radio selection
+        document.querySelectorAll('input[name="playlistDuplicateAction"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                document.getElementById('playlistRenameInput').style.display =
+                    this.value === 'rename' ? 'block' : 'none';
+            });
+        });
+
         async function submitPlaylistDownload(monitor) {
-            _hidePlaylistPopup();
             const musicLink = _pendingPlaylistLink;
             if (!musicLink) return;
 
@@ -2582,11 +2635,30 @@ async function createSmartPlaylists() {
                 : 'Playlist download started. Check the download queue for progress.');
             openDownloadQueueModal();
 
+            // Determine playlist name override
+            let playlistName = null;
+            const dupSection = document.getElementById('playlistDuplicateSection');
+            if (dupSection.style.display !== 'none') {
+                const action = document.querySelector('input[name="playlistDuplicateAction"]:checked').value;
+                if (action === 'rename') {
+                    playlistName = document.getElementById('playlistRenameInput').value.trim();
+                    if (!playlistName) {
+                        showMessage('error', 'Please enter a name for the playlist.');
+                        return;
+                    }
+                }
+                // overwrite: playlistName stays null, backend uses original name and overwrites
+            }
+
+            _hidePlaylistPopup();
+
             try {
+                const body = { link: musicLink, monitor, poll_interval_hours: pollInterval };
+                if (playlistName) body.playlist_name = playlistName;
                 const response = await fetch('/api/download_from_link', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ link: musicLink, monitor, poll_interval_hours: pollInterval })
+                    body: JSON.stringify(body)
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
