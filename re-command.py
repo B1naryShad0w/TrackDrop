@@ -212,6 +212,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         ]
         downloaded_songs_info = []
         failed_count = 0
+        skipped_count = 0
 
         def _update_rec(status, message):
             update_status_file(
@@ -221,6 +222,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 tracks=track_statuses,
                 downloaded_count=len(downloaded_songs_info),
                 failed_count=failed_count,
+                skipped_count=skipped_count,
                 download_type="playlist",
             )
 
@@ -236,13 +238,18 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 try:
                     # Determine if this is a ListenBrainz recommendation
                     lb_recommendation = song_info.get('source', '').lower() == 'listenbrainz'
-                    downloaded_file_path = await track_downloader.download_track(song_info, lb_recommendation=lb_recommendation)
+                    downloaded_file_path = await track_downloader.download_track(song_info, lb_recommendation=lb_recommendation, navidrome_api=navidrome_api)
                     if downloaded_file_path:
                         song_info['downloaded_path'] = downloaded_file_path
                         downloaded_songs_info.append(song_info)
                         track_statuses[i]["status"] = "completed"
                         track_statuses[i]["message"] = "Downloaded"
                         _update_rec("in_progress", f"Downloaded {i+1}/{total}: {label}")
+                    elif song_info.get('_duplicate'):
+                        skipped_count += 1
+                        track_statuses[i]["status"] = "skipped"
+                        track_statuses[i]["message"] = "Already in library"
+                        _update_rec("in_progress", f"Skipped {i+1}/{total}: {label} (already in library)")
                     else:
                         failed_count += 1
                         track_statuses[i]["status"] = "failed"
@@ -288,17 +295,22 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     print("Script finished.")
     downloaded_count = len(downloaded_songs_info) if 'downloaded_songs_info' in locals() else 0
     final_failed = failed_count if 'failed_count' in locals() else 0
+    final_skipped = skipped_count if 'skipped_count' in locals() else 0
     total_count = len(unique_recommendations)
-    message = f"Downloaded {downloaded_count} of {total_count} tracks."
+    parts = [f"{downloaded_count} downloaded"]
+    if final_skipped:
+        parts.append(f"{final_skipped} already in library")
     if final_failed:
-        message += f" {final_failed} failed."
+        parts.append(f"{final_failed} failed")
+    message = ", ".join(parts) + "."
     title = "Download Complete"
     final_tracks = track_statuses if 'track_statuses' in locals() else None
     update_status_file(
         download_id, "completed", message, title,
         current_track_count=downloaded_count, total_track_count=total_count,
         tracks=final_tracks, downloaded_count=downloaded_count,
-        failed_count=final_failed, download_type="playlist",
+        skipped_count=final_skipped, failed_count=final_failed,
+        download_type="playlist",
     )
     return downloaded_count, total_count
 

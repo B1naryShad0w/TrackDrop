@@ -18,7 +18,7 @@ class TrackDownloader:
         self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         self.deezer_arl = config.DEEZER_ARL
 
-    async def download_track(self, song_info, lb_recommendation=None, deezer_link=None):
+    async def download_track(self, song_info, lb_recommendation=None, deezer_link=None, navidrome_api=None):
         """Downloads a track using the configured method."""
         # Reload config to get the latest DOWNLOAD_METHOD
         importlib.reload(config)
@@ -52,6 +52,21 @@ class TrackDownloader:
         if not deezer_link:
             print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
             return None
+
+        # Duplicate check: if navidrome_api is provided, search using the
+        # Deezer canonical metadata (which matches what Navidrome indexes).
+        if navidrome_api:
+            search_artist = song_info.get('deezer_album_artist') or (song_info.get('deezer_artists', [None]) or [None])[0] or song_info['artist']
+            search_title = song_info.get('deezer_title') or song_info['title']
+            try:
+                salt, token = navidrome_api._get_navidrome_auth_params()
+                existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
+                if existing:
+                    print(f"  Already in Navidrome: {search_artist} - {search_title} (id={existing['id']})")
+                    song_info['_duplicate'] = True
+                    return None
+            except Exception as e:
+                print(f"  Warning: Navidrome duplicate check failed: {e}", file=sys.stderr)
 
         downloaded_file_path = None
         if current_download_method == "deemix":

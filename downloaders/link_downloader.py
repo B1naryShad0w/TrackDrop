@@ -270,6 +270,48 @@ class LinkDownloader:
                 print(f"Could not get song info for {url}", file=sys.stderr)
                 return []
 
+            # --- Duplicate detection ---
+            # For tracks: resolve Deezer metadata and check Navidrome before downloading.
+            # For albums: check each track in the album against Navidrome.
+            # Uses the download provider's (Deezer) canonical metadata for the search
+            # so it matches what Navidrome has indexed from previously downloaded files.
+            salt, token = self.navidrome_api._get_navidrome_auth_params()
+            media_type = song_info['type']
+
+            if media_type == "track":
+                deezer_details = await self.deezer_api.get_deezer_track_details(song_info['deezer_id'])
+                if deezer_details:
+                    search_artist = deezer_details.get("album_artist") or (deezer_details.get("artists", [None])[0])
+                    search_title = deezer_details.get("title")
+                    if search_artist and search_title:
+                        existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
+                        if existing:
+                            print(f"  Already in Navidrome: {search_artist} - {search_title} (id={existing['id']})")
+                            update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}")
+                            return []
+
+            elif media_type == "album":
+                # Get album tracklist from Deezer and check which tracks already exist
+                album_resp = await self.deezer_api._make_request_with_retries(f"https://api.deezer.com/album/{song_info['deezer_id']}/tracks")
+                if album_resp and album_resp.status_code == 200:
+                    album_tracks = album_resp.json().get("data", [])
+                    if album_tracks:
+                        all_exist = True
+                        for t in album_tracks:
+                            t_artist = t.get("artist", {}).get("name", "")
+                            t_title = t.get("title", "")
+                            if t_artist and t_title:
+                                if not self.navidrome_api._search_song_in_navidrome(t_artist, t_title, salt, token):
+                                    all_exist = False
+                                    break
+                            else:
+                                all_exist = False
+                                break
+                        if all_exist:
+                            print(f"  All {len(album_tracks)} album tracks already in Navidrome, skipping download.")
+                            update_status_file(download_id, "completed", f"Album already in library ({len(album_tracks)} tracks).")
+                            return []
+
             # Download using streamrip for all Deezer IDs
             print(f"DEBUG: Attempting Deezer client login...", file=sys.stderr)
             await self.deezer_client.login()

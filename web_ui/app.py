@@ -1346,13 +1346,16 @@ def trigger_track_download():
             'download_id': download_id # Pass download_id to the downloader
         }
 
-        downloaded_path = asyncio.run(track_downloader.download_track(track_info, lb_recommendation=lb_recommendation))
+        downloaded_path = asyncio.run(track_downloader.download_track(track_info, lb_recommendation=lb_recommendation, navidrome_api=navidrome_api_global))
         
         if downloaded_path:
             update_download_status(download_id, 'completed', "Download completed.")
             # Organize the downloaded files -> music library
             navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
             return jsonify({"status": "success", "message": f"Successfully downloaded and organized track: {artist} - {title}."})
+        elif track_info.get('_duplicate'):
+            update_download_status(download_id, 'completed', f"Already in library: {artist} - {title}")
+            return jsonify({"status": "info", "message": f"Track already in library: {artist} - {title}."})
         else:
             update_download_status(download_id, 'failed', "Download failed. See logs for details.")
             return jsonify({"status": "error", "message": f"Failed to download track: {artist} - {title}."})
@@ -1776,6 +1779,7 @@ async def download_llm_recommendations_background(recommendations, download_id):
     total_tracks = len(recommendations)
     downloaded_count = 0
     failed_count = 0
+    skipped_count = 0
     track_statuses = [
         {"artist": s.get("artist", "Unknown"), "title": s.get("title", "Unknown"), "status": "pending", "message": ""}
         for s in recommendations
@@ -1788,6 +1792,7 @@ async def download_llm_recommendations_background(recommendations, download_id):
             total_track_count=total_tracks,
             tracks=track_statuses,
             downloaded_count=downloaded_count,
+            skipped_count=skipped_count,
             failed_count=failed_count,
             download_type="playlist",
         )
@@ -1804,13 +1809,18 @@ async def download_llm_recommendations_background(recommendations, download_id):
         song['recording_mbid'] = '' # Not available from LLM
         song['release_date'] = '' # Not available from LLM
 
-        downloaded_path = await track_downloader.download_track(song)
+        downloaded_path = await track_downloader.download_track(song, navidrome_api=navidrome_api_global)
 
         if downloaded_path:
             downloaded_count += 1
             track_statuses[i]["status"] = "completed"
             track_statuses[i]["message"] = "Downloaded"
             _update_llm("in_progress", f"Downloaded {i+1}/{total_tracks}: {label}")
+        elif song.get('_duplicate'):
+            skipped_count += 1
+            track_statuses[i]["status"] = "skipped"
+            track_statuses[i]["message"] = "Already in library"
+            _update_llm("in_progress", f"Skipped {i+1}/{total_tracks}: {label} (already in library)")
         else:
             failed_count += 1
             track_statuses[i]["status"] = "failed"
@@ -1820,7 +1830,12 @@ async def download_llm_recommendations_background(recommendations, download_id):
     # Organize files after all downloads are attempted
     navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
 
-    _update_llm("completed", f"Download complete. {downloaded_count} downloaded, {failed_count} failed.")
+    parts = [f"{downloaded_count} downloaded"]
+    if skipped_count:
+        parts.append(f"{skipped_count} already in library")
+    if failed_count:
+        parts.append(f"{failed_count} failed")
+    _update_llm("completed", ", ".join(parts) + ".")
 
 if __name__ == '__main__':
     download_poller_thread = threading.Thread(target=poll_download_statuses, daemon=True)
