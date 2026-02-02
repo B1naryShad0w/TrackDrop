@@ -436,41 +436,47 @@ async def download_playlist(
     all_navidrome_ids = []
     newly_downloaded = []
 
-    # Build lookup from playlist history: tracks we already downloaded and matched
-    history_lookup = {}
-    for ht in history.get("tracks", []):
-        nid = ht.get("navidrome_id")
-        if nid:
-            key = (ht.get("artist", "").lower().strip(), ht.get("title", "").lower().strip())
-            history_lookup[key] = nid
-
     for i, track in enumerate(playlist_tracks):
         artist = track.get("artist", "Unknown")
         title = track.get("title", "Unknown")
         label = f"{artist} - {title}"
 
         track_statuses[i]["status"] = "in_progress"
-        track_statuses[i]["message"] = "Checking library..."
+        track_statuses[i]["message"] = "Resolving track..."
         _update("in_progress",
                 f"Processing {i+1}/{total}: {label}",
                 title=playlist_name, current=downloaded_count, total=total)
 
-        # Check playlist history first (deterministic, no fuzzy matching)
-        history_key = (artist.lower().strip(), title.lower().strip())
-        history_nid = history_lookup.get(history_key)
-        if history_nid:
-            print(f"  Found in playlist history: {label} (id={history_nid})")
-            all_navidrome_ids.append(history_nid)
-            skipped_count += 1
-            track_statuses[i]["status"] = "skipped"
-            track_statuses[i]["message"] = "Already in library"
-            _update("in_progress",
-                    f"Processing {i+1}/{total}: {label} (already in library)",
-                    title=playlist_name, current=downloaded_count, total=total)
-            continue
+        # Resolve via Deezer to get the canonical metadata that would end up
+        # in the file tags (and therefore in Navidrome's index). This makes
+        # the library check deterministic regardless of which playlist
+        # provider (Spotify/Tidal/etc) supplied the original artist/title.
+        deezer_link = None
+        deezer_artist = None
+        deezer_title = None
+        try:
+            from apis.deezer_api import DeezerAPI
+            deezer_api = DeezerAPI()
+            deezer_link = await deezer_api.get_deezer_track_link(artist, title)
+            if deezer_link:
+                track_id = deezer_link.split('/')[-1]
+                deezer_details = await deezer_api.get_deezer_track_details(track_id)
+                if deezer_details:
+                    # Primary artist name as Deezer/Navidrome sees it
+                    deezer_artist = deezer_details.get("album_artist") or (deezer_details.get("artists", [None])[0])
+                    deezer_title = deezer_details.get("title")
+        except Exception as e:
+            print(f"  Deezer resolution error for {label}: {e}")
 
-        # Fallback: search Navidrome by artist/title
-        existing = navidrome_api._search_song_in_navidrome(artist, title, salt, token)
+        # Search Navidrome using Deezer metadata first, fall back to playlist metadata
+        search_artist = deezer_artist or artist
+        search_title = deezer_title or title
+        track_statuses[i]["message"] = "Checking library..."
+
+        existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
+        # If Deezer metadata didn't match, try original playlist metadata as fallback
+        if not existing and deezer_artist:
+            existing = navidrome_api._search_song_in_navidrome(artist, title, salt, token)
         if existing:
             print(f"  Already in Navidrome: {label} (id={existing['id']})")
             all_navidrome_ids.append(existing["id"])
@@ -483,7 +489,17 @@ async def download_playlist(
             continue
 
         # Download via TrackDownloader
-        track_statuses[i]["message"] = "Searching Deezer..."
+        if not deezer_link:
+            failed_count += 1
+            track_statuses[i]["status"] = "failed"
+            track_statuses[i]["message"] = "Not found on Deezer"
+            print(f"  Failed to download: {label}")
+            _update("in_progress",
+                    f"Failed {i+1}/{total}: {label}",
+                    title=playlist_name, current=downloaded_count, total=total)
+            continue
+
+        track_statuses[i]["message"] = "Downloading..."
         _update("in_progress",
                 f"Downloading {i+1}/{total}: {label}",
                 title=playlist_name, current=downloaded_count, total=total)
