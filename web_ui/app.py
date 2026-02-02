@@ -23,6 +23,7 @@ from apis.deezer_api import DeezerAPI
 from apis.llm_api import LlmAPI
 from downloaders.track_downloader import TrackDownloader
 from downloaders.link_downloader import LinkDownloader
+from downloaders.playlist_downloader import is_playlist_url, download_playlist, extract_playlist_tracks
 from utils import Tagger
 from web_ui.user_manager import UserManager, login_required, get_current_user
 import uuid
@@ -1344,6 +1345,35 @@ def download_from_link():
 
         if not link:
             return jsonify({"status": "error", "message": "Link is required"}), 400
+
+        # Check if it's a playlist URL — handle in background thread
+        if is_playlist_url(link):
+            download_id = str(uuid.uuid4())
+            username = get_current_user()
+            downloads_queue[download_id] = {
+                'id': download_id,
+                'artist': 'Playlist Download',
+                'title': link,
+                'status': 'in_progress',
+                'start_time': datetime.now().isoformat(),
+                'message': 'Extracting playlist tracks...',
+                'current_track_count': 0,
+                'total_track_count': None,
+            }
+            threading.Thread(
+                target=lambda: asyncio.run(
+                    download_playlist(
+                        url=link,
+                        username=username,
+                        navidrome_api=navidrome_api_global,
+                        download_id=download_id,
+                        update_status_fn=update_download_status,
+                    )
+                ),
+                daemon=True,
+            ).start()
+            return jsonify({"status": "success", "message": "Playlist download started in the background."})
+
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
