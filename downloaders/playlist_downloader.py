@@ -222,79 +222,59 @@ def _get_tidal_client_token() -> Optional[str]:
 
 def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]:
     """Fetch tracks from a Tidal playlist via the official Developer API.
-    Uses Client Credentials flow (TIDAL_CLIENT_ID / TIDAL_CLIENT_SECRET).
+    Uses Client Credentials flow (TIDAL_CLIENT_ID / TIDAL_CLIENT_SECRET)
+    against the v1 API which supports public playlist access.
     Returns (playlist_name, [{'artist': ..., 'title': ...}, ...])
     """
     token = _get_tidal_client_token()
     if not token:
         return f"Tidal Playlist {playlist_uuid}", []
 
-    base = "https://openapi.tidal.com/v2"
     headers = {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/vnd.tidal.v1+json",
-        "Accept": "application/vnd.tidal.v1+json",
+        "Accept": "application/json",
     }
 
     try:
-        # Fetch playlist metadata
+        # Try v1 API first (supports playlist access with bearer token)
         resp = requests.get(
-            f"{base}/playlists/{playlist_uuid}",
+            f"https://api.tidal.com/v1/playlists/{playlist_uuid}",
             headers=headers, params={"countryCode": "US"},
             timeout=15,
         )
         if resp.status_code != 200:
-            print(f"Tidal playlist metadata request failed ({resp.status_code}): {resp.text[:500]}", file=sys.stderr)
+            print(f"Tidal v1 playlist metadata failed ({resp.status_code}): {resp.text[:500]}", file=sys.stderr)
             return f"Tidal Playlist {playlist_uuid}", []
 
         pl_data = resp.json()
-        # JSON:API format: data.attributes.name
-        attrs = pl_data.get("data", {}).get("attributes", {})
-        playlist_name = attrs.get("name", f"Tidal Playlist {playlist_uuid}")
+        playlist_name = pl_data.get("title", f"Tidal Playlist {playlist_uuid}")
+        total_tracks = pl_data.get("numberOfTracks", 0)
 
-        # Fetch playlist items (tracks) via relationship endpoint
+        # Fetch tracks with pagination
         tracks = []
-        items_url = f"{base}/playlists/{playlist_uuid}/relationships/items"
-        cursor = None
-        while True:
-            params = {"countryCode": "US", "include": "items"}
-            if cursor:
-                params["page[cursor]"] = cursor
-            iresp = requests.get(items_url, headers=headers, params=params, timeout=15)
-            if iresp.status_code != 200:
-                print(f"Tidal playlist items request failed ({iresp.status_code}): {iresp.text[:500]}", file=sys.stderr)
+        offset = 0
+        limit = 100
+        while offset < max(total_tracks, 1):
+            tresp = requests.get(
+                f"https://api.tidal.com/v1/playlists/{playlist_uuid}/tracks",
+                headers=headers,
+                params={"countryCode": "US", "limit": limit, "offset": offset},
+                timeout=15,
+            )
+            if tresp.status_code != 200:
+                print(f"Tidal v1 playlist tracks failed ({tresp.status_code}): {tresp.text[:500]}", file=sys.stderr)
                 break
-
-            idata = iresp.json()
-            items = idata.get("data", [])
+            items = tresp.json().get("items", [])
             if not items:
                 break
-
-            # Included resources contain the full track data
-            included = {r["id"]: r for r in idata.get("included", [])}
-
-            for item in items:
-                track_id = item.get("id", "")
-                track_res = included.get(track_id, {})
-                t_attrs = track_res.get("attributes", {})
-                title = t_attrs.get("title", "Unknown")
-                artist_name = t_attrs.get("artistName", "Unknown")
-                tracks.append({"artist": artist_name, "title": title})
-
-            # Pagination via cursor
-            next_cursor = idata.get("links", {}).get("next")
-            if not next_cursor or next_cursor == cursor:
-                break
-            # next_cursor may be a full URL or just a cursor value
-            if next_cursor.startswith("http"):
-                # Extract cursor param from URL
-                from urllib.parse import urlparse, parse_qs
-                parsed = parse_qs(urlparse(next_cursor).query)
-                cursor = parsed.get("page[cursor]", [None])[0]
-                if not cursor:
-                    break
-            else:
-                cursor = next_cursor
+            for t in items:
+                artists = [a.get("name", "") for a in t.get("artists", []) if a.get("name")]
+                artist_str = ", ".join(artists) if artists else t.get("artist", {}).get("name", "Unknown")
+                tracks.append({
+                    "artist": artist_str,
+                    "title": t.get("title", "Unknown"),
+                })
+            offset += limit
 
         return playlist_name, tracks
 
