@@ -517,25 +517,36 @@ async def download_playlist(
         navidrome_api._start_scan()
         navidrome_api._wait_for_scan(timeout=120)
 
-        salt, token = navidrome_api._get_navidrome_auth_params()
+        # Build reverse map: temp_path -> organized_path
+        # file_path_map keys are paths from os.walk, which may differ from
+        # downloaded_path returned by streamrip. Build a basename-based lookup
+        # to handle path mismatches.
+        basename_to_organized = {}
+        for temp_path, org_path in file_path_map.items():
+            basename_to_organized[os.path.basename(temp_path)] = org_path
 
         for entry in newly_downloaded:
             nd_song = None
-            # Primary: look up by file path (most reliable for newly downloaded tracks)
-            organized_path = file_path_map.get(entry.get("downloaded_path"))
+            dl_path = entry.get("downloaded_path", "")
+
+            # 1. Direct key match in file_path_map
+            organized_path = file_path_map.get(dl_path)
+
+            # 2. Basename match (handles different subfolder nesting)
+            if not organized_path and dl_path:
+                organized_path = basename_to_organized.get(os.path.basename(dl_path))
+
+            # 3. Look up in Navidrome DB by organized file path
             if organized_path:
                 nd_song = navidrome_api._find_song_by_path(organized_path)
-            # Fallback: search by artist/title if path lookup failed
-            if not nd_song:
-                nd_song = navidrome_api._search_song_in_navidrome(
-                    entry["artist"], entry["title"], salt, token
-                )
+
             if nd_song:
                 entry["navidrome_id"] = nd_song["id"]
                 entry["file_path"] = nd_song.get("path", "")
                 all_navidrome_ids.append(nd_song["id"])
             else:
-                print(f"  Could not find in Navidrome after scan: {entry['artist']} - {entry['title']}")
+                print(f"  Could not find in Navidrome after scan: {entry['artist']} - {entry['title']} "
+                      f"(dl_path={dl_path}, organized={organized_path})")
 
     # Create/update Navidrome playlist
     if all_navidrome_ids:
