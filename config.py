@@ -35,6 +35,10 @@ LLM_BASE_URL = ""
 SPOTIFY_CLIENT_ID = ""
 SPOTIFY_CLIENT_SECRET = ""
 
+# Tidal API Configuration (for playlist extraction - Client Credentials flow)
+TIDAL_CLIENT_ID = ""
+TIDAL_CLIENT_SECRET = ""
+
 # Deezer Configuration
 DEEZER_ARL = ""
 

@@ -190,75 +190,117 @@ def _parse_artist_title(raw_title: str) -> tuple[str, str]:
     return "Unknown", raw_title.strip()
 
 
-_TIDAL_API_TOKENS = [
-    "_DSTon1kC8pABnTw",   # iOS client
-    "kgsOOmYk3zShYrNP",   # Android client
-    "wdgaB1CilGA-S_s2",   # Browser client
-]
+def _get_tidal_client_token() -> Optional[str]:
+    """Get a Tidal access token using Client Credentials flow.
+    Requires TIDAL_CLIENT_ID and TIDAL_CLIENT_SECRET."""
+    import base64
+    client_id = os.getenv("TIDAL_CLIENT_ID", "") or getattr(__import__("config"), "TIDAL_CLIENT_ID", "")
+    client_secret = os.getenv("TIDAL_CLIENT_SECRET", "") or getattr(__import__("config"), "TIDAL_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        print("Tidal Client Credentials not configured. "
+              "Set TIDAL_CLIENT_ID and TIDAL_CLIENT_SECRET to enable Tidal playlist support.",
+              file=sys.stderr)
+        return None
+    try:
+        auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        resp = requests.post(
+            "https://auth.tidal.com/v1/oauth2/token",
+            headers={
+                "Authorization": f"Basic {auth}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={"grant_type": "client_credentials"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("access_token")
+        print(f"Tidal token request failed ({resp.status_code}): {resp.text[:200]}", file=sys.stderr)
+    except Exception as e:
+        print(f"Failed to get Tidal client token: {e}", file=sys.stderr)
+    return None
 
 
 def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]:
-    """Fetch tracks from a public Tidal playlist via the v1 REST API.
-    Tries multiple known API tokens. No user login required for public playlists.
+    """Fetch tracks from a Tidal playlist via the official Developer API.
+    Uses Client Credentials flow (TIDAL_CLIENT_ID / TIDAL_CLIENT_SECRET).
     Returns (playlist_name, [{'artist': ..., 'title': ...}, ...])
     """
-    base = "https://api.tidal.com/v1"
+    token = _get_tidal_client_token()
+    if not token:
+        return f"Tidal Playlist {playlist_uuid}", []
 
-    for token in _TIDAL_API_TOKENS:
-        headers = {"x-tidal-token": token}
-        params = {"countryCode": "US"}
+    base = "https://openapi.tidal.com/v2"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/vnd.tidal.v1+json",
+        "Accept": "application/vnd.tidal.v1+json",
+    }
 
-        try:
-            # Fetch playlist metadata
-            resp = requests.get(
-                f"{base}/playlists/{playlist_uuid}",
-                headers=headers, params=params, timeout=15,
-            )
-            if resp.status_code == 401:
-                print(f"Tidal token {token[:8]}... returned 401, trying next", file=sys.stderr)
-                continue
-            resp.raise_for_status()
-            pl_data = resp.json()
-            playlist_name = pl_data.get("title", f"Tidal Playlist {playlist_uuid}")
-            total_tracks = pl_data.get("numberOfTracks", 0)
+    try:
+        # Fetch playlist metadata
+        resp = requests.get(
+            f"{base}/playlists/{playlist_uuid}",
+            headers=headers, params={"countryCode": "US"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            print(f"Tidal playlist metadata request failed ({resp.status_code}): {resp.text[:500]}", file=sys.stderr)
+            return f"Tidal Playlist {playlist_uuid}", []
 
-            # Fetch tracks with pagination
-            tracks = []
-            offset = 0
-            limit = 100
-            while offset < max(total_tracks, 1):
-                track_params = {"countryCode": "US", "limit": limit, "offset": offset}
-                tresp = requests.get(
-                    f"{base}/playlists/{playlist_uuid}/tracks",
-                    headers=headers, params=track_params, timeout=15,
-                )
-                tresp.raise_for_status()
-                items = tresp.json().get("items", [])
-                if not items:
+        pl_data = resp.json()
+        # JSON:API format: data.attributes.name
+        attrs = pl_data.get("data", {}).get("attributes", {})
+        playlist_name = attrs.get("name", f"Tidal Playlist {playlist_uuid}")
+
+        # Fetch playlist items (tracks) via relationship endpoint
+        tracks = []
+        items_url = f"{base}/playlists/{playlist_uuid}/relationships/items"
+        cursor = None
+        while True:
+            params = {"countryCode": "US", "include": "items"}
+            if cursor:
+                params["page[cursor]"] = cursor
+            iresp = requests.get(items_url, headers=headers, params=params, timeout=15)
+            if iresp.status_code != 200:
+                print(f"Tidal playlist items request failed ({iresp.status_code}): {iresp.text[:500]}", file=sys.stderr)
+                break
+
+            idata = iresp.json()
+            items = idata.get("data", [])
+            if not items:
+                break
+
+            # Included resources contain the full track data
+            included = {r["id"]: r for r in idata.get("included", [])}
+
+            for item in items:
+                track_id = item.get("id", "")
+                track_res = included.get(track_id, {})
+                t_attrs = track_res.get("attributes", {})
+                title = t_attrs.get("title", "Unknown")
+                artist_name = t_attrs.get("artistName", "Unknown")
+                tracks.append({"artist": artist_name, "title": title})
+
+            # Pagination via cursor
+            next_cursor = idata.get("links", {}).get("next")
+            if not next_cursor or next_cursor == cursor:
+                break
+            # next_cursor may be a full URL or just a cursor value
+            if next_cursor.startswith("http"):
+                # Extract cursor param from URL
+                from urllib.parse import urlparse, parse_qs
+                parsed = parse_qs(urlparse(next_cursor).query)
+                cursor = parsed.get("page[cursor]", [None])[0]
+                if not cursor:
                     break
-                for t in items:
-                    artists = [a.get("name", "") for a in t.get("artists", []) if a.get("name")]
-                    artist_str = ", ".join(artists) if artists else t.get("artist", {}).get("name", "Unknown")
-                    tracks.append({
-                        "artist": artist_str,
-                        "title": t.get("title", "Unknown"),
-                    })
-                offset += limit
+            else:
+                cursor = next_cursor
 
-            return playlist_name, tracks
+        return playlist_name, tracks
 
-        except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code == 401:
-                print(f"Tidal token {token[:8]}... returned 401, trying next", file=sys.stderr)
-                continue
-            print(f"Failed to extract Tidal playlist with token {token[:8]}...: {e}", file=sys.stderr)
-            return f"Tidal Playlist {playlist_uuid}", []
-        except Exception as e:
-            print(f"Failed to extract Tidal playlist: {e}", file=sys.stderr)
-            return f"Tidal Playlist {playlist_uuid}", []
-
-    print("All Tidal API tokens failed (401). Cannot extract playlist.", file=sys.stderr)
-    return f"Tidal Playlist {playlist_uuid}", []
+    except Exception as e:
+        print(f"Failed to extract Tidal playlist: {e}", file=sys.stderr)
+        return f"Tidal Playlist {playlist_uuid}", []
 
 
 def extract_playlist_tracks(url: str) -> tuple[str, str, List[dict]]:
