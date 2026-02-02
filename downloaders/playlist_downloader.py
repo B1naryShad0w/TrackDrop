@@ -212,11 +212,14 @@ def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]
             headers={"Content-Type": "application/json"},
             timeout=15,
         )
+        print(f"DEBUG Tidal response status: {resp.status_code}", file=sys.stderr)
+        print(f"DEBUG Tidal response body: {resp.text[:2000]}", file=sys.stderr)
         resp.raise_for_status()
         data = resp.json()
         playlist_data = data.get("data", {}).get("playlist")
         if not playlist_data:
             print(f"Tidal GraphQL returned no playlist data for {playlist_uuid}", file=sys.stderr)
+            print(f"DEBUG Full response: {json.dumps(data, indent=2)[:2000]}", file=sys.stderr)
             return f"Tidal Playlist {playlist_uuid}", []
 
         playlist_name = playlist_data.get("title", f"Tidal Playlist {playlist_uuid}")
