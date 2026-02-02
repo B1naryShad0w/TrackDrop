@@ -190,51 +190,75 @@ def _parse_artist_title(raw_title: str) -> tuple[str, str]:
     return "Unknown", raw_title.strip()
 
 
+_TIDAL_API_TOKENS = [
+    "_DSTon1kC8pABnTw",   # iOS client
+    "kgsOOmYk3zShYrNP",   # Android client
+    "wdgaB1CilGA-S_s2",   # Browser client
+]
+
+
 def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]:
-    """Fetch tracks from a public Tidal playlist using the public GraphQL API.
+    """Fetch tracks from a public Tidal playlist via the v1 REST API.
+    Tries multiple known API tokens. No user login required for public playlists.
     Returns (playlist_name, [{'artist': ..., 'title': ...}, ...])
     """
-    query = """
-    query ($playlistId: String!, $countryCode: String!) {
-        playlist(uuid: $playlistId) {
-            title
-            tracks(countryCode: $countryCode) {
-                artists { name }
-                title
-            }
-        }
-    }
-    """
-    try:
-        resp = requests.post(
-            "https://gqlapi.tidal.com/",
-            json={"query": query, "variables": {"playlistId": playlist_uuid, "countryCode": "US"}},
-            headers={"Content-Type": "application/json"},
-            timeout=15,
-        )
-        print(f"DEBUG Tidal response status: {resp.status_code}", file=sys.stderr)
-        print(f"DEBUG Tidal response body: {resp.text[:2000]}", file=sys.stderr)
-        resp.raise_for_status()
-        data = resp.json()
-        playlist_data = data.get("data", {}).get("playlist")
-        if not playlist_data:
-            print(f"Tidal GraphQL returned no playlist data for {playlist_uuid}", file=sys.stderr)
-            print(f"DEBUG Full response: {json.dumps(data, indent=2)[:2000]}", file=sys.stderr)
+    base = "https://api.tidal.com/v1"
+
+    for token in _TIDAL_API_TOKENS:
+        headers = {"x-tidal-token": token}
+        params = {"countryCode": "US"}
+
+        try:
+            # Fetch playlist metadata
+            resp = requests.get(
+                f"{base}/playlists/{playlist_uuid}",
+                headers=headers, params=params, timeout=15,
+            )
+            if resp.status_code == 401:
+                print(f"Tidal token {token[:8]}... returned 401, trying next", file=sys.stderr)
+                continue
+            resp.raise_for_status()
+            pl_data = resp.json()
+            playlist_name = pl_data.get("title", f"Tidal Playlist {playlist_uuid}")
+            total_tracks = pl_data.get("numberOfTracks", 0)
+
+            # Fetch tracks with pagination
+            tracks = []
+            offset = 0
+            limit = 100
+            while offset < max(total_tracks, 1):
+                track_params = {"countryCode": "US", "limit": limit, "offset": offset}
+                tresp = requests.get(
+                    f"{base}/playlists/{playlist_uuid}/tracks",
+                    headers=headers, params=track_params, timeout=15,
+                )
+                tresp.raise_for_status()
+                items = tresp.json().get("items", [])
+                if not items:
+                    break
+                for t in items:
+                    artists = [a.get("name", "") for a in t.get("artists", []) if a.get("name")]
+                    artist_str = ", ".join(artists) if artists else t.get("artist", {}).get("name", "Unknown")
+                    tracks.append({
+                        "artist": artist_str,
+                        "title": t.get("title", "Unknown"),
+                    })
+                offset += limit
+
+            return playlist_name, tracks
+
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 401:
+                print(f"Tidal token {token[:8]}... returned 401, trying next", file=sys.stderr)
+                continue
+            print(f"Failed to extract Tidal playlist with token {token[:8]}...: {e}", file=sys.stderr)
+            return f"Tidal Playlist {playlist_uuid}", []
+        except Exception as e:
+            print(f"Failed to extract Tidal playlist: {e}", file=sys.stderr)
             return f"Tidal Playlist {playlist_uuid}", []
 
-        playlist_name = playlist_data.get("title", f"Tidal Playlist {playlist_uuid}")
-        tracks = []
-        for t in playlist_data.get("tracks", []):
-            artists = [a["name"] for a in t.get("artists", []) if a.get("name")]
-            artist_str = ", ".join(artists) if artists else "Unknown"
-            tracks.append({
-                "artist": artist_str,
-                "title": t.get("title", "Unknown"),
-            })
-        return playlist_name, tracks
-    except Exception as e:
-        print(f"Failed to extract Tidal playlist: {e}", file=sys.stderr)
-        return f"Tidal Playlist {playlist_uuid}", []
+    print("All Tidal API tokens failed (401). Cannot extract playlist.", file=sys.stderr)
+    return f"Tidal Playlist {playlist_uuid}", []
 
 
 def extract_playlist_tracks(url: str) -> tuple[str, str, List[dict]]:
