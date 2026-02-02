@@ -7,7 +7,7 @@ import json # For pretty printing JSON in debug
 from streamrip.client import DeezerClient
 from streamrip.media import PendingSingle, PendingAlbum, PendingPlaylist
 from streamrip.config import Config
-from streamrip.db import Database, Downloads, Failed
+from streamrip.db import Database, Downloads, Failed, Dummy
 from config import *
 from utils import Tagger, sanitize_filename, update_status_file
 from apis.navidrome_api import NavidromeAPI
@@ -24,7 +24,8 @@ class LinkDownloader:
         self.track_downloader = TrackDownloader(tagger)
         self.streamrip_config = Config("/root/.config/streamrip/config.toml")
         self.deezer_client = DeezerClient(config=self.streamrip_config)
-        self.rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+        # Use Dummy DB so streamrip never skips previously-seen tracks
+        self.rip_db = Database(downloads=Dummy(), failed=Dummy())
         self.songlink_base_url = "https://api.song.link/v1-alpha.1"
 
     async def download_from_url(self, url: str, lb_recommendation: bool = False, download_id: Optional[str] = None):

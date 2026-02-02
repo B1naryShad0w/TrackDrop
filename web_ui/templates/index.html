@@ -1444,7 +1444,7 @@ async function createSmartPlaylists() {
                     <button class="dq-expand-btn" onclick="toggleTrackList('${item.id}')">
                         ${isExpanded ? '▼ Hide tracks' : '▶ Show tracks (' + tracks.length + ')'}
                     </button>
-                    <div class="dq-track-list ${isExpanded ? 'open' : ''}">
+                    <div class="dq-track-list ${isExpanded ? 'open' : ''}" data-item-id="${item.id}">
                         ${tracks.map(t => `
                             <div class="dq-track-entry">
                                 <span class="dq-track-status-icon" style="color: ${_trackStatusColor(t.status)}">${_statusIcon(t.status, 14)}</span>
@@ -1504,6 +1504,15 @@ async function createSmartPlaylists() {
             const queueContent = document.getElementById('downloadQueueModalContent');
             if (!queueContent) return;
 
+            // Preserve scroll positions before re-render
+            const mainScroll = queueContent.scrollTop;
+            const trackListScrolls = {};
+            queueContent.querySelectorAll('.dq-track-list').forEach(el => {
+                if (el.scrollTop > 0 && el.dataset.itemId) {
+                    trackListScrolls[el.dataset.itemId] = el.scrollTop;
+                }
+            });
+
             if (downloadQueue.length === 0) {
                 queueContent.innerHTML = '<p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>';
             } else {
@@ -1514,6 +1523,14 @@ async function createSmartPlaylists() {
                     return renderSimpleItem(item);
                 }).join('');
             }
+
+            // Restore scroll positions after re-render
+            queueContent.scrollTop = mainScroll;
+            queueContent.querySelectorAll('.dq-track-list').forEach(el => {
+                if (el.dataset.itemId && trackListScrolls[el.dataset.itemId]) {
+                    el.scrollTop = trackListScrolls[el.dataset.itemId];
+                }
+            });
         }
 
         async function fetchDownloadQueueStatus() {

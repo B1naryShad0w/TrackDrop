@@ -4,7 +4,7 @@ import asyncio
 from streamrip.client import DeezerClient
 from streamrip.media import Track, PendingSingle
 from streamrip.config import Config
-from streamrip.db import Database, Downloads, Failed
+from streamrip.db import Database, Downloads, Failed, Dummy
 from mutagen.id3 import ID3, COMM, error
 from tqdm import tqdm
 import sys
@@ -238,8 +238,9 @@ class TrackDownloader:
             await client.login()
             track_id = deezer_link.split('/')[-1]
 
-            # Creating a database for streamrip
-            rip_db = Database(downloads=Downloads("/app/temp_downloads/downloads.db"), failed=Failed("/app/temp_downloads/failed_downloads.db"))
+            # Use Dummy DB so streamrip never skips tracks it has seen before.
+            # Duplicate checking is handled upstream (Navidrome search).
+            rip_db = Database(downloads=Dummy(), failed=Dummy())
 
             # Get the PendingSingle object
             pending = PendingSingle(id=track_id, client=client, config=streamrip_config, db=rip_db)
