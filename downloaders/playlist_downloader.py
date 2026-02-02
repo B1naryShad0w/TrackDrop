@@ -371,6 +371,7 @@ async def download_playlist(
     navidrome_api: NavidromeAPI,
     download_id: str,
     update_status_fn=None,
+    playlist_name_override: str = None,
 ):
     """Download all tracks from a playlist URL, create a Navidrome playlist.
 
@@ -407,6 +408,9 @@ async def download_playlist(
     if not playlist_tracks:
         _update("failed", f"Could not extract tracks from playlist URL. Platform: {platform}")
         return
+
+    if playlist_name_override:
+        playlist_name = playlist_name_override
 
     total = len(playlist_tracks)
     # Initialize track statuses as pending

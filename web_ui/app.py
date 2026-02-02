@@ -1371,6 +1371,7 @@ def download_from_link():
             username = get_current_user()
             monitor = data.get('monitor', False)
             poll_interval_hours = data.get('poll_interval_hours', 24)
+            playlist_name_override = data.get('playlist_name', None)
 
             downloads_queue[download_id] = {
                 'id': download_id,
@@ -1396,12 +1397,14 @@ def download_from_link():
                         navidrome_api=navidrome_api_global,
                         download_id=download_id,
                         update_status_fn=update_download_status,
+                        playlist_name_override=playlist_name_override,
                     )
                 )
                 # If user chose to monitor, add after first successful download
                 if monitor:
                     from downloaders.playlist_downloader import extract_playlist_tracks as _extract
                     platform, name, _ = _extract(link)
+                    name = playlist_name_override or name
                     if not name or name.startswith("Unknown"):
                         name = link
                     add_monitored_playlist(
@@ -1439,6 +1442,36 @@ def download_from_link():
         print(f"Error downloading from link: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return jsonify({"status": "error", "message": f"Error initiating download from link: {e}"}), 500
+
+@app.route('/api/playlist_preflight', methods=['POST'])
+@login_required
+def playlist_preflight():
+    """Check a playlist URL: extract name/platform, check if name already exists in Navidrome."""
+    try:
+        data = request.get_json()
+        url = data.get('url', '').strip()
+        if not url or not is_playlist_url(url):
+            return jsonify({"status": "error", "message": "Invalid playlist URL"}), 400
+
+        platform, name, tracks = extract_playlist_tracks(url)
+        if not tracks:
+            return jsonify({"status": "error", "message": f"Could not extract tracks from playlist. Platform: {platform}"}), 400
+
+        # Check if a playlist with this name already exists in Navidrome
+        salt, token = navidrome_api_global._get_navidrome_auth_params()
+        existing = navidrome_api_global._find_playlist_by_name(name, salt, token)
+
+        return jsonify({
+            "status": "success",
+            "name": name,
+            "platform": platform,
+            "track_count": len(tracks),
+            "exists": existing is not None,
+        })
+    except Exception as e:
+        print(f"Error in playlist preflight: {e}", file=sys.stderr)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ---------------------------------------------------------------------------
 # Monitored Playlists API
