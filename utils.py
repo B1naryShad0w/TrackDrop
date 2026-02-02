@@ -352,7 +352,7 @@ class Tagger:
             print(f"Error fetching album art: {e}")
             return None
 
-def update_status_file(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None):
+def update_status_file(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None, **kwargs):
     if not download_id:
         return
 
@@ -380,6 +380,10 @@ def update_status_file(download_id, status, message=None, title=None, current_tr
         status_data["current_track_count"] = current_track_count
     if total_track_count is not None:
         status_data["total_track_count"] = total_track_count
+    # Pass through extra fields (e.g. tracks, skipped_count, failed_count)
+    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+        if key in kwargs and kwargs[key] is not None:
+            status_data[key] = kwargs[key]
 
     with open(status_file_path, 'w') as f:
         json.dump(status_data, f)

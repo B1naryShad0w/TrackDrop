@@ -235,7 +235,7 @@ def update_cron_schedule(new_schedule):
     return False
 
 # --- Helper to update download status (used by background tasks, or simulated) ---
-def update_download_status(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None):
+def update_download_status(download_id, status, message=None, title=None, current_track_count=None, total_track_count=None, **kwargs):
     if download_id in downloads_queue:
         item = downloads_queue[download_id]
         item['status'] = status
@@ -247,13 +247,16 @@ def update_download_status(download_id, status, message=None, title=None, curren
             item['current_track_count'] = current_track_count
         if total_track_count is not None:
             item['total_track_count'] = total_track_count
+        # Pass through extra fields
+        for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+            if key in kwargs and kwargs[key] is not None:
+                item[key] = kwargs[key]
     else:
         print(f"Download ID {download_id} not found in queue.")
-        # This can happen if app.py restarts and finds an old status file
         print(f"Download ID {download_id} not in memory queue. Creating new entry from status file.")
-        downloads_queue[download_id] = {
+        new_item = {
             'id': download_id,
-            'artist': 'Playlist Download', # Generic placeholder
+            'artist': 'Playlist Download',
             'title': title or f'Download {download_id[:8]}...',
             'status': status,
             'start_time': datetime.now().isoformat(),
@@ -261,6 +264,10 @@ def update_download_status(download_id, status, message=None, title=None, curren
             'current_track_count': current_track_count,
             'total_track_count': total_track_count
         }
+        for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+            if key in kwargs and kwargs[key] is not None:
+                new_item[key] = kwargs[key]
+        downloads_queue[download_id] = new_item
 
 DOWNLOAD_STATUS_DIR = "/tmp/recommand_download_status"
 DOWNLOAD_QUEUE_CLEANUP_INTERVAL_SECONDS = 300 # 5 minutes
@@ -301,7 +308,11 @@ def poll_download_statuses():
 
                             if needs_update:
                                 print(f"Polling: Found update for {download_id}. New status: {status}, New title: {title}")
-                                update_download_status(download_id, status, message, title, current_track_count, total_track_count)
+                                extra = {}
+                                for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+                                    if key in status_data:
+                                        extra[key] = status_data[key]
+                                update_download_status(download_id, status, message, title, current_track_count, total_track_count, **extra)
 
                             # Cleanup completed/failed entries and their files after an interval
                             if status in ['completed', 'failed']:
@@ -448,7 +459,11 @@ def get_download_queue():
                     title = status_data.get('title')
                     current_track_count = status_data.get('current_track_count')
                     total_track_count = status_data.get('total_track_count')
-                    update_download_status(download_id, status, message, title, current_track_count, total_track_count)
+                    extra = {}
+                    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+                        if key in status_data:
+                            extra[key] = status_data[key]
+                    update_download_status(download_id, status, message, title, current_track_count, total_track_count, **extra)
                 except Exception as e:
                     print(f"Error processing status file {filepath} in /api/download_queue: {e}")
 
@@ -1359,6 +1374,11 @@ def download_from_link():
                 'message': 'Extracting playlist tracks...',
                 'current_track_count': 0,
                 'total_track_count': None,
+                'download_type': 'playlist',
+                'tracks': [],
+                'downloaded_count': 0,
+                'skipped_count': 0,
+                'failed_count': 0,
             }
             threading.Thread(
                 target=lambda: asyncio.run(

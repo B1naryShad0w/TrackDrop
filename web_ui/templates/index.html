@@ -131,22 +131,29 @@
 
         .download-queue-item {
             display: flex;
-            align-items: center;
-            padding: 10px;
+            align-items: flex-start;
+            padding: 12px;
             margin-bottom: 8px;
             background-color: #3a3a5a;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            flex-direction: column;
         }
 
         .download-queue-item.in_progress { border-left: 4px solid var(--info-color); }
         .download-queue-item.completed { border-left: 4px solid var(--success-color); }
         .download-queue-item.failed { border-left: 4px solid var(--error-color); }
 
+        .download-queue-item-header {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
         .download-queue-item .track-info {
             flex-grow: 1;
             margin-left: 10px;
-            min-width: 0; /* Allow content to shrink */
+            min-width: 0;
         }
 
         .download-queue-item .track-info > div {
@@ -156,22 +163,82 @@
         }
 
         .download-queue-item .status-icon {
-            width: 48px; /* Adjusted to match spinner size */
-            height: 48px; /* Adjusted to match spinner size */
+            width: 32px;
+            height: 32px;
             margin-left: 10px;
             flex-shrink: 0;
-            display: flex; /* Make it a flex container */
-            align-items: center; /* Center content vertically */
-            justify-content: center; /* Center content horizontally */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .download-queue-item .status-icon.in_progress {
-            /* The spinner itself will handle the animation and appearance */
-            /* Removed background-color and border-radius as the spinner is now an SVG */
-            animation: none; /* Remove pulse animation as the inner spinner has its own spin animation */
+            animation: none;
         }
         .download-queue-item .status-icon.completed svg { color: var(--success-color); }
         .download-queue-item .status-icon.failed svg { color: var(--error-color); }
+
+        /* Progress bar */
+        .dq-progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #2a2a4a;
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .dq-progress-bar-inner {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        /* Stats row */
+        .dq-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 0.8em;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+        .dq-stat { display: flex; align-items: center; gap: 4px; }
+        .dq-stat-dot {
+            width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+        }
+        .dq-stat-dot.downloaded { background-color: var(--success-color); }
+        .dq-stat-dot.skipped { background-color: var(--secondary-color); }
+        .dq-stat-dot.failed { background-color: var(--error-color); }
+        .dq-stat-dot.pending { background-color: #666; }
+
+        /* Expandable track list */
+        .dq-expand-btn {
+            background: none; border: none; color: var(--accent-color);
+            cursor: pointer; font-size: 0.8em; padding: 4px 0; margin-top: 4px;
+            transition: color 0.2s; width: auto; box-shadow: none;
+        }
+        .dq-expand-btn:hover { color: var(--primary-color); background: none; transform: none; }
+        .dq-track-list {
+            width: 100%;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 6px;
+            display: none;
+        }
+        .dq-track-list.open { display: block; }
+        .dq-track-entry {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            font-size: 0.8em;
+            border-radius: 4px;
+            gap: 8px;
+        }
+        .dq-track-entry:nth-child(odd) { background-color: rgba(255,255,255,0.03); }
+        .dq-track-entry .dq-track-status-icon {
+            width: 14px; height: 14px; flex-shrink: 0;
+        }
+        .dq-track-entry .dq-track-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dq-track-entry .dq-track-msg { color: #888; font-size: 0.9em; flex-shrink: 0; }
 
         /* Responsive adjustments for the download queue */
         @media (max-width: 768px) {
@@ -875,7 +942,7 @@
         <div id="downloadFromLinkSection" class="playlist-section" style="border-top: none; padding-top: 10px; margin-top: 10px;">
             <div class="form-group" style="margin-bottom: 10px;">
                 <div class="download-link-row">
-                    <input type="text" id="musicLinkInput" placeholder="Paste a Spotify, YouTube, Deezer, or other music link..." style="flex: 1; width: 100%;">
+                    <input type="text" id="musicLinkInput" placeholder="Paste a song, album, or playlist link..." style="flex: 1; width: 100%;">
                     <button id="downloadLinkBtn" onclick="downloadFromLink()" style="white-space: nowrap; margin: 0;">Download</button>
                 </div>
             </div>
@@ -1324,6 +1391,115 @@ async function createSmartPlaylists() {
         const downloadQueue = []; // In-memory queue for display
         let downloadQueueInterval = null;
 
+        // Track which track lists are expanded (persists across re-renders)
+        const expandedItems = new Set();
+
+        function _statusIcon(status, size = 24) {
+            if (status === 'in_progress') return `<div class="spinner" style="width:${size}px;height:${size}px;"></div>`;
+            if (status === 'completed' || status === 'skipped') return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            if (status === 'failed') return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            if (status === 'pending') return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="#666"/></svg>`;
+            return '';
+        }
+
+        function _trackStatusColor(status) {
+            if (status === 'completed') return 'var(--success-color)';
+            if (status === 'skipped') return 'var(--secondary-color)';
+            if (status === 'failed') return 'var(--error-color)';
+            if (status === 'in_progress') return 'var(--info-color)';
+            return '#666';
+        }
+
+        function _escHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        function toggleTrackList(itemId) {
+            if (expandedItems.has(itemId)) expandedItems.delete(itemId);
+            else expandedItems.add(itemId);
+            updateDownloadQueueUI();
+        }
+
+        function renderPlaylistItem(item) {
+            const tracks = item.tracks || [];
+            const total = item.total_track_count || tracks.length || 0;
+            const dl = item.downloaded_count || 0;
+            const skip = item.skipped_count || 0;
+            const fail = item.failed_count || 0;
+            const processed = dl + skip + fail;
+            const pending = Math.max(0, total - processed);
+            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+            const isExpanded = expandedItems.has(item.id);
+
+            // Progress bar color: green if completed, blue if in progress, red if failed
+            let barColor = 'var(--info-color)';
+            if (item.status === 'completed') barColor = 'var(--success-color)';
+            else if (item.status === 'failed') barColor = 'var(--error-color)';
+
+            let trackListHtml = '';
+            if (tracks.length > 0) {
+                trackListHtml = `
+                    <button class="dq-expand-btn" onclick="toggleTrackList('${item.id}')">
+                        ${isExpanded ? '▼ Hide tracks' : '▶ Show tracks (' + tracks.length + ')'}
+                    </button>
+                    <div class="dq-track-list ${isExpanded ? 'open' : ''}">
+                        ${tracks.map(t => `
+                            <div class="dq-track-entry">
+                                <span class="dq-track-status-icon" style="color: ${_trackStatusColor(t.status)}">${_statusIcon(t.status, 14)}</span>
+                                <span class="dq-track-label">${_escHtml(t.artist)} - ${_escHtml(t.title)}</span>
+                                <span class="dq-track-msg">${_escHtml(t.message)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="download-queue-item ${item.status}">
+                    <div class="download-queue-item-header">
+                        <div class="track-info">
+                            <div class="track-title">${_escHtml(item.title)}</div>
+                            ${item.message ? `<div style="font-size: 0.85em; margin-top: 3px; color: ${item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : '#b0b0b0'}">${_escHtml(item.message)}</div>` : ''}
+                        </div>
+                        <div class="status-icon ${item.status}">
+                            ${_statusIcon(item.status)}
+                        </div>
+                    </div>
+                    ${total > 0 ? `
+                        <div class="dq-progress-bar">
+                            <div class="dq-progress-bar-inner" style="width: ${pct}%; background-color: ${barColor};"></div>
+                        </div>
+                        <div class="dq-stats">
+                            ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
+                            ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
+                            ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
+                            ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
+                        </div>
+                    ` : ''}
+                    ${trackListHtml}
+                </div>
+            `;
+        }
+
+        function renderSimpleItem(item) {
+            return `
+                <div class="download-queue-item ${item.status}">
+                    <div class="download-queue-item-header">
+                        <div class="track-info">
+                            <div class="track-title">${_escHtml(item.title)}</div>
+                            <div class="track-artist">${_escHtml(item.artist)}</div>
+                            ${item.message ? `<div style="font-size: 0.85em; margin-top: 3px; color: ${item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : '#b0b0b0'}">${_escHtml(item.message)}</div>` : ''}
+                        </div>
+                        <div class="status-icon ${item.status}">
+                            ${_statusIcon(item.status)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         function updateDownloadQueueUI() {
             const queueContent = document.getElementById('downloadQueueModalContent');
             if (!queueContent) return;
@@ -1332,26 +1508,10 @@ async function createSmartPlaylists() {
                 queueContent.innerHTML = '<p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>';
             } else {
                 queueContent.innerHTML = downloadQueue.map(item => {
-                    let progressText = '';
-                    if (item.current_track_count !== undefined && item.total_track_count !== undefined) {
-                        progressText = `${item.current_track_count}/${item.total_track_count} tracks downloaded`;
+                    if (item.download_type === 'playlist' || (item.tracks && item.tracks.length > 0)) {
+                        return renderPlaylistItem(item);
                     }
-                    return `
-                        <div class="download-queue-item ${item.status}">
-                            <div class="track-info">
-                                <div class="track-title">${item.title}</div>
-                                <div class="track-artist">${item.artist}</div>
-                                ${progressText ? `<div class="progress-text" style="font-size: 0.85em; margin-top: 5px; color: #b0b0b0;">${progressText}</div>` : ''}
-                                ${item.status === 'failed' && item.message ? `<div class="error-message" style="color: var(--error-color); font-size: 0.85em; margin-top: 5px;">Error: ${item.message}</div>` : ''}
-                                ${item.status === 'completed' && item.message ? `<div class="success-message" style="color: var(--success-color); font-size: 0.85em; margin-top: 5px;">${item.message}</div>` : ''}
-                            </div>
-                            <div class="status-icon ${item.status}">
-                                ${item.status === 'in_progress' ? '<div class="spinner"></div>' : ''}
-                                ${item.status === 'completed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.6111L8.92308 17.5L20 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
-                                ${item.status === 'failed' ? '<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 9V13M12 15V15.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
-                            </div>
-                        </div>
-                    `;
+                    return renderSimpleItem(item);
                 }).join('');
             }
         }
@@ -1375,7 +1535,7 @@ async function createSmartPlaylists() {
 
         // Start polling the download queue when the page loads
         document.addEventListener('DOMContentLoaded', () => {
-            downloadQueueInterval = setInterval(fetchDownloadQueueStatus, 5000); // Poll every 5 seconds
+            downloadQueueInterval = setInterval(fetchDownloadQueueStatus, 3000); // Poll every 3 seconds
         });
 
         function showMessage(type, text) {
@@ -2274,6 +2434,14 @@ async function createSmartPlaylists() {
             btn.textContent = 'Fetch All Recommendations Now';
         }
 
+        // Detect playlist URLs client-side for immediate UI feedback
+        function _isPlaylistUrl(url) {
+            return /deezer\.com(?:\/[a-z]{2})?\/playlist\/\d+/.test(url) ||
+                   /link\.deezer\.com\/s\/[a-zA-Z0-9]+/.test(url) ||
+                   /open\.spotify\.com\/playlist\/[a-zA-Z0-9]+/.test(url) ||
+                   /(?:music\.)?youtube\.com\/playlist\?list=[a-zA-Z0-9_-]+/.test(url);
+        }
+
         async function downloadFromLink() {
             const musicLink = document.getElementById('musicLinkInput').value.trim();
             const downloadLinkBtn = document.getElementById('downloadLinkBtn');
@@ -2283,16 +2451,22 @@ async function createSmartPlaylists() {
                 return;
             }
 
+            const isPlaylist = _isPlaylistUrl(musicLink);
+
             // Update button to show loading state
             const originalContent = downloadLinkBtn.innerHTML;
-            downloadLinkBtn.innerHTML = '<div class="spinner"></div>Downloading...';
+            downloadLinkBtn.innerHTML = '<div class="spinner"></div>' + (isPlaylist ? 'Processing...' : 'Downloading...');
             downloadLinkBtn.disabled = true;
 
-            // Show immediate feedback message
-            showMessage('info', 'Download started...');
-            // Add to client-side queue display immediately
-            downloadQueue.push({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
-            updateDownloadQueueUI();
+            // Show feedback and open download queue for playlists
+            if (isPlaylist) {
+                showMessage('info', 'Playlist download started. Check the download queue for progress.');
+                openDownloadQueueModal();
+            } else {
+                showMessage('info', 'Download started...');
+                downloadQueue.push({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
+                updateDownloadQueueUI();
+            }
 
             try {
                 const response = await fetch('/api/download_from_link', {
@@ -2301,16 +2475,22 @@ async function createSmartPlaylists() {
                     body: JSON.stringify({ link: musicLink })
                 });
                 const data = await response.json();
-                showMessage(data.status, data.message);
+                if (!isPlaylist) {
+                    showMessage(data.status, data.message);
+                }
+                // For playlists, progress is shown in the queue panel via polling
+                // Clear the input on success
+                if (data.status === 'success') {
+                    document.getElementById('musicLinkInput').value = '';
+                }
             } catch (error) {
                 console.error('Error downloading from link:', error);
                 showMessage('error', 'Failed to initiate download from link.');
             } finally {
-                // Reset button after a delay
                 setTimeout(() => {
                     downloadLinkBtn.innerHTML = originalContent;
                     downloadLinkBtn.disabled = false;
-                }, 2000);
+                }, isPlaylist ? 500 : 2000);
             }
         }
 

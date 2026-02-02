@@ -290,10 +290,24 @@ async def download_playlist(
         download_id: UUID for progress tracking.
         update_status_fn: Callback(download_id, status, message, title, current, total).
     """
+    # Per-track status list for UI
+    track_statuses = []  # [{artist, title, status, message}, ...]
+
     def _update(status, message, title=None, current=None, total=None):
+        extra = {
+            "tracks": track_statuses,
+            "skipped_count": skipped_count,
+            "failed_count": failed_count,
+            "downloaded_count": downloaded_count,
+            "download_type": "playlist",
+        }
         if update_status_fn:
-            update_status_fn(download_id, status, message, title, current, total)
-        update_status_file(download_id, status, message, title, current, total)
+            update_status_fn(download_id, status, message, title, current, total, **extra)
+        update_status_file(download_id, status, message, title, current, total, **extra)
+
+    downloaded_count = 0
+    skipped_count = 0
+    failed_count = 0
 
     _update("in_progress", "Extracting playlist tracks...")
 
@@ -304,7 +318,10 @@ async def download_playlist(
         return
 
     total = len(playlist_tracks)
-    _update("in_progress", f"Found {total} tracks in '{playlist_name}'. Starting downloads...",
+    # Initialize track statuses as pending
+    track_statuses = [{"artist": t.get("artist", "Unknown"), "title": t.get("title", "Unknown"), "status": "pending", "message": ""} for t in playlist_tracks]
+
+    _update("in_progress", f"Found {total} tracks. Starting downloads...",
             title=playlist_name, total=total)
 
     # Prepare history
@@ -321,17 +338,16 @@ async def download_playlist(
     track_downloader = TrackDownloader(tagger)
     salt, token = navidrome_api._get_navidrome_auth_params()
 
-    downloaded_count = 0
-    skipped_count = 0
-    failed_count = 0
-    all_navidrome_ids = []  # IDs for the final playlist (both pre-existing and newly downloaded)
-    newly_downloaded = []   # Track entries for history (only new downloads)
+    all_navidrome_ids = []
+    newly_downloaded = []
 
     for i, track in enumerate(playlist_tracks):
         artist = track.get("artist", "Unknown")
         title = track.get("title", "Unknown")
         label = f"{artist} - {title}"
 
+        track_statuses[i]["status"] = "in_progress"
+        track_statuses[i]["message"] = "Checking library..."
         _update("in_progress",
                 f"Processing {i+1}/{total}: {label}",
                 title=playlist_name, current=downloaded_count, total=total)
@@ -342,9 +358,19 @@ async def download_playlist(
             print(f"  Already in Navidrome: {label} (id={existing['id']})")
             all_navidrome_ids.append(existing["id"])
             skipped_count += 1
+            track_statuses[i]["status"] = "skipped"
+            track_statuses[i]["message"] = "Already in library"
+            _update("in_progress",
+                    f"Processing {i+1}/{total}: {label} (already in library)",
+                    title=playlist_name, current=downloaded_count, total=total)
             continue
 
-        # Download via TrackDownloader (searches Deezer by artist+title)
+        # Download via TrackDownloader
+        track_statuses[i]["message"] = "Searching Deezer..."
+        _update("in_progress",
+                f"Downloading {i+1}/{total}: {label}",
+                title=playlist_name, current=downloaded_count, total=total)
+
         song_info = {
             "artist": artist,
             "title": title,
@@ -353,7 +379,6 @@ async def download_playlist(
             "recording_mbid": "",
             "source": "Playlist",
         }
-        # If we have a deezer_id from Deezer playlist extraction, pass it
         if track.get("deezer_id"):
             song_info["deezer_id"] = track["deezer_id"]
 
@@ -372,12 +397,19 @@ async def download_playlist(
                 "downloaded_path": downloaded_path,
                 "downloaded_at": datetime.now().isoformat(),
             })
+            track_statuses[i]["status"] = "completed"
+            track_statuses[i]["message"] = "Downloaded"
             _update("in_progress",
-                    f"Downloaded {downloaded_count}/{total}: {label}",
+                    f"Downloaded {i+1}/{total}: {label}",
                     title=playlist_name, current=downloaded_count, total=total)
         else:
             failed_count += 1
+            track_statuses[i]["status"] = "failed"
+            track_statuses[i]["message"] = "Not found on Deezer"
             print(f"  Failed to download: {label}")
+            _update("in_progress",
+                    f"Failed {i+1}/{total}: {label}",
+                    title=playlist_name, current=downloaded_count, total=total)
 
     # Organize downloaded files into library
     if newly_downloaded:
@@ -385,16 +417,13 @@ async def download_playlist(
                 title=playlist_name, current=downloaded_count, total=total)
         file_path_map = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
 
-        # Trigger library scan so new files get Navidrome IDs
         _update("in_progress", "Scanning library for new files...",
                 title=playlist_name, current=downloaded_count, total=total)
         navidrome_api._start_scan()
         navidrome_api._wait_for_scan(timeout=120)
 
-        # Re-fetch auth after scan
         salt, token = navidrome_api._get_navidrome_auth_params()
 
-        # Find Navidrome IDs for newly downloaded tracks
         for entry in newly_downloaded:
             nd_song = navidrome_api._search_song_in_navidrome(
                 entry["artist"], entry["title"], salt, token
@@ -405,9 +434,6 @@ async def download_playlist(
                 all_navidrome_ids.append(nd_song["id"])
             else:
                 print(f"  Could not find in Navidrome after scan: {entry['artist']} - {entry['title']}")
-
-    # Also find Navidrome IDs for skipped tracks (already existed)
-    # (already added to all_navidrome_ids above in the loop)
 
     # Create/update Navidrome playlist
     if all_navidrome_ids:
@@ -421,7 +447,6 @@ async def download_playlist(
 
     # Save download history (only newly downloaded tracks)
     if newly_downloaded:
-        # Merge with existing history entries
         existing_entries = {
             (t["artist"].lower(), t["title"].lower())
             for t in history.get("tracks", [])
@@ -434,8 +459,8 @@ async def download_playlist(
         _save_playlist_history(history_path, history)
         print(f"Saved playlist download history to {history_path}")
 
-    msg = (f"Playlist '{playlist_name}': {downloaded_count} downloaded, "
+    msg = (f"{downloaded_count} downloaded, "
            f"{skipped_count} already in library, {failed_count} failed. "
-           f"Navidrome playlist created with {len(all_navidrome_ids)} tracks.")
+           f"Playlist created with {len(all_navidrome_ids)} tracks.")
     _update("completed", msg, title=playlist_name, current=downloaded_count, total=total)
     print(msg)
