@@ -26,6 +26,7 @@ from config import (
     ROOT_ND, USER_ND, PASSWORD_ND, MUSIC_LIBRARY_PATH,
     TARGET_COMMENT, LASTFM_TARGET_COMMENT, ALBUM_RECOMMENDATION_COMMENT,
     LISTENBRAINZ_ENABLED, LASTFM_ENABLED, LLM_TARGET_COMMENT, LLM_ENABLED,
+    ADMIN_USER, ADMIN_PASSWORD, NAVIDROME_DB_PATH,
 )
 from apis.navidrome_api import NavidromeAPI
 from utils import remove_empty_folders
@@ -47,9 +48,9 @@ def get_navidrome_api():
         lastfm_enabled=LASTFM_ENABLED,
         llm_target_comment=LLM_TARGET_COMMENT,
         llm_enabled=LLM_ENABLED,
-        admin_user=globals().get('ADMIN_USER', ''),
-        admin_password=globals().get('ADMIN_PASSWORD', ''),
-        navidrome_db_path=globals().get('NAVIDROME_DB_PATH', ''),
+        admin_user=ADMIN_USER,
+        admin_password=ADMIN_PASSWORD,
+        navidrome_db_path=NAVIDROME_DB_PATH,
     )
 
 
@@ -103,7 +104,6 @@ def cleanup_playlist(history_path: str, navidrome_api: NavidromeAPI):
 
     if not tracks:
         print("No tracks in history. Nothing to clean up.")
-        # Still try to remove the Navidrome playlist
         _remove_navidrome_playlist(navidrome_api, playlist_name)
         os.remove(history_path)
         print(f"Removed empty history file: {history_path}")
@@ -113,6 +113,7 @@ def cleanup_playlist(history_path: str, navidrome_api: NavidromeAPI):
     deleted = []
     kept = []
     failed = []
+    remaining_tracks = []  # Tracks that couldn't be processed
 
     for track in tracks:
         artist = track.get("artist", "")
@@ -122,8 +123,10 @@ def cleanup_playlist(history_path: str, navidrome_api: NavidromeAPI):
         label = f"{artist} - {title}"
 
         if not nd_id:
-            print(f"  SKIP (no navidrome_id): {label}")
-            failed.append(label)
+            # Track was never downloaded successfully (no Deezer match).
+            # No file exists to delete — just discard from history.
+            print(f"  DISCARD (never downloaded, no navidrome_id): {label}")
+            deleted.append(f"{label} (never downloaded)")
             continue
 
         # Check if song still exists in Navidrome
@@ -150,9 +153,16 @@ def cleanup_playlist(history_path: str, navidrome_api: NavidromeAPI):
             else:
                 print(f"  FAILED to delete: {label}")
                 failed.append(label)
+                remaining_tracks.append(track)
         else:
-            print(f"  FILE NOT FOUND: {label} (path: {file_path_rel})")
-            deleted.append(f"{label} (file not found)")
+            # Try searching by Navidrome's own path from the API
+            nd_path = song_details.get("path", "")
+            print(f"  FILE NOT FOUND on disk: {label}")
+            print(f"    History path: {file_path_rel}")
+            print(f"    Navidrome path: {nd_path}")
+            print(f"    Song still exists in Navidrome (id={nd_id}) but file not found.")
+            print(f"    Removing from history anyway (Navidrome will handle missing files on next scan).")
+            deleted.append(f"{label} (file not found on disk)")
 
     # Remove the Navidrome playlist
     _remove_navidrome_playlist(navidrome_api, playlist_name)
@@ -163,16 +173,24 @@ def cleanup_playlist(history_path: str, navidrome_api: NavidromeAPI):
     # Trigger a library scan
     navidrome_api._start_scan()
 
-    # Remove history file
-    os.remove(history_path)
-    print(f"\nRemoved history file: {history_path}")
+    # Handle history file
+    if remaining_tracks:
+        # Some tracks failed — keep history with only the remaining ones
+        history["tracks"] = remaining_tracks
+        with open(history_path, 'w') as f:
+            json.dump(history, f, indent=2)
+        print(f"\nUpdated history file with {len(remaining_tracks)} remaining tracks: {history_path}")
+    else:
+        # All tracks processed — remove history file
+        os.remove(history_path)
+        print(f"\nRemoved history file: {history_path}")
 
     # Summary
     print(f"\n{'='*60}")
     print(f"SUMMARY for '{playlist_name}':")
-    print(f"  Deleted: {len(deleted)}")
+    print(f"  Deleted/discarded: {len(deleted)}")
     print(f"  Kept (protected): {len(kept)}")
-    print(f"  Failed: {len(failed)}")
+    print(f"  Failed (will retry next run): {len(failed)}")
     print(f"{'='*60}")
 
     return True
@@ -183,7 +201,6 @@ def _remove_navidrome_playlist(navidrome_api: NavidromeAPI, playlist_name: str):
     salt, token = navidrome_api._get_navidrome_auth_params()
     existing = navidrome_api._find_playlist_by_name(playlist_name, salt, token)
     if existing:
-        # Clear the playlist (Subsonic API doesn't have delete, but we can empty it)
         navidrome_api._update_playlist(existing["id"], [], salt, token)
         print(f"  Cleared Navidrome playlist: {playlist_name}")
     else:

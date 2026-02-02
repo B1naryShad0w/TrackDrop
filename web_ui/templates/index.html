@@ -176,18 +176,19 @@
         /* Responsive adjustments for the download queue */
         @media (max-width: 768px) {
             .download-queue-modal {
-                width: calc(80% - 17px); /* Adjust panel width for smaller screens, account for scrollbar */
-                right: calc(-80% + 17px); /* Hidden initially, adjust for scrollbar */
-                top: 20px; /* Apply top margin responsively */
-                height: calc(100% - 40px); /* Adjust height responsively */
+                width: calc(85% - 17px);
+                right: calc(-85% + 17px);
+                top: 0;
+                height: 100%;
+                border-radius: 0;
                 border-top-left-radius: 12px;
                 border-bottom-left-radius: 12px;
+                z-index: 1100;
             }
+            /* On mobile, overlay the panel instead of pushing content */
             body.download-queue-panel-open {
-                padding-right: calc( (80% - 17px) + 20px); /* Adjust body padding for responsive panel's actual width + existing padding */
+                padding-right: 20px;
             }
-            /* No specific .container adjustment needed for small screens when panel is open. */
-            /* The container will naturally adjust with body padding and its own max-width/margin auto. */
         }
 
         .modal {
@@ -880,12 +881,6 @@
             </div>
         </div>
 
-        <div id="runNowSection" class="playlist-section" style="display: none; border-top: none; padding-top: 0; margin-top: 0;">
-            <button id="runNowBtn" onclick="runNow()" style="width: 100%; background-color: #3a3a5a; border: 1px solid var(--border-color); color: var(--text-color); font-size: 0.95em; padding: 10px;">
-                Fetch All Recommendations Now
-            </button>
-        </div>
-
         <div id="freshReleasesSection" class="playlist-section" style="display: none;">
             <div class="playlist-header">
                 <h2>Fresh Releases</h2>
@@ -939,6 +934,12 @@
                 <button onclick="downloadLlmPlaylist()" style="display: none;" class="download-btn">Download All Suggestions</button>
             </div>
             <div id="llmPlaylist" class="playlist-content"></div>
+        </div>
+
+        <div id="runNowSection" class="playlist-section" style="display: none; padding-top: 10px;">
+            <button id="runNowBtn" onclick="runNow()" style="width: 100%; background-color: #3a3a5a; border: 1px solid var(--border-color); color: var(--text-color); font-size: 0.95em; padding: 10px;">
+                Fetch All Recommendations Now
+            </button>
         </div>
 
         <!-- Download Queue Section -->
