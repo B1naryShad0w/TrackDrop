@@ -523,6 +523,13 @@ async def download_playlist(
             nd_song = navidrome_api._search_song_in_navidrome(
                 entry["artist"], entry["title"], salt, token
             )
+            # Fallback: look up by file path if search didn't match
+            if not nd_song and entry.get("downloaded_path"):
+                organized_path = file_path_map.get(entry["downloaded_path"])
+                if organized_path:
+                    nd_song = navidrome_api._find_song_by_path(organized_path)
+                    if nd_song:
+                        print(f"  Found via path fallback: {entry['artist']} - {entry['title']}")
             if nd_song:
                 entry["navidrome_id"] = nd_song["id"]
                 entry["file_path"] = nd_song.get("path", "")
