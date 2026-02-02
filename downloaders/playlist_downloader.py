@@ -451,7 +451,10 @@ async def download_playlist(
         # in the file tags (and therefore in Navidrome's index). This makes
         # the library check deterministic regardless of which playlist
         # provider (Spotify/Tidal/etc) supplied the original artist/title.
+        # The resolved link and details are passed to download_track later
+        # to avoid a redundant Deezer API call.
         deezer_link = None
+        deezer_details = None
         deezer_artist = None
         deezer_title = None
         try:
@@ -462,7 +465,6 @@ async def download_playlist(
                 track_id = deezer_link.split('/')[-1]
                 deezer_details = await deezer_api.get_deezer_track_details(track_id)
                 if deezer_details:
-                    # Primary artist name as Deezer/Navidrome sees it
                     deezer_artist = deezer_details.get("album_artist") or (deezer_details.get("artists", [None])[0])
                     deezer_title = deezer_details.get("title")
         except Exception as e:
@@ -514,9 +516,20 @@ async def download_playlist(
         }
         if track.get("deezer_id"):
             song_info["deezer_id"] = track["deezer_id"]
+        # Pre-populate with Deezer details so download_track can skip the lookup
+        if deezer_details:
+            song_info["album"] = deezer_details.get("album", "")
+            song_info["release_date"] = deezer_details.get("release_date", "")
+            song_info["album_art"] = deezer_details.get("album_art")
+            if deezer_details.get("artists"):
+                song_info["deezer_artists"] = deezer_details["artists"]
+            if deezer_details.get("album_artist"):
+                song_info["deezer_album_artist"] = deezer_details["album_artist"]
+            if deezer_details.get("title"):
+                song_info["deezer_title"] = deezer_details["title"]
 
         try:
-            downloaded_path = await track_downloader.download_track(song_info)
+            downloaded_path = await track_downloader.download_track(song_info, deezer_link=deezer_link)
         except Exception as e:
             print(f"  Error downloading {label}: {e}", file=sys.stderr)
             downloaded_path = None

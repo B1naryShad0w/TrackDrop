@@ -18,7 +18,7 @@ class TrackDownloader:
         self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         self.deezer_arl = config.DEEZER_ARL
 
-    async def download_track(self, song_info, lb_recommendation=None):
+    async def download_track(self, song_info, lb_recommendation=None, deezer_link=None):
         """Downloads a track using the configured method."""
         # Reload config to get the latest DOWNLOAD_METHOD
         importlib.reload(config)
@@ -47,7 +47,8 @@ class TrackDownloader:
         with open('/app/debug.log', 'a') as f:
             f.write(f"TRACK_DOWNLOADER_START: {debug_info}\n")
 
-        deezer_link = await self._get_deezer_link_and_details(song_info)
+        if not deezer_link:
+            deezer_link = await self._get_deezer_link_and_details(song_info)
         if not deezer_link:
             print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
             return None
