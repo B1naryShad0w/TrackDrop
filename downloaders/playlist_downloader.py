@@ -100,7 +100,7 @@ def _extract_spotify_playlist_tracks(playlist_id: str) -> tuple[str, List[dict]]
 
     headers = {"Authorization": f"Bearer {token}"}
     url = f"https://api.spotify.com/v1/playlists/{playlist_id}"
-    params = {"fields": "name,tracks.items(track(name,artists(name))),tracks.next"}
+    params = {"fields": "name,tracks.items(track(name,artists(name),album(name))),tracks.next"}
     resp = requests.get(url, headers=headers, params=params, timeout=15)
     if resp.status_code != 200:
         print(f"Spotify API returned {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
@@ -126,10 +126,14 @@ def _extract_spotify_playlist_tracks(playlist_id: str) -> tuple[str, List[dict]]
             continue
         artists = [a["name"] for a in track.get("artists", []) if a.get("name")]
         artist_str = ", ".join(artists) if artists else "Unknown"
-        tracks.append({
+        entry = {
             "artist": artist_str,
             "title": track.get("name", "Unknown"),
-        })
+        }
+        album_name = track.get("album", {}).get("name")
+        if album_name:
+            entry["album"] = album_name
+        tracks.append(entry)
     return playlist_name, tracks
 
 
@@ -264,7 +268,11 @@ def _extract_tidal_playlist_tracks(playlist_uuid: str) -> tuple[str, List[dict]]
             for t in items:
                 artists = [a.get("name", "") for a in t.get("artists", []) if a.get("name")]
                 artist_str = ", ".join(artists) if artists else t.get("artist", {}).get("name", "Unknown")
-                tracks.append({"artist": artist_str, "title": t.get("title", "Unknown")})
+                entry = {"artist": artist_str, "title": t.get("title", "Unknown")}
+                album_name = t.get("album", {}).get("title")
+                if album_name:
+                    entry["album"] = album_name
+                tracks.append(entry)
             offset += limit
 
         return playlist_name, tracks
@@ -460,7 +468,7 @@ async def download_playlist(
         try:
             from apis.deezer_api import DeezerAPI
             deezer_api = DeezerAPI()
-            deezer_link = await deezer_api.get_deezer_track_link(artist, title)
+            deezer_link = await deezer_api.get_deezer_track_link(artist, title, album=track.get("album"))
             if deezer_link:
                 track_id = deezer_link.split('/')[-1]
                 deezer_details = await deezer_api.get_deezer_track_details(track_id)

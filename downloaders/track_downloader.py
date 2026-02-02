@@ -142,7 +142,7 @@ class TrackDownloader:
         """Fetches Deezer link and updates song_info with album details."""
         from apis.deezer_api import DeezerAPI
         deezer_api = DeezerAPI()
-        deezer_link = await deezer_api.get_deezer_track_link(song_info['artist'], song_info['title'])
+        deezer_link = await deezer_api.get_deezer_track_link(song_info['artist'], song_info['title'], album=song_info.get('album'))
         if deezer_link:
             track_id = deezer_link.split('/')[-1]
             deezer_details = await deezer_api.get_deezer_track_details(track_id)

@@ -69,13 +69,16 @@ class DeezerAPI:
                     raise
         return None
 
-    async def get_deezer_track_link(self, artist, title):
+    async def get_deezer_track_link(self, artist, title, album=None):
         """
         Searches for a track on Deezer and returns the track link.
+        When album is provided, prefers the result from the matching album
+        to avoid pulling the wrong version (e.g. remaster vs original).
 
         Args:
             artist: The artist name.
             title: The track title.
+            album: Optional album name to prefer the correct version.
 
         Returns:
             The Deezer track link if found, otherwise None.
@@ -89,14 +92,33 @@ class DeezerAPI:
             f'{artist} {title}' # Broad search without specific field tags
         ]
 
+        # If album is provided, also try album-specific queries first
+        if album:
+            cleaned_album = self._clean_title(album)
+            search_queries = [
+                f'artist:"{artist}" track:"{cleaned_title}" album:"{album}"',
+                f'artist:"{artist}" track:"{cleaned_title}" album:"{cleaned_album}"',
+            ] + search_queries
+
         for query in search_queries:
             params = {"q": query}
             try:
                 response = await self._make_request_with_retries(self.search_url, params=params)
                 if response:
                     data = response.json()
-                    if data.get('data') and len(data['data']) > 0:
-                        return data['data'][0]['link']
+                    results = data.get('data', [])
+                    if not results:
+                        continue
+
+                    # If we have an album hint, prefer the result from that album
+                    if album and len(results) > 1:
+                        album_lower = album.lower().strip()
+                        for result in results:
+                            result_album = result.get('album', {}).get('title', '').lower().strip()
+                            if result_album == album_lower:
+                                return result['link']
+
+                    return results[0]['link']
             except Exception as e:
                 print(f"Error during Deezer search with query '{query}': {e}")
         return None
