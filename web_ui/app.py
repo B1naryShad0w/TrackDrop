@@ -24,6 +24,10 @@ from apis.llm_api import LlmAPI
 from downloaders.track_downloader import TrackDownloader
 from downloaders.link_downloader import LinkDownloader
 from downloaders.playlist_downloader import is_playlist_url, download_playlist, extract_playlist_tracks
+from playlist_monitor import (
+    get_monitored_playlists, add_monitored_playlist, update_monitored_playlist,
+    remove_monitored_playlist, start_scheduler,
+)
 from utils import Tagger
 from web_ui.user_manager import UserManager, login_required, get_current_user
 import uuid
@@ -1365,6 +1369,9 @@ def download_from_link():
         if is_playlist_url(link):
             download_id = str(uuid.uuid4())
             username = get_current_user()
+            monitor = data.get('monitor', False)
+            poll_interval_hours = data.get('poll_interval_hours', 24)
+
             downloads_queue[download_id] = {
                 'id': download_id,
                 'artist': 'Playlist Download',
@@ -1380,8 +1387,9 @@ def download_from_link():
                 'skipped_count': 0,
                 'failed_count': 0,
             }
-            threading.Thread(
-                target=lambda: asyncio.run(
+
+            def _run_playlist_download():
+                asyncio.run(
                     download_playlist(
                         url=link,
                         username=username,
@@ -1389,10 +1397,23 @@ def download_from_link():
                         download_id=download_id,
                         update_status_fn=update_download_status,
                     )
-                ),
-                daemon=True,
-            ).start()
-            return jsonify({"status": "success", "message": "Playlist download started in the background."})
+                )
+                # If user chose to monitor, add after first successful download
+                if monitor:
+                    from downloaders.playlist_downloader import extract_playlist_tracks as _extract
+                    platform, name, _ = _extract(link)
+                    if not name or name.startswith("Unknown"):
+                        name = link
+                    add_monitored_playlist(
+                        url=link, name=name, platform=platform,
+                        username=username, poll_interval_hours=poll_interval_hours,
+                    )
+
+            threading.Thread(target=_run_playlist_download, daemon=True).start()
+            msg = "Playlist download started."
+            if monitor:
+                msg += " Playlist will be monitored for new tracks."
+            return jsonify({"status": "success", "message": msg})
 
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
@@ -1418,6 +1439,106 @@ def download_from_link():
         print(f"Error downloading from link: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return jsonify({"status": "error", "message": f"Error initiating download from link: {e}"}), 500
+
+# ---------------------------------------------------------------------------
+# Monitored Playlists API
+# ---------------------------------------------------------------------------
+
+@app.route('/api/monitored_playlists', methods=['GET'])
+@login_required
+def api_get_monitored_playlists():
+    username = get_current_user()
+    playlists = [p for p in get_monitored_playlists() if p.get("username") == username]
+    return jsonify({"status": "success", "playlists": playlists})
+
+
+@app.route('/api/monitored_playlists', methods=['POST'])
+@login_required
+def api_add_monitored_playlist():
+    data = request.get_json()
+    url = data.get("url", "").strip()
+    poll_interval_hours = data.get("poll_interval_hours", 24)
+    username = get_current_user()
+
+    if not url or not is_playlist_url(url):
+        return jsonify({"status": "error", "message": "Invalid playlist URL"}), 400
+
+    # Extract playlist name and platform
+    platform, name, tracks = extract_playlist_tracks(url)
+    if not name or name.startswith("Unknown"):
+        name = url
+
+    entry = add_monitored_playlist(
+        url=url, name=name, platform=platform,
+        username=username, poll_interval_hours=poll_interval_hours,
+    )
+    entry["last_track_count"] = len(tracks)
+    from playlist_monitor import _save_playlists, _load_playlists
+    all_pl = _load_playlists()
+    for p in all_pl:
+        if p["id"] == entry["id"]:
+            p["last_track_count"] = len(tracks)
+    _save_playlists(all_pl)
+
+    return jsonify({"status": "success", "playlist": entry})
+
+
+@app.route('/api/monitored_playlists/<playlist_id>', methods=['PUT'])
+@login_required
+def api_update_monitored_playlist(playlist_id):
+    data = request.get_json()
+    updated = update_monitored_playlist(playlist_id, data)
+    if updated:
+        return jsonify({"status": "success", "playlist": updated})
+    return jsonify({"status": "error", "message": "Playlist not found"}), 404
+
+
+@app.route('/api/monitored_playlists/<playlist_id>', methods=['DELETE'])
+@login_required
+def api_remove_monitored_playlist(playlist_id):
+    if remove_monitored_playlist(playlist_id):
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error", "message": "Playlist not found"}), 404
+
+
+@app.route('/api/monitored_playlists/<playlist_id>/sync', methods=['POST'])
+@login_required
+def api_sync_monitored_playlist(playlist_id):
+    playlists = get_monitored_playlists()
+    entry = next((p for p in playlists if p["id"] == playlist_id), None)
+    if not entry:
+        return jsonify({"status": "error", "message": "Playlist not found"}), 404
+
+    download_id = str(uuid.uuid4())
+    downloads_queue[download_id] = {
+        'id': download_id,
+        'artist': 'Playlist Sync',
+        'title': entry['name'],
+        'status': 'in_progress',
+        'start_time': datetime.now().isoformat(),
+        'message': 'Syncing monitored playlist...',
+        'current_track_count': 0,
+        'total_track_count': None,
+        'download_type': 'playlist',
+        'tracks': [],
+        'downloaded_count': 0,
+        'skipped_count': 0,
+        'failed_count': 0,
+    }
+    threading.Thread(
+        target=lambda: asyncio.run(
+            download_playlist(
+                url=entry['url'],
+                username=entry['username'],
+                navidrome_api=navidrome_api_global,
+                download_id=download_id,
+                update_status_fn=update_download_status,
+            )
+        ),
+        daemon=True,
+    ).start()
+    return jsonify({"status": "success", "message": f"Sync started for {entry['name']}"})
+
 
 @app.route('/api/get_deezer_album_art', methods=['GET'])
 @login_required
@@ -1632,5 +1753,8 @@ async def download_llm_recommendations_background(recommendations, download_id):
 if __name__ == '__main__':
     download_poller_thread = threading.Thread(target=poll_download_statuses, daemon=True)
     download_poller_thread.start()
+
+    # Start playlist monitoring scheduler
+    start_scheduler(navidrome_api_global, update_download_status, downloads_queue)
 
     app.run(host='0.0.0.0', port=5000, debug=True)

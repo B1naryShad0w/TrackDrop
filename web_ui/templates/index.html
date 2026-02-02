@@ -897,6 +897,58 @@
                 width: 100%;
             }
         }
+        /* Playlist mode popup */
+        .pl-popup-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center;
+        }
+        .pl-popup-overlay.open { display: flex; }
+        .pl-popup {
+            background: var(--card-bg); border-radius: 12px; padding: 24px; max-width: 420px; width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .pl-popup h3 { margin: 0 0 12px; }
+        .pl-popup p { color: #b0b0b0; font-size: 0.9em; margin: 0 0 16px; }
+        .pl-popup-btns { display: flex; flex-direction: column; gap: 10px; }
+        .pl-popup-btns button {
+            padding: 12px 16px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: 0.95em; transition: background 0.2s;
+        }
+        .pl-popup-btns .btn-monitor { background: var(--accent-color); color: #fff; }
+        .pl-popup-btns .btn-monitor:hover { filter: brightness(1.15); }
+        .pl-popup-btns .btn-once { background: #3a3a5a; color: var(--text-color); }
+        .pl-popup-btns .btn-once:hover { background: #4a4a6a; }
+        .pl-popup-interval {
+            display: none; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.04);
+            border-radius: 8px;
+        }
+        .pl-popup-interval.open { display: block; }
+        .pl-popup-interval label { font-size: 0.85em; color: #b0b0b0; }
+        .pl-popup-interval select {
+            margin-top: 4px; padding: 8px; border-radius: 4px; width: 100%;
+            background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);
+        }
+
+        /* Monitored playlists list in settings */
+        .mp-list { margin-top: 12px; }
+        .mp-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 12px; border-radius: 8px; margin-bottom: 8px;
+            background: rgba(255,255,255,0.04);
+        }
+        .mp-item-info { flex: 1; min-width: 0; }
+        .mp-item-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mp-item-meta { font-size: 0.8em; color: #888; margin-top: 2px; }
+        .mp-item-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; margin-left: 10px; }
+        .mp-item-actions select {
+            padding: 4px 6px; border-radius: 4px; font-size: 0.8em;
+            background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);
+        }
+        .mp-item-actions button {
+            padding: 4px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8em;
+        }
+        .mp-btn-sync { background: var(--accent-color); color: #fff; }
+        .mp-btn-remove { background: var(--error-color); color: #fff; }
     </style>
 </head>
 <body>
@@ -1146,6 +1198,16 @@
                         </div>
 
                         <button onclick="saveAutomationOptions()">Save Automation Options</button>
+
+                        <hr style="border-color: var(--border-color); margin: 20px 0;">
+
+                        <h3 style="margin-bottom: 8px;">Monitored Playlists</h3>
+                        <small style="color: #b0b0b0; display: block; margin-bottom: 12px;">
+                            Playlists below are automatically checked for new tracks at their configured interval.
+                        </small>
+                        <div id="monitoredPlaylistsList" class="mp-list">
+                            <p style="color: #666; font-size: 0.9em;">Loading...</p>
+                        </div>
                     </div>
                 </details>
 
@@ -1241,11 +1303,39 @@
         </div>
     </div>
 
+    <!-- Playlist download mode popup -->
+    <div id="playlistModeOverlay" class="pl-popup-overlay">
+        <div class="pl-popup">
+            <h3>Download Playlist</h3>
+            <p id="playlistModeUrl"></p>
+            <div class="pl-popup-btns">
+                <button class="btn-monitor" onclick="submitPlaylistDownload(true)">
+                    Download &amp; Monitor for new tracks
+                </button>
+                <button class="btn-once" onclick="submitPlaylistDownload(false)">
+                    Download once
+                </button>
+            </div>
+            <div id="playlistIntervalSection" class="pl-popup-interval">
+                <label>Check for new tracks every:
+                    <select id="playlistPollInterval">
+                        <option value="6">6 hours</option>
+                        <option value="12">12 hours</option>
+                        <option value="24" selected>24 hours</option>
+                        <option value="48">2 days</option>
+                        <option value="168">Weekly</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+    </div>
+
     <script>
         function openSettingsModal() {
             document.getElementById('settingsModal').style.display = 'block';
             loadUserSettings();
             loadConfiguration();
+            loadMonitoredPlaylists();
         }
 
         function closeSettingsModal() {
@@ -2460,6 +2550,61 @@ async function createSmartPlaylists() {
                    /(?:music\.)?youtube\.com\/playlist\?list=[a-zA-Z0-9_-]+/.test(url);
         }
 
+        // --- Playlist mode popup state ---
+        let _pendingPlaylistLink = '';
+
+        function _showPlaylistPopup(url) {
+            _pendingPlaylistLink = url;
+            document.getElementById('playlistModeUrl').textContent = url;
+            document.getElementById('playlistIntervalSection').classList.add('open');
+            document.getElementById('playlistModeOverlay').classList.add('open');
+        }
+
+        function _hidePlaylistPopup() {
+            document.getElementById('playlistModeOverlay').classList.remove('open');
+            _pendingPlaylistLink = '';
+        }
+
+        // Close popup on overlay click
+        document.getElementById('playlistModeOverlay').addEventListener('click', function(e) {
+            if (e.target === this) _hidePlaylistPopup();
+        });
+
+        async function submitPlaylistDownload(monitor) {
+            _hidePlaylistPopup();
+            const musicLink = _pendingPlaylistLink;
+            if (!musicLink) return;
+
+            const pollInterval = parseInt(document.getElementById('playlistPollInterval').value) || 24;
+
+            showMessage('info', monitor
+                ? 'Playlist download started. It will be monitored for new tracks.'
+                : 'Playlist download started. Check the download queue for progress.');
+            openDownloadQueueModal();
+
+            try {
+                const response = await fetch('/api/download_from_link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ link: musicLink, monitor, poll_interval_hours: pollInterval })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    document.getElementById('musicLinkInput').value = '';
+                    if (monitor) loadMonitoredPlaylists();
+                }
+            } catch (error) {
+                console.error('Error downloading playlist:', error);
+                showMessage('error', 'Failed to initiate playlist download.');
+            }
+
+            const downloadLinkBtn = document.getElementById('downloadLinkBtn');
+            setTimeout(() => {
+                downloadLinkBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+                downloadLinkBtn.disabled = false;
+            }, 500);
+        }
+
         async function downloadFromLink() {
             const musicLink = document.getElementById('musicLinkInput').value.trim();
             const downloadLinkBtn = document.getElementById('downloadLinkBtn');
@@ -2471,20 +2616,23 @@ async function createSmartPlaylists() {
 
             const isPlaylist = _isPlaylistUrl(musicLink);
 
-            // Update button to show loading state
+            if (isPlaylist) {
+                // Show popup to choose one-time vs monitor
+                _pendingPlaylistLink = musicLink;
+                downloadLinkBtn.innerHTML = '<div class="spinner"></div>Processing...';
+                downloadLinkBtn.disabled = true;
+                _showPlaylistPopup(musicLink);
+                return;
+            }
+
+            // Non-playlist: download immediately
             const originalContent = downloadLinkBtn.innerHTML;
-            downloadLinkBtn.innerHTML = '<div class="spinner"></div>' + (isPlaylist ? 'Processing...' : 'Downloading...');
+            downloadLinkBtn.innerHTML = '<div class="spinner"></div>Downloading...';
             downloadLinkBtn.disabled = true;
 
-            // Show feedback and open download queue for playlists
-            if (isPlaylist) {
-                showMessage('info', 'Playlist download started. Check the download queue for progress.');
-                openDownloadQueueModal();
-            } else {
-                showMessage('info', 'Download started...');
-                downloadQueue.push({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
-                updateDownloadQueueUI();
-            }
+            showMessage('info', 'Download started...');
+            downloadQueue.push({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
+            updateDownloadQueueUI();
 
             try {
                 const response = await fetch('/api/download_from_link', {
@@ -2493,11 +2641,7 @@ async function createSmartPlaylists() {
                     body: JSON.stringify({ link: musicLink })
                 });
                 const data = await response.json();
-                if (!isPlaylist) {
-                    showMessage(data.status, data.message);
-                }
-                // For playlists, progress is shown in the queue panel via polling
-                // Clear the input on success
+                showMessage(data.status, data.message);
                 if (data.status === 'success') {
                     document.getElementById('musicLinkInput').value = '';
                 }
@@ -2508,8 +2652,65 @@ async function createSmartPlaylists() {
                 setTimeout(() => {
                     downloadLinkBtn.innerHTML = originalContent;
                     downloadLinkBtn.disabled = false;
-                }, isPlaylist ? 500 : 2000);
+                }, 2000);
             }
+        }
+
+        // --- Monitored Playlists Management ---
+        async function loadMonitoredPlaylists() {
+            const container = document.getElementById('monitoredPlaylistsList');
+            if (!container) return;
+            try {
+                const resp = await fetch('/api/monitored_playlists');
+                const data = await resp.json();
+                if (data.status !== 'success' || !data.playlists.length) {
+                    container.innerHTML = '<p style="color: #666; font-size: 0.9em;">No monitored playlists.</p>';
+                    return;
+                }
+                container.innerHTML = data.playlists.map(p => {
+                    const lastSync = p.last_synced ? new Date(p.last_synced).toLocaleString() : 'Never';
+                    const platform = (p.platform || '').charAt(0).toUpperCase() + (p.platform || '').slice(1);
+                    return `
+                        <div class="mp-item" data-id="${p.id}">
+                            <div class="mp-item-info">
+                                <div class="mp-item-name" title="${_escHtml(p.url)}">${_escHtml(p.name)}</div>
+                                <div class="mp-item-meta">${platform} &middot; ${p.last_track_count || '?'} tracks &middot; Last sync: ${lastSync}</div>
+                            </div>
+                            <div class="mp-item-actions">
+                                <select onchange="updateMonitoredInterval('${p.id}', this.value)" title="Poll interval">
+                                    ${[6,12,24,48,168].map(h =>
+                                        `<option value="${h}" ${p.poll_interval_hours === h ? 'selected' : ''}>${h < 48 ? h + 'h' : h === 48 ? '2d' : '7d'}</option>`
+                                    ).join('')}
+                                </select>
+                                <button class="mp-btn-sync" onclick="syncMonitoredPlaylist('${p.id}')" title="Sync now">Sync</button>
+                                <button class="mp-btn-remove" onclick="removeMonitoredPlaylist('${p.id}')" title="Stop monitoring">&#x2715;</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = '<p style="color: var(--error-color); font-size: 0.9em;">Failed to load.</p>';
+            }
+        }
+
+        async function updateMonitoredInterval(id, hours) {
+            await fetch(`/api/monitored_playlists/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ poll_interval_hours: parseInt(hours) })
+            });
+        }
+
+        async function syncMonitoredPlaylist(id) {
+            const resp = await fetch(`/api/monitored_playlists/${id}/sync`, { method: 'POST' });
+            const data = await resp.json();
+            showMessage(data.status, data.message);
+            openDownloadQueueModal();
+        }
+
+        async function removeMonitoredPlaylist(id) {
+            await fetch(`/api/monitored_playlists/${id}`, { method: 'DELETE' });
+            loadMonitoredPlaylists();
         }
 
         // --- User Settings API ---
