@@ -477,21 +477,12 @@ self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
     const url = new URL(e.request.url);
-    // Handle PWA share target POST — convert to a server-side POST
+    // Handle PWA share target POST — extract the shared URL and redirect as GET
     if (url.pathname === '/share' && e.request.method === 'POST') {
         e.respondWith((async () => {
             const formData = await e.request.formData();
-            const params = new URLSearchParams();
-            for (const [key, value] of formData.entries()) {
-                params.append(key, value);
-            }
-            // POST to the server as form data
-            return fetch('/share', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: params.toString(),
-                redirect: 'follow'
-            });
+            const text = formData.get('text') || formData.get('url') || formData.get('title') || '';
+            return Response.redirect('/share?text=' + encodeURIComponent(text), 303);
         })());
         return;
     }
