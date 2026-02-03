@@ -47,6 +47,7 @@ class LinkDownloader:
         amazon_album_re = r"music\.amazon\.[a-z]{2,3}\/albums\/([A-Z0-9]+)"
 
         downloaded_files = []
+        resolved_title = None  # Track title for queue display
 
         try:
             song_info = None
@@ -238,9 +239,10 @@ class LinkDownloader:
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
                     # Update queue with YouTube metadata if we got it from oEmbed
                     if youtube_meta:
+                        resolved_title = f"{youtube_meta['artist']} - {youtube_meta['title']}"
                         update_status_file(download_id, "in_progress",
-                                           f"Downloading: {youtube_meta['artist']} - {youtube_meta['title']}",
-                                           title=f"{youtube_meta['artist']} - {youtube_meta['title']}")
+                                           f"Downloading: {resolved_title}",
+                                           title=resolved_title)
                 else:
                     print(f"Could not find Deezer ID for YouTube video {video_id}", file=sys.stderr)
                     return []
@@ -331,8 +333,9 @@ class LinkDownloader:
                     search_album = deezer_details.get("album")
                     print(f"  Deezer metadata: {search_artist} - {search_title} [{search_album}]")
                     # Update queue with resolved track name
-                    update_status_file(download_id, "in_progress", f"Downloading: {search_artist} - {search_title}",
-                                       title=f"{search_artist} - {search_title}")
+                    resolved_title = f"{search_artist} - {search_title}"
+                    update_status_file(download_id, "in_progress", f"Downloading: {resolved_title}",
+                                       title=resolved_title)
                     if search_artist and search_title:
                         print(f"  Checking Navidrome for existing match...")
                         existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
@@ -506,7 +509,10 @@ class LinkDownloader:
                 print("Organizing downloaded files...")
                 self.navidrome_api.organize_music_files(self.temp_download_folder, self.music_library_path)
                 print(f"Successfully downloaded and organized {len(downloaded_files)} files from {url}")
-                update_status_file(download_id, "completed", f"Downloaded {len(downloaded_files)} files.")
+                if resolved_title:
+                    update_status_file(download_id, "completed", f"Downloaded: {resolved_title}", title=resolved_title)
+                else:
+                    update_status_file(download_id, "completed", f"Downloaded {len(downloaded_files)} files.")
                 return downloaded_files
             else:
                 print(f"No files were downloaded from {url}", file=sys.stderr)
