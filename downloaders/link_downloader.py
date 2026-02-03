@@ -225,7 +225,10 @@ class LinkDownloader:
                                 else:
                                     search_artist, search_title = yt_author, yt_title
                                 # Clean common YouTube suffixes
-                                search_title = re.sub(r'\s*[\(\[]?(official\s*)?(music\s*)?(video|audio|lyric|lyrics|visualizer|hd|4k)[\)\]]?\s*$', '', search_title, flags=re.IGNORECASE).strip()
+                                # Remove parenthetical/bracketed tags like (Official Music Video), [Official Audio], etc.
+                                search_title = re.sub(r'\s*[\(\[][^)\]]*(?:official|music video|lyric|lyrics|visualizer|audio|video|hd|4k)[^)\]]*[\)\]]', '', search_title, flags=re.IGNORECASE).strip()
+                                # Remove ft./feat. clauses
+                                search_title = re.sub(r'\s*(ft\.?|feat\.?)\s+.*$', '', search_title, flags=re.IGNORECASE).strip()
                                 print(f"  Searching Deezer for: '{search_artist}' - '{search_title}'", flush=True)
                                 deezer_link = await self.deezer_api.get_deezer_track_link(search_artist, search_title)
                                 print(f"  Deezer search result: {deezer_link}", flush=True)
@@ -586,6 +589,10 @@ class LinkDownloader:
                 data = response.json()
                 platforms = list(data.get('linksByPlatform', {}).keys())
                 print(f"  Songlink platforms found: {platforms}", flush=True)
+                # Log entity IDs for debugging
+                entities = data.get('entitiesByUniqueId', {})
+                for eid, entity in entities.items():
+                    print(f"  Songlink entity: {eid} -> {entity.get('artistName', '?')} - {entity.get('title', '?')} (platform={entity.get('apiProvider', '?')})", flush=True)
                 deezer_info = data.get('linksByPlatform', {}).get('deezer')
                 if deezer_info and deezer_info.get('url'):
                     deezer_url = deezer_info['url']
