@@ -1599,7 +1599,7 @@ async function executeManualCleanup() {
         const data = await response.json();
 
         // Close confirmation modal
-        modal.parentElement.remove();
+        modal.remove();
 
         if (data.status === 'success') {
             // Show results
@@ -1611,7 +1611,7 @@ async function executeManualCleanup() {
     } catch (error) {
         console.error('Manual cleanup error:', error);
         showMessage('error', 'Failed to delete songs: ' + error.message);
-        modal.parentElement.remove();
+        modal.remove();
     }
 
     pendingCleanupSongIds = [];
