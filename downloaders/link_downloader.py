@@ -321,9 +321,39 @@ class LinkDownloader:
             if media:
                 # Snapshot files before rip so we can find new ones after
                 files_before = self._snapshot_audio_files()
+                print(f"  DEBUG: Temp folder: {self.temp_download_folder}")
+                print(f"  DEBUG: Temp folder exists: {os.path.exists(self.temp_download_folder)}")
+                print(f"  DEBUG: Files before rip: {len(files_before)}")
+                # Dump streamrip config to find where it downloads to
+                try:
+                    sc = self.streamrip_config
+                    for attr in dir(sc):
+                        if not attr.startswith('_'):
+                            val = getattr(sc, attr)
+                            if not callable(val):
+                                print(f"  DEBUG: streamrip_config.{attr} = {val}")
+                except Exception as e:
+                    print(f"  DEBUG: Could not dump streamrip config: {e}")
+                if hasattr(media, 'meta'):
+                    print(f"  DEBUG: media.meta = {vars(media.meta) if hasattr(media.meta, '__dict__') else media.meta}")
                 await media.rip()
+                # Also check if streamrip wrote to its own configured folder
+                if hasattr(self.streamrip_config, 'session') and hasattr(self.streamrip_config.session, 'downloads'):
+                    print(f"  DEBUG: Streamrip downloads dir: {self.streamrip_config.session.downloads.folder}")
+                elif hasattr(self.streamrip_config, 'downloads_folder'):
+                    print(f"  DEBUG: Streamrip downloads_folder: {self.streamrip_config.downloads_folder}")
+                # Check media.path after rip
+                if hasattr(media, 'path'):
+                    print(f"  DEBUG: media.path after rip: {media.path}")
+                    if media.path:
+                        print(f"  DEBUG: media.path exists: {os.path.exists(str(media.path))}")
                 files_after = self._snapshot_audio_files()
                 new_files = [f for f in files_after if f not in files_before]
+                print(f"  DEBUG: Files after rip: {len(files_after)}")
+                print(f"  DEBUG: New files found: {len(new_files)}")
+                if new_files:
+                    for f in new_files:
+                        print(f"  DEBUG: New file: {f}")
 
                 if new_files:
                     downloaded_files.extend(new_files)
