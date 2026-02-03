@@ -131,6 +131,21 @@
             height: 14px;
             opacity: 0.7;
         }
+        /* Mobile optimizations - prevent scrolling to see password field */
+        @media (max-height: 700px) {
+            body { align-items: flex-start; padding: 20px 16px; }
+            .login-card { padding: 24px 24px 28px; }
+            .login-card img { width: 60px; margin-bottom: 12px; }
+            .login-card h1 { font-size: 1.5em; margin-bottom: 4px; }
+            .login-card p { margin-bottom: 16px; }
+            .navidrome-badge { margin-bottom: 16px; padding: 5px 12px; }
+            .form-group { margin-bottom: 12px; }
+            .form-group input { padding: 10px; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 16px; }
+            .login-card { padding: 24px 20px 28px; }
+        }
     </style>
 </head>
 <body>
