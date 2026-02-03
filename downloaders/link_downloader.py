@@ -58,22 +58,26 @@ class LinkDownloader:
                 track_id = re.search(spotify_track_re, url).group(1)
                 original_platform = "spotify"
                 original_id = track_id
+                print(f"  Resolving Deezer ID via Songlink...")
                 deezer_id = await self._get_deezer_id_from_songlink(track_id, "spotify", "song")
                 if deezer_id:
+                    print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
                 else:
-                    print(f"Could not find Deezer ID for Spotify track {track_id}", file=sys.stderr)
+                    print(f"  Could not find Deezer ID for Spotify track {track_id}", file=sys.stderr)
                     return []
             elif re.search(spotify_album_re, url):
                 print("Detected Spotify Album.")
                 album_id = re.search(spotify_album_re, url).group(1)
                 original_platform = "spotify"
                 original_id = album_id
+                print(f"  Resolving Deezer ID via Songlink...")
                 deezer_id = await self._get_deezer_id_from_songlink(album_id, "spotify", "album")
                 if deezer_id:
+                    print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'album'}
                 else:
-                    print(f"Could not find Deezer ID for Spotify album {album_id}", file=sys.stderr)
+                    print(f"  Could not find Deezer ID for Spotify album {album_id}", file=sys.stderr)
                     return []
             elif re.search(spotify_playlist_re, url):
                 print("Detected Spotify Playlist.")
@@ -259,24 +263,25 @@ class LinkDownloader:
                 return []
 
             # --- Duplicate detection ---
-            # For tracks: resolve Deezer metadata and check Navidrome before downloading.
-            # For albums: check each track in the album against Navidrome.
-            # Uses the download provider's (Deezer) canonical metadata for the search
-            # so it matches what Navidrome has indexed from previously downloaded files.
             salt, token = self.navidrome_api._get_navidrome_auth_params()
             media_type = song_info['type']
 
             if media_type == "track":
+                print(f"  Fetching Deezer track details for duplicate check...")
                 deezer_details = await self.deezer_api.get_deezer_track_details(song_info['deezer_id'])
                 if deezer_details:
                     search_artist = deezer_details.get("album_artist") or (deezer_details.get("artists", [None])[0])
                     search_title = deezer_details.get("title")
+                    search_album = deezer_details.get("album")
+                    print(f"  Deezer metadata: {search_artist} - {search_title} [{search_album}]")
                     if search_artist and search_title:
-                        existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
+                        print(f"  Checking Navidrome for existing match...")
+                        existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
                         if existing:
-                            print(f"  Already in Navidrome: {search_artist} - {search_title} (id={existing['id']})")
+                            print(f"  Already in Navidrome: {search_artist} - {search_title} [{search_album}] (id={existing['id']})")
                             update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}")
                             return []
+                        print(f"  Not found in library, proceeding with download.")
 
             elif media_type == "album":
                 # Get album tracklist from Deezer and check which tracks already exist
@@ -301,9 +306,11 @@ class LinkDownloader:
                             return []
 
             # Download using streamrip for all Deezer IDs
+            print(f"  Logging into Deezer...")
             await self.deezer_client.login()
 
             media_type = song_info['type']
+            print(f"  Preparing streamrip {media_type} download (Deezer ID: {song_info['deezer_id']})...")
             if media_type == "track":
                 pending = PendingSingle(id=song_info['deezer_id'], client=self.deezer_client, config=self.streamrip_config, db=self.rip_db)
             elif media_type == "album":
@@ -313,15 +320,20 @@ class LinkDownloader:
 
             media = None
             try:
+                print(f"  Resolving media...")
                 media = await pending.resolve()
             except Exception as e:
-                print(f"Streamrip resolution failed for Deezer ID {song_info['deezer_id']}: {e}", file=sys.stderr)
+                print(f"  Streamrip resolution failed for Deezer ID {song_info['deezer_id']}: {e}", file=sys.stderr)
                 media = None
 
             if media:
+                if hasattr(media, 'meta'):
+                    meta = media.meta
+                    print(f"  Downloading: {getattr(meta, 'artist', '?')} - {getattr(meta, 'title', '?')} [{getattr(meta, 'album', '?')}]")
                 # Snapshot files before rip so we can find new ones after
                 files_before = self._snapshot_audio_files()
                 await media.rip()
+                print(f"  Streamrip download complete.")
                 files_after = self._snapshot_audio_files()
                 # Detect files that are new or were modified (overwritten in place)
                 new_files = []
@@ -335,9 +347,13 @@ class LinkDownloader:
                     if os.path.exists(dp):
                         new_files = [dp]
 
+                print(f"  Found {len(new_files)} new/modified file(s) after download.")
                 if new_files:
+                    for f in new_files:
+                        print(f"    -> {f}")
                     downloaded_files.extend(new_files)
                 else:
+                    print(f"  No new files detected via snapshot, trying fallback...")
                     # Fallback: try the old name-based matching
                     if media_type == "track":
                         artist = media.meta.artist if hasattr(media.meta, 'artist') else ''

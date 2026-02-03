@@ -699,14 +699,16 @@ class NavidromeAPI:
         t = re.sub(r'\s+', ' ', t).strip()
         return t
 
-    def _search_song_in_navidrome(self, artist, title, salt, token):
+    def _search_song_in_navidrome(self, artist, title, salt, token, album=None):
         """Search for a song in Navidrome by artist and title. Returns song dict or None.
         Uses multiple search strategies and fuzzy matching to handle feat./ft. artist
-        variations and title differences."""
+        variations and title differences. If album is provided, strongly prefers matches
+        from the same album and won't match songs from different albums."""
         import re
 
         norm_artist = self._normalize_for_match(artist)
         norm_title = self._normalize_for_match(title)
+        norm_album = self._normalize_for_match(album) if album else None
 
         # Build multiple search queries to maximize chances of finding the song
         queries = []
@@ -776,6 +778,17 @@ class NavidromeAPI:
                 overlap = artist_words & s_artist_words
                 if overlap:
                     score += 30 * len(overlap)
+
+            # Album matching when album filter is provided
+            if norm_album:
+                s_album = self._normalize_for_match(song.get('album', ''))
+                if s_album == norm_album:
+                    score += 50
+                elif norm_album in s_album or s_album in norm_album:
+                    score += 25
+                else:
+                    # Wrong album — penalize heavily so we don't match remasters, etc.
+                    score -= 200
 
             return score
 

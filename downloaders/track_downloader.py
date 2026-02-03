@@ -48,11 +48,12 @@ class TrackDownloader:
         if navidrome_api:
             search_artist = song_info.get('deezer_album_artist') or (song_info.get('deezer_artists', [None]) or [None])[0] or song_info['artist']
             search_title = song_info.get('deezer_title') or song_info['title']
+            search_album = song_info.get('album') or None
             try:
                 salt, token = navidrome_api._get_navidrome_auth_params()
-                existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
+                existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
                 if existing:
-                    print(f"  Already in Navidrome: {search_artist} - {search_title} (id={existing['id']})")
+                    print(f"  Already in Navidrome: {search_artist} - {search_title} [{search_album}] (id={existing['id']})")
                     song_info['_duplicate'] = True
                     return None
             except Exception as e:
