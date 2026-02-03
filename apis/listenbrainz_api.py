@@ -1,13 +1,9 @@
 import requests
 import time
-import os
 import asyncio
-import concurrent.futures
 import sys
-from streamrip.client import DeezerClient
-from mutagen.id3 import ID3, COMM
-from apis.deezer_api import DeezerAPI
-from config import PLAYLIST_HISTORY_FILE, FRESH_RELEASES_CACHE_DURATION
+from config import FRESH_RELEASES_CACHE_DURATION
+
 
 class ListenBrainzAPI:
     def __init__(self, root_lb, token_lb, user_lb, listenbrainz_enabled):
@@ -15,7 +11,6 @@ class ListenBrainzAPI:
         self._token_lb = token_lb
         self._user_lb = user_lb
         self._listenbrainz_enabled = listenbrainz_enabled
-        self.playlist_history_file = PLAYLIST_HISTORY_FILE
         self._fresh_releases_cache = None
         self._fresh_releases_cache_timestamp = 0
 
@@ -34,33 +29,6 @@ class ListenBrainzAPI:
     @property
     def auth_header_lb(self):
         return {"Authorization": f"Token {self.token_lb}"}
-
-    def _get_last_playlist_name(self):
-        """Retrieves the last playlist name from the history file."""
-        try:
-            with open(self.playlist_history_file, "r") as f:
-                return f.readline().strip()
-        except FileNotFoundError:
-            return None
-
-    def _save_playlist_name(self, playlist_name):
-        """Saves the playlist name to the history file."""
-        try:
-            with open(self.playlist_history_file, "w") as f:
-                f.write(playlist_name)
-        except OSError as e:
-            print(f"Error saving playlist name to file: {e}")
-
-    async def has_playlist_changed(self):
-        """Checks if the playlist has changed since the last run asynchronously."""
-        current_playlist_name = await self.get_latest_playlist_name()
-        last_playlist_name = self._get_last_playlist_name()
-
-        if current_playlist_name == last_playlist_name:
-            return False
-
-        self._save_playlist_name(current_playlist_name)
-        return True
 
     async def get_latest_playlist_name(self):
         """Retrieves the name of the latest *recommendation* playlist from ListenBrainz asynchronously."""

@@ -24,18 +24,6 @@ class TrackDownloader:
         importlib.reload(config)
         current_download_method = config.DOWNLOAD_METHOD
         temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
-        deezer_arl = config.DEEZER_ARL
-
-        # Determine the correct comment based on source and lb_recommendation flag
-        # Special handling: if source is 'Manual' but lb_recommendation is set, prioritize it
-        if lb_recommendation is not None and lb_recommendation:
-            comment = config.TARGET_COMMENT
-        elif song_info.get('source', '').lower() == 'llm':
-            comment = config.LLM_TARGET_COMMENT
-        elif song_info.get('source', '').lower() == 'listenbrainz':
-            comment = config.TARGET_COMMENT
-        else:
-            comment = config.LASTFM_TARGET_COMMENT
 
         if not deezer_link:
             deezer_link = await self._get_deezer_link_and_details(song_info)
@@ -86,45 +74,25 @@ class TrackDownloader:
             except Exception as e:
                 print(f"  Warning: Could not look up MBIDs: {e}", file=sys.stderr)
 
-            playlist_mode = getattr(config, 'PLAYLIST_MODE', 'tags')
-            if playlist_mode == 'api':
-                # API mode: tag with Deezer's metadata (all contributors) for
-                # consistency with the actual release. Streamrip already embeds
-                # Deezer metadata but only the primary artist — we fix multi-artist.
-                tag_artists = song_info.get('deezer_artists')
-                tag_title = song_info.get('deezer_title', song_info['title'])
-                tag_album_artist = song_info.get('deezer_album_artist')
-                self.tagger.tag_track(
-                    downloaded_file_path,
-                    None,  # no singular artist — use plural ARTISTS tag instead
-                    tag_title,
-                    song_info['album'],
-                    song_info['release_date'],
-                    song_info['recording_mbid'],
-                    song_info['source'],
-                    song_info.get('album_art'),
-                    album_artist=tag_album_artist,
-                    artists=tag_artists,
-                    artist_mbids=artist_mbids
-                )
-            else:
-                # Tags mode: tag with recommendation source metadata and add
-                # comment tag for source-based cleanup
-                self.tagger.tag_track(
-                    downloaded_file_path,
-                    song_info['artist'],
-                    song_info['title'],
-                    song_info['album'],
-                    song_info['release_date'],
-                    song_info['recording_mbid'],
-                    song_info['source'],
-                    song_info.get('album_art'),
-                    artist_mbids=artist_mbids
-                )
-                self.tagger.add_comment_to_file(
-                    downloaded_file_path,
-                    comment
-                )
+            # Tag with Deezer's metadata (all contributors) for consistency with
+            # the actual release. Streamrip already embeds Deezer metadata but
+            # only the primary artist — we fix multi-artist.
+            tag_artists = song_info.get('deezer_artists')
+            tag_title = song_info.get('deezer_title', song_info['title'])
+            tag_album_artist = song_info.get('deezer_album_artist')
+            self.tagger.tag_track(
+                downloaded_file_path,
+                None,  # no singular artist — use plural ARTISTS tag instead
+                tag_title,
+                song_info['album'],
+                song_info['release_date'],
+                song_info['recording_mbid'],
+                song_info['source'],
+                song_info.get('album_art'),
+                album_artist=tag_album_artist,
+                artists=tag_artists,
+                artist_mbids=artist_mbids
+            )
             return downloaded_file_path
         else:
             print(f"  ❌ Failed to download: {song_info['artist']} - {song_info['title']}")

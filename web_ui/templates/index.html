@@ -1464,43 +1464,6 @@ async function triggerNavidromeCleanup() {
     }
 }
 
-async function createSmartPlaylists() {
-    const button = event.target;
-    const originalContent = button.innerHTML;
-
-    // Update button to show loading state
-    button.innerHTML = '<div class="spinner"></div>Creating...';
-    button.disabled = true;
-
-    try {
-        const response = await fetch('/api/create_smart_playlists', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await response.json();
-
-        if (data.status === 'success') {
-            showMessage('success', data.message);
-            console.log('Smart playlists created:', data.created_files);
-            if (data.failed_files && data.failed_files.length > 0) {
-                console.warn('Failed to create some playlists:', data.failed_files);
-            }
-        } else {
-            showMessage('error', data.message);
-            console.error('Error creating smart playlists:', data.failed_files);
-        }
-    } catch (error) {
-        console.error('Network error creating smart playlists:', error);
-        showMessage('error', 'Failed to create smart playlists: ' + error.message);
-    } finally {
-        // Reset button after a delay
-        setTimeout(() => {
-            button.innerHTML = originalContent;
-            button.disabled = false;
-        }, 2000);
-    }
-}
-
         // --- Download Queue Functions ---
         const downloadQueue = []; // In-memory queue for display
         let downloadQueueInterval = null;

@@ -88,11 +88,23 @@ class NavidromeAPI:
     def _check_song_protection(self, song_id):
         """Check if a song is protected from deletion by any user interaction.
         Returns a dict with:
-          'protected': bool - whether the song should be kept
+          'protected': bool - whether the song should be kept (legacy, computed based on old rules)
           'reasons': list of strings explaining why it's protected
-          'max_rating': int - highest rating across all users
+          'max_rating': int - highest rating across all users (0-5)
+          'has_one_star': bool - whether any user explicitly gave 1 star
+          'in_user_playlist': bool - whether song is in any non-recommendation playlist
+          'has_interaction': bool - whether anyone has interacted (rated or starred)
+          'is_starred': bool - whether anyone has starred/favorited
         """
-        result = {'protected': False, 'reasons': [], 'max_rating': 0}
+        result = {
+            'protected': False,
+            'reasons': [],
+            'max_rating': 0,
+            'has_one_star': False,
+            'in_user_playlist': False,
+            'has_interaction': False,
+            'is_starred': False,
+        }
         recommendation_playlist_names = {
             'listenbrainz weekly', 'last.fm weekly', 'llm weekly'
         }
@@ -112,12 +124,21 @@ class NavidromeAPI:
                 for row in cursor.fetchall():
                     user_id, rating, starred, starred_at = row
                     rating = rating or 0
-                    if rating >= 4:
-                        result['protected'] = True
+
+                    if rating > 0 or starred or starred_at:
+                        result['has_interaction'] = True
+
+                    if rating == 1:
+                        result['has_one_star'] = True
+                        result['reasons'].append(f"1-star by user {user_id[:8]}...")
+
+                    if rating > 2:
                         result['reasons'].append(f"rated {rating}/5 by user {user_id[:8]}...")
+
                     result['max_rating'] = max(result['max_rating'], rating)
+
                     if starred or starred_at:
-                        result['protected'] = True
+                        result['is_starred'] = True
                         result['reasons'].append(f"starred by user {user_id[:8]}...")
                         result['max_rating'] = max(result['max_rating'], 5)
 
@@ -131,27 +152,39 @@ class NavidromeAPI:
                 for row in cursor.fetchall():
                     playlist_name, owner_id = row
                     if playlist_name.lower() not in recommendation_playlist_names:
-                        result['protected'] = True
+                        result['in_user_playlist'] = True
                         result['reasons'].append(f"in playlist '{playlist_name}'")
 
                 conn.close()
+
+                # Compute legacy 'protected' field for backwards compatibility
+                result['protected'] = result['max_rating'] > 2 or result['is_starred'] or result['in_user_playlist']
                 return result
             except Exception as e:
                 print(f"Warning: Could not query Navidrome DB: {e}. Falling back to API.")
 
-        # Fallback: check via Subsonic API
+        # Fallback: check via Subsonic API (limited - only sees current user's data)
         salt, token = self._get_navidrome_auth_params()
         details = self._get_song_details(song_id, salt, token)
         if details:
             starred = details.get("starred")
             user_rating = details.get('userRating', 0)
+
+            if user_rating > 0 or starred:
+                result['has_interaction'] = True
+
+            if user_rating == 1:
+                result['has_one_star'] = True
+                result['reasons'].append(f"1-star by {self.user_nd}")
+
             if starred:
-                result['protected'] = True
+                result['is_starred'] = True
                 result['reasons'].append(f"starred by {self.user_nd}")
                 result['max_rating'] = max(result['max_rating'], 5)
-            if user_rating >= 4:
-                result['protected'] = True
+
+            if user_rating > 2:
                 result['reasons'].append(f"rated {user_rating}/5 by {self.user_nd}")
+
             result['max_rating'] = max(result['max_rating'], user_rating)
 
         # Also check admin user if different
@@ -161,15 +194,26 @@ class NavidromeAPI:
             if admin_details:
                 starred = admin_details.get("starred")
                 admin_rating = admin_details.get('userRating', 0)
+
+                if admin_rating > 0 or starred:
+                    result['has_interaction'] = True
+
+                if admin_rating == 1:
+                    result['has_one_star'] = True
+                    result['reasons'].append(f"1-star by {self.admin_user}")
+
                 if starred:
-                    result['protected'] = True
+                    result['is_starred'] = True
                     result['reasons'].append(f"starred by {self.admin_user}")
                     result['max_rating'] = max(result['max_rating'], 5)
-                if admin_rating >= 4:
-                    result['protected'] = True
+
+                if admin_rating > 2:
                     result['reasons'].append(f"rated {admin_rating}/5 by {self.admin_user}")
+
                 result['max_rating'] = max(result['max_rating'], admin_rating)
 
+        # Compute legacy 'protected' field
+        result['protected'] = result['max_rating'] > 2 or result['is_starred'] or result['in_user_playlist']
         return result
 
     def _delete_song(self, song_path):
@@ -688,8 +732,60 @@ class NavidromeAPI:
 
     # ---- Cleanup ----
 
+    def _should_delete_song(self, protection, is_discover_weekly):
+        """Determine if a song should be deleted based on protection info and source type.
+
+        Discover Weekly rules (ListenBrainz/Last.fm/LLM Weekly):
+          - Delete if no interaction at all (nobody added to library)
+          - OR delete if max_rating <= 2 AND not in any user playlist
+
+        Other songs rules:
+          - Delete ONLY if user gave 1-star AND no other user has:
+            - favorited (starred)
+            - added to a playlist
+            - given > 2 stars
+
+        Returns: (should_delete: bool, reason: str)
+        """
+        if is_discover_weekly:
+            # Rule 1: No interaction at all = delete
+            if not protection['has_interaction']:
+                return True, "no user interaction"
+
+            # Rule 2: Low rating (<=2) and not in any user playlist = delete
+            if protection['max_rating'] <= 2 and not protection['in_user_playlist']:
+                return True, f"low rating ({protection['max_rating']}) and not in any playlist"
+
+            # Otherwise keep it
+            return False, None
+        else:
+            # Non-discover-weekly: only delete if 1-star AND no protection from others
+            if not protection['has_one_star']:
+                return False, None  # No explicit dislike, keep it
+
+            # User gave 1-star, check if any other user protects it
+            other_user_protection = (
+                protection['is_starred'] or
+                protection['in_user_playlist'] or
+                protection['max_rating'] > 2
+            )
+
+            if other_user_protection:
+                return False, None  # Another user protects it
+
+            return True, "1-star with no other user protection"
+
     async def process_api_cleanup(self, history_path, listenbrainz_api=None, lastfm_api=None):
-        """Cleanup routine: check ratings and delete low-rated songs."""
+        """Cleanup routine: check ratings and delete songs based on user interactions.
+
+        Discover Weekly playlists (ListenBrainz/Last.fm/LLM Weekly):
+          - Auto-remove if nobody added to library
+          - OR if nobody gave > 2 stars AND not in anyone's playlist
+
+        Other songs:
+          - Remove only if user gave 1-star AND no other user has favorited,
+            added to playlist, or given > 2 stars
+        """
         salt, token = self._get_navidrome_auth_params()
         history = self._load_download_history(history_path)
 
@@ -706,12 +802,17 @@ class NavidromeAPI:
             'LLM': 'LLM Weekly',
         }
 
+        # Sources that use "discover weekly" deletion rules
+        discover_weekly_sources = {'ListenBrainz', 'Last.fm', 'LLM'}
+
         for source_name in list(history.keys()):
             tracks = history.get(source_name, [])
             if not tracks:
                 continue
 
-            print(f"\n=== Cleanup for {source_name} ({len(tracks)} tracks) ===")
+            is_discover_weekly = source_name in discover_weekly_sources
+            rule_type = "discover-weekly" if is_discover_weekly else "standard"
+            print(f"\n=== Cleanup for {source_name} ({len(tracks)} tracks, {rule_type} rules) ===")
 
             playlist_name = playlist_name_map.get(source_name, f"{source_name} Weekly")
             existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
@@ -735,39 +836,44 @@ class NavidromeAPI:
                     continue
 
                 protection = self._check_song_protection(nd_id)
+                should_delete, delete_reason = self._should_delete_song(protection, is_discover_weekly)
 
-                if protection['protected']:
-                    reasons = '; '.join(protection['reasons'])
+                if not should_delete:
+                    # Keep the song
+                    reasons = '; '.join(protection['reasons']) if protection['reasons'] else 'user interaction'
                     print(f"  KEEP: {label} ({reasons})")
                     kept_songs.append(f"{label} (rating={protection['max_rating']})")
-                    tracks_to_remove.append(track)
+                    tracks_to_remove.append(track)  # Remove from history (now permanent)
 
-                    # Submit feedback for high-rated tracks
-                    if source_name == 'ListenBrainz' and self.listenbrainz_enabled and protection['max_rating'] == 5:
-                        mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
-                        if mbid and listenbrainz_api:
-                            await listenbrainz_api.submit_feedback(mbid, 1)
-                    elif source_name == 'Last.fm' and self.lastfm_enabled and protection['max_rating'] == 5:
-                        if lastfm_api:
-                            try:
-                                await asyncio.to_thread(lastfm_api.love_track, title, artist)
-                            except Exception as e:
-                                print(f"  Error submitting Last.fm love: {e}")
+                    # Submit positive feedback for high-rated tracks
+                    if protection['max_rating'] == 5:
+                        if source_name == 'ListenBrainz' and self.listenbrainz_enabled:
+                            mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
+                            if mbid and listenbrainz_api:
+                                await listenbrainz_api.submit_feedback(mbid, 1)
+                        elif source_name == 'Last.fm' and self.lastfm_enabled:
+                            if lastfm_api:
+                                try:
+                                    await asyncio.to_thread(lastfm_api.love_track, title, artist)
+                                except Exception as e:
+                                    print(f"  Error submitting Last.fm love: {e}")
 
                     if nd_id:
                         tracks_to_keep_ids.append(nd_id)
                 else:
+                    # Delete the song
+                    print(f"  DELETE: {label} ({delete_reason})")
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
-                            deleted_songs.append(label)
+                            deleted_songs.append(f"{label} ({delete_reason})")
                     else:
-                        print(f"  File not found: {label}")
+                        print(f"    File not found on disk")
                         deleted_songs.append(f"{label} (file not found)")
                     tracks_to_remove.append(track)
 
                     # Submit negative feedback for 1-star
-                    if protection['max_rating'] == 1:
+                    if protection['has_one_star']:
                         if source_name == 'ListenBrainz' and self.listenbrainz_enabled:
                             mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
                             if mbid and listenbrainz_api:
@@ -777,7 +883,7 @@ class NavidromeAPI:
             for track in tracks_to_remove:
                 self.remove_from_download_history(history_path, source_name, track.get('artist', ''), track.get('title', ''))
 
-            # Update playlist
+            # Update playlist to remove deleted songs
             if existing_playlist and playlist_songs:
                 processed_ids = {t.get('navidrome_id', '') for t in tracks}
                 new_song_ids = []
@@ -787,16 +893,22 @@ class NavidromeAPI:
                         new_song_ids.append(ps_id)
                 self._update_playlist(existing_playlist['id'], new_song_ids, salt, token)
 
+        # Summary
+        print(f"\n{'='*50}")
+        print("CLEANUP SUMMARY")
+        print(f"{'='*50}")
         if deleted_songs:
             print(f"\nDeleted {len(deleted_songs)} songs:")
             for s in deleted_songs:
                 print(f"  - {s}")
         if kept_songs:
-            print(f"\nKept {len(kept_songs)} songs (now permanent):")
+            print(f"\nKept {len(kept_songs)} songs (now permanent in library):")
             for s in kept_songs:
                 print(f"  - {s}")
+        if not deleted_songs and not kept_songs:
+            print("\nNo songs processed.")
 
-        print("Removing empty folders...")
+        print("\nRemoving empty folders...")
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
 

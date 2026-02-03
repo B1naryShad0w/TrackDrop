@@ -103,19 +103,15 @@ downloads_queue = {}
 initialize_streamrip_db()
 
 # Initialize global instances for downloaders and APIs
-tagger_global = Tagger(ALBUM_RECOMMENDATION_COMMENT)
+tagger_global = Tagger()
 # Correctly initialize NavidromeAPI with required arguments from config.py
 navidrome_api_global = NavidromeAPI(
     root_nd=ROOT_ND,
     user_nd=USER_ND,
     password_nd=PASSWORD_ND,
     music_library_path=MUSIC_LIBRARY_PATH,
-    target_comment=TARGET_COMMENT,
-    lastfm_target_comment=LASTFM_TARGET_COMMENT,
-    album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT,
     listenbrainz_enabled=LISTENBRAINZ_ENABLED,
     lastfm_enabled=LASTFM_ENABLED,
-    llm_target_comment=LLM_TARGET_COMMENT,
     llm_enabled=LLM_ENABLED,
     admin_user=globals().get('ADMIN_USER', ''),
     admin_password=globals().get('ADMIN_PASSWORD', ''),
@@ -795,8 +791,7 @@ def get_config():
         "LLM_API_KEY": "••••••••" if LLM_API_KEY else "",
         "LLM_MODEL_NAME": globals().get("LLM_MODEL_NAME", ""),
         "LLM_BASE_URL": globals().get("LLM_BASE_URL", ""),
-        "CRON_SCHEDULE": get_current_cron_schedule(),
-        "PLAYLIST_MODE": globals().get("PLAYLIST_MODE", "tags")
+        "CRON_SCHEDULE": get_current_cron_schedule()
     })
 
 @app.route('/api/update_arl', methods=['POST'])
@@ -891,7 +886,7 @@ def update_config():
             if key in {'LISTENBRAINZ_ENABLED', 'LASTFM_ENABLED', 'ALBUM_RECOMMENDATION_ENABLED', 'HIDE_DOWNLOAD_FROM_LINK', 'HIDE_FRESH_RELEASES', 'LLM_ENABLED'}:
                 # Ensure boolean values are written as True/False (Python literal)
                 new_value_str_for_file = str(value) 
-            elif key in ('DOWNLOAD_METHOD', 'LLM_PROVIDER', 'PLAYLIST_MODE'):
+            elif key in ('DOWNLOAD_METHOD', 'LLM_PROVIDER'):
                 new_value_str_for_file = f'"{value}"'
             else:
                 # For other string values, ensure they are quoted
@@ -917,12 +912,8 @@ def update_config():
             user_nd=globals().get('USER_ND', ''),
             password_nd=globals().get('PASSWORD_ND', ''),
             music_library_path=globals().get('MUSIC_LIBRARY_PATH', ''),
-            target_comment=globals().get('TARGET_COMMENT', ''),
-            lastfm_target_comment=globals().get('LASTFM_TARGET_COMMENT', ''),
-            album_recommendation_comment=globals().get('ALBUM_RECOMMENDATION_COMMENT', ''),
             listenbrainz_enabled=globals().get('LISTENBRAINZ_ENABLED', False),
             lastfm_enabled=globals().get('LASTFM_ENABLED', False),
-            llm_target_comment=globals().get('LLM_TARGET_COMMENT', ''),
             llm_enabled=globals().get('LLM_ENABLED', False),
             admin_user=globals().get('ADMIN_USER', ''),
             admin_password=globals().get('ADMIN_PASSWORD', ''),
@@ -1093,16 +1084,12 @@ def trigger_navidrome_cleanup():
         lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
 
         import asyncio
-        playlist_mode = globals().get('PLAYLIST_MODE', 'tags')
-        if playlist_mode == 'api':
-            download_history_path = get_user_history_path(get_current_user())
-            asyncio.run(navidrome_api_global.process_api_cleanup(
-                history_path=download_history_path,
-                listenbrainz_api=listenbrainz_api,
-                lastfm_api=lastfm_api
-            ))
-        else:
-            asyncio.run(navidrome_api_global.process_navidrome_library(listenbrainz_api=listenbrainz_api, lastfm_api=lastfm_api))
+        download_history_path = get_user_history_path(get_current_user())
+        asyncio.run(navidrome_api_global.process_api_cleanup(
+            history_path=download_history_path,
+            listenbrainz_api=listenbrainz_api,
+            lastfm_api=lastfm_api
+        ))
         return jsonify({"status": "success", "message": "Navidrome cleanup completed successfully."})
     except Exception as e:
         print(f"Error triggering Navidrome cleanup: {e}")
@@ -1891,146 +1878,6 @@ async def get_deezer_album_art():
     except Exception as e:
         print(f"Error getting Deezer album art for {artist} - {album_title}: {e}")
         return jsonify({"status": "error", "message": f"Error getting Deeezer album art: {e}"}), 500
-
-@app.route('/api/create_smart_playlists', methods=['POST'])
-@login_required
-def create_smart_playlists():
-    """
-    Create Navidrome Smart Playlist (.nsp) files for enabled recommendation types.
-    These files will be automatically detected by Navidrome and appear as playlists.
-    Only creates playlists for services that are enabled in the configuration.
-    """
-    try:
-        # Get the music library path from config
-        music_library_path = MUSIC_LIBRARY_PATH
-
-        # Check if music library path is configured
-        if not music_library_path or music_library_path == "/path/to/music":
-            return jsonify({
-                "status": "error",
-                "message": "Music library path is not properly configured. Please set MUSIC_LIBRARY_PATH in config.py."
-            }), 400
-
-        # Ensure the music library directory exists
-        if not os.path.exists(music_library_path):
-            return jsonify({
-                "status": "error",
-                "message": f"Music library path does not exist: {music_library_path}"
-            }), 400
-
-        # Define the smart playlist templates based on comment strings from config
-        # Only include playlists for enabled services
-        playlist_templates = []
-
-        # Add ListenBrainz playlist if enabled
-        if LISTENBRAINZ_ENABLED:
-            playlist_templates.append({
-                "filename": "lb.nsp",
-                "name": "ListenBrainz Weekly",
-                "comment": "Tracks where comment is lb_recommendation",
-                "comment_value": TARGET_COMMENT,
-                "source": "ListenBrainz"
-            })
-
-        # Add Last.fm playlist if enabled
-        if LASTFM_ENABLED:
-            playlist_templates.append({
-                "filename": "lastfm.nsp",
-                "name": "Last.fm Weekly",
-                "comment": "Tracks where comment is lastfm_recommendation",
-                "comment_value": LASTFM_TARGET_COMMENT,
-                "source": "Last.fm"
-            })
-
-        # Add LLM playlist if enabled
-        if LLM_ENABLED:
-            playlist_templates.append({
-                "filename": "llm.nsp",
-                "name": "LLM Weekly",
-                "comment": "Tracks where comment is llm_recommendation",
-                "comment_value": LLM_TARGET_COMMENT,
-                "source": "LLM"
-            })
-
-        # Add Album Recommendations playlist if album recommendations are enabled
-        if ALBUM_RECOMMENDATION_ENABLED:
-            playlist_templates.append({
-                "filename": "album.nsp",
-                "name": "Album Weekly",
-                "comment": "Tracks where comment is album_recommendation",
-                "comment_value": ALBUM_RECOMMENDATION_COMMENT,
-                "source": "Album Recommendations"
-            })
-
-        # Check if any playlists are configured to be created
-        if not playlist_templates:
-            return jsonify({
-                "status": "info",
-                "message": "No recommendation sources are enabled in the configuration. Please enable ListenBrainz, Last.fm, LLM, or Album Recommendations in the settings to create smart playlists."
-            })
-
-        created_files = []
-        failed_files = []
-
-        for template in playlist_templates:
-            try:
-                # Create the NSP file content
-                nsp_content = {
-                    "name": template["name"],
-                    "comment": template["comment"],
-                    "all": [
-                        {
-                            "is": {
-                                "comment": template["comment_value"]
-                            }
-                        }
-                    ],
-                    "sort": "title",
-                    "order": "asc",
-                    "limit": 10000
-                }
-
-                # Write the NSP file to the music library
-                file_path = os.path.join(music_library_path, template["filename"])
-
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(nsp_content, f, indent=2)
-
-                created_files.append(template["filename"])
-                print(f"Created smart playlist file: {file_path}")
-
-            except Exception as e:
-                failed_files.append({
-                    "filename": template["filename"],
-                    "error": str(e),
-                    "source": template["source"]
-                })
-                print(f"Failed to create smart playlist file {template['filename']}: {e}")
-
-        if created_files:
-            message = f"Successfully created {len(created_files)} smart playlist files: {', '.join(created_files)}"
-            if failed_files:
-                message += f" | Failed to create {len(failed_files)} files: {', '.join([f['filename'] for f in failed_files])}"
-            return jsonify({
-                "status": "success",
-                "message": message,
-                "created_files": created_files,
-                "failed_files": failed_files
-            })
-        else:
-            return jsonify({
-                "status": "error",
-                "message": "Failed to create any smart playlist files",
-                "failed_files": failed_files
-            }), 500
-
-    except Exception as e:
-        print(f"Error creating smart playlists: {e}")
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": f"An unexpected error occurred while creating smart playlists: {e}"
-        }), 500
 
 # --- Global Error Handler ---
 @app.errorhandler(Exception)
