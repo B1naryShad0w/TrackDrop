@@ -1253,10 +1253,20 @@ class NavidromeAPI:
         from mutagen.mp4 import MP4
         from mutagen.oggvorbis import OggVorbis
 
-        print(f"\nOrganizing music files...")
+        print(f"[ORGANIZE] source_folder={source_folder}", flush=True)
+        print(f"[ORGANIZE] destination_base_folder={destination_base_folder}", flush=True)
+        print(f"[ORGANIZE] source exists: {os.path.exists(source_folder)}", flush=True)
+        print(f"[ORGANIZE] dest exists: {os.path.exists(destination_base_folder)}", flush=True)
         moved_files = {}
 
         audio_extensions = ('.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wma')
+
+        # List all files in source folder for debugging
+        all_files = []
+        for root, dirs, files in os.walk(source_folder):
+            for f in files:
+                all_files.append(os.path.join(root, f))
+        print(f"[ORGANIZE] Files in source folder: {all_files}", flush=True)
 
         for root, dirs, files in os.walk(source_folder):
             for filename in files:
@@ -1313,9 +1323,10 @@ class NavidromeAPI:
                         counter += 1
 
                     os.makedirs(album_folder, exist_ok=True)
+                    print(f"[ORGANIZE] Moving {file_path} -> {new_file_path}", flush=True)
                     shutil.move(file_path, new_file_path)
                     moved_files[file_path] = new_file_path
-                    print(f"  {folder_artist}/{album}/{new_filename}")
+                    print(f"[ORGANIZE] Moved: {folder_artist}/{album}/{new_filename}", flush=True)
 
                 except Exception as e:
                     print(f"Error organizing '{filename}': {e}")

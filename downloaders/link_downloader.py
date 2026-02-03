@@ -506,16 +506,18 @@ class LinkDownloader:
 
             # After downloading, organize files
             if downloaded_files:
-                print("Organizing downloaded files...")
-                self.navidrome_api.organize_music_files(self.temp_download_folder, self.music_library_path)
-                print(f"Successfully downloaded and organized {len(downloaded_files)} files from {url}")
+                print(f"[DOWNLOAD] Downloaded files to organize: {downloaded_files}", flush=True)
+                print(f"[DOWNLOAD] temp_folder={self.temp_download_folder}, dest={self.music_library_path}", flush=True)
+                moved_files = self.navidrome_api.organize_music_files(self.temp_download_folder, self.music_library_path)
+                print(f"[DOWNLOAD] organize_music_files returned: {moved_files}", flush=True)
+                print(f"[DOWNLOAD] Successfully downloaded and organized {len(downloaded_files)} files from {url}", flush=True)
                 if resolved_title:
                     update_status_file(download_id, "completed", f"Downloaded: {resolved_title}", title=resolved_title)
                 else:
                     update_status_file(download_id, "completed", f"Downloaded {len(downloaded_files)} files.")
                 return downloaded_files
             else:
-                print(f"No files were downloaded from {url}", file=sys.stderr)
+                print(f"[DOWNLOAD] No files were downloaded from {url}", flush=True)
                 update_status_file(download_id, "failed", f"No files downloaded from {url}. The track may not be available on Deezer.")
                 return []
 

@@ -49,6 +49,9 @@ class TrackDownloader:
                 print(f"  Warning: Navidrome duplicate check failed: {e}", file=sys.stderr)
 
         downloaded_file_path = None
+        print(f"[TRACK_DL] Downloading {song_info['artist']} - {song_info['title']} using {current_download_method}", flush=True)
+        print(f"[TRACK_DL] Deezer link: {deezer_link}", flush=True)
+        print(f"[TRACK_DL] Temp folder: {temp_download_folder}", flush=True)
         if current_download_method == "deemix":
             downloaded_file_path = self._download_track_deemix(deezer_link, song_info, temp_download_folder)
         elif current_download_method == "streamrip":
@@ -56,6 +59,7 @@ class TrackDownloader:
         else:
             print(f"  ❌ Unknown DOWNLOAD_METHOD: {current_download_method}")
             return None
+        print(f"[TRACK_DL] downloaded_file_path: {downloaded_file_path}", flush=True)
 
         if downloaded_file_path:
             # Look up MusicBrainz artist IDs for all sources
