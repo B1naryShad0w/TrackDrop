@@ -53,7 +53,7 @@ def authenticate_navidrome(username, password):
                 "t": token,
                 "s": salt,
                 "v": "1.16.1",
-                "c": "re-command",
+                "c": "trackdrop",
                 "f": "json",
             },
             timeout=10,

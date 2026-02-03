@@ -57,7 +57,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json',
             'query': '',
             'songCount': 10000
@@ -79,7 +79,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json',
             'id': song_id
         }
@@ -729,7 +729,7 @@ class NavidromeAPI:
                 't': token,
                 's': salt,
                 'v': '1.16.1',
-                'c': 'python-script',
+                'c': 'trackdrop',
                 'f': 'json',
                 'query': query,
                 'songCount': 20,
@@ -862,7 +862,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json'
         }
         try:
@@ -891,7 +891,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json',
             'name': name
         }
@@ -927,7 +927,7 @@ class NavidromeAPI:
                 't': token,
                 's': salt,
                 'v': '1.16.1',
-                'c': 'python-script',
+                'c': 'trackdrop',
                 'f': 'json',
                 'playlistId': playlist_id
             }
@@ -956,7 +956,7 @@ class NavidromeAPI:
                 't': token,
                 's': salt,
                 'v': '1.16.1',
-                'c': 'python-script',
+                'c': 'trackdrop',
                 'f': 'json',
                 'playlistId': playlist_id
             }
@@ -987,7 +987,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json'
         }
         try:
@@ -1014,7 +1014,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json'
         }
         try:
@@ -1046,7 +1046,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json',
             'playlistId': playlist_id,
             'songIndexToRemove': song_index
@@ -1067,7 +1067,7 @@ class NavidromeAPI:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'f': 'json',
             'id': playlist_id
         }

@@ -133,7 +133,7 @@ class ListenBrainzAPI:
     async def get_recording_mbid_from_track(self, artist, title):
         """Fetches recording MBID from MusicBrainz using artist and title."""
         headers = {
-            'User-Agent': 'Re-command/1.0 ( https://github.com/z-a-f/re-command )'
+            'User-Agent': 'TrackDrop/1.0'
         }
         url = f"https://musicbrainz.org/ws/2/recording/?query=artist:\"{artist}\" AND recording:\"{title}\"&fmt=json"
         try:
@@ -154,7 +154,7 @@ class ListenBrainzAPI:
         """Fetches artist MBIDs from a recording MBID via MusicBrainz API.
         Returns a list of artist MBID strings, or empty list on failure."""
         headers = {
-            'User-Agent': 'Re-command/1.0 ( https://github.com/z-a-f/re-command )'
+            'User-Agent': 'TrackDrop/1.0'
         }
         url = f"https://musicbrainz.org/ws/2/recording/{recording_mbid}?fmt=json&inc=artist-credits"
         try:

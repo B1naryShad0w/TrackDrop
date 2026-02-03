@@ -424,8 +424,8 @@ def mark_setup_done():
 @app.route('/manifest.json')
 def pwa_manifest():
     manifest = {
-        "name": "Re-command",
-        "short_name": "Re-command",
+        "name": "TrackDrop",
+        "short_name": "TrackDrop",
         "description": "Music recommendation & download manager",
         "start_url": "/",
         "display": "standalone",
