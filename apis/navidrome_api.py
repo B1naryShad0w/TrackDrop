@@ -122,8 +122,11 @@ class NavidromeAPI:
                     (song_id,)
                 )
                 for row in cursor.fetchall():
-                    user_id, rating, starred, starred_at = row
-                    rating = rating or 0
+                    user_id, db_rating, starred, starred_at = row
+                    db_rating = db_rating or 0
+                    # Navidrome stores ratings on 0-10 scale (each increment = half star)
+                    # Convert to 0-5 scale: 2=1star, 4=2stars, 6=3stars, 8=4stars, 10=5stars
+                    rating = db_rating / 2 if db_rating > 0 else 0
 
                     if rating > 0 or starred or starred_at:
                         result['has_interaction'] = True
@@ -586,8 +589,20 @@ class NavidromeAPI:
         except Exception:
             return False
 
+    async def _wait_for_scan_async(self, timeout=60):
+        """Wait for an ongoing library scan to complete (async version)."""
+        import asyncio
+        start = time.time()
+        while time.time() - start < timeout:
+            if not self._get_scan_status():
+                print("Library scan completed")
+                return True
+            await asyncio.sleep(2)
+        print(f"Scan did not complete within {timeout}s, continuing anyway")
+        return False
+
     def _wait_for_scan(self, timeout=120):
-        """Wait for an ongoing library scan to complete."""
+        """Wait for an ongoing library scan to complete (sync version)."""
         start = time.time()
         while time.time() - start < timeout:
             if not self._get_scan_status():
@@ -922,7 +937,7 @@ class NavidromeAPI:
         if deleted_songs:
             print("Triggering full library scan to remove deleted entries...")
             self._start_scan(full_scan=True)
-            self._wait_for_scan(timeout=60)
+            await self._wait_for_scan_async(timeout=60)
 
     async def process_debug_cleanup(self, history_path):
         """Debug cleanup with detailed logging. Returns summary dict."""
@@ -1045,7 +1060,7 @@ class NavidromeAPI:
         print(f"\n[DEBUG CLEANUP] Triggering full library scan")
         self._start_scan(full_scan=True)
         print(f"[DEBUG CLEANUP] Waiting for scan to complete...")
-        self._wait_for_scan(timeout=60)
+        await self._wait_for_scan_async(timeout=60)
 
         print(f"\n{'='*60}")
         print(f"[DEBUG CLEANUP] SUMMARY")
@@ -1114,11 +1129,12 @@ class NavidromeAPI:
             cursor = conn.cursor()
 
             # Find songs rated 1 star or less BY THIS USER (includes half-star)
+            # Navidrome uses 0-10 scale: 1=half-star, 2=1-star, so <= 2 means "1 star or less"
             cursor.execute("""
                 SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
                 FROM annotation a
                 JOIN media_file mf ON a.item_id = mf.id
-                WHERE a.item_type = 'media_file' AND a.rating > 0 AND a.rating <= 1 AND a.user_id = ?
+                WHERE a.item_type = 'media_file' AND a.rating > 0 AND a.rating <= 2 AND a.user_id = ?
             """, (user_id,))
 
             low_rated_songs = cursor.fetchall()
@@ -1245,7 +1261,7 @@ class NavidromeAPI:
             self._start_scan(full_scan=True)
 
             print("Waiting for scan to complete...")
-            self._wait_for_scan(timeout=60)
+            await self._wait_for_scan_async(timeout=60)
 
         # Summary
         print(f"\n{'='*60}")
