@@ -280,16 +280,16 @@ class NavidromeAPI:
                 seen.add(c)
                 unique_candidates.append(c)
 
-        print(f"DEBUG _find_actual_song_path: music_library_path={self.music_library_path}")
-        print(f"DEBUG _find_actual_song_path: candidates={unique_candidates}")
+        print(f"DEBUG _find_actual_song_path: music_library_path={self.music_library_path}", flush=True)
+        print(f"DEBUG _find_actual_song_path: candidates={unique_candidates}", flush=True)
 
         # Try each candidate
         for candidate in unique_candidates:
             if os.path.isabs(candidate) and os.path.exists(candidate):
-                print(f"DEBUG _find_actual_song_path: Found absolute path: {candidate}")
+                print(f"DEBUG _find_actual_song_path: Found absolute path: {candidate}", flush=True)
                 return candidate
             full = os.path.join(self.music_library_path, candidate)
-            print(f"DEBUG _find_actual_song_path: Trying {full} - exists={os.path.exists(full)}")
+            print(f"DEBUG _find_actual_song_path: Trying {full} - exists={os.path.exists(full)}", flush=True)
             if os.path.exists(full):
                 return full
 
@@ -599,17 +599,17 @@ class NavidromeAPI:
         import asyncio
         start = time.time()
         check_count = 0
-        print(f"DEBUG: Starting async scan wait (timeout={timeout}s)")
+        print(f"DEBUG: Starting async scan wait (timeout={timeout}s)", flush=True)
         while time.time() - start < timeout:
             check_count += 1
             scanning = self._get_scan_status()
             elapsed = time.time() - start
-            print(f"DEBUG: Scan check #{check_count} - scanning={scanning}, elapsed={elapsed:.1f}s")
+            print(f"DEBUG: Scan check #{check_count} - scanning={scanning}, elapsed={elapsed:.1f}s", flush=True)
             if not scanning:
-                print(f"Library scan completed after {elapsed:.1f}s")
+                print(f"Library scan completed after {elapsed:.1f}s", flush=True)
                 return True
             await asyncio.sleep(2)
-        print(f"DEBUG: Scan did not complete within {timeout}s, continuing anyway")
+        print(f"DEBUG: Scan did not complete within {timeout}s, continuing anyway", flush=True)
         return False
 
     def _wait_for_scan(self, timeout=120):
@@ -1133,7 +1133,7 @@ class NavidromeAPI:
             results['errors'].append(f"Could not find user ID for '{username}'")
             return results
 
-        print(f"\nPreviewing cleanup for user: {username} (ID: {user_id[:8]}...)")
+        print(f"\nPreviewing cleanup for user: {username} (ID: {user_id[:8]}...)", flush=True)
 
         try:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
@@ -1148,9 +1148,9 @@ class NavidromeAPI:
                 ORDER BY a.rating
             """, (user_id,))
             rating_counts = cursor.fetchall()
-            print(f"DEBUG: Rating distribution for {username}:")
+            print(f"DEBUG: Rating distribution for {username}:", flush=True)
             for rating_val, count in rating_counts:
-                print(f"  Rating {rating_val}: {count} songs")
+                print(f"  Rating {rating_val}: {count} songs", flush=True)
 
             # Find songs rated 1 star or less BY THIS USER (includes half-star)
             # Check for both integer scale (1, 2) and decimal scale (0.5, 1.0)
@@ -1165,10 +1165,10 @@ class NavidromeAPI:
             conn.close()
 
             results['scanned'] = len(low_rated_songs)
-            print(f"Found {len(low_rated_songs)} songs rated 1 star or less by {username}")
+            print(f"Found {len(low_rated_songs)} songs rated 1 star or less by {username}", flush=True)
 
             for song_id, db_rating, title, artist, album, db_path in low_rated_songs:
-                print(f"  DEBUG: {artist} - {title} has rating={db_rating} in DB, path={db_path}")
+                print(f"  DEBUG: {artist} - {title} has rating={db_rating} in DB, path={db_path}", flush=True)
                 protection = self._check_song_protection(song_id)
 
                 # Can delete if no OTHER user has protected it
@@ -1232,58 +1232,58 @@ class NavidromeAPI:
             results['errors'].append("Navidrome database path not configured")
             return results
 
-        print(f"\n{'='*60}")
-        print(f"MANUAL CLEANUP - Deleting {len(song_ids)} songs for {username}")
-        print(f"{'='*60}")
+        print(f"\n{'='*60}", flush=True)
+        print(f"MANUAL CLEANUP - Deleting {len(song_ids)} songs for {username}", flush=True)
+        print(f"{'='*60}", flush=True)
 
         salt, token = self._get_navidrome_auth_params()
 
         for song_id in song_ids:
             try:
-                print(f"\nDEBUG: Processing song_id={song_id}")
+                print(f"\nDEBUG: Processing song_id={song_id}", flush=True)
                 song_details = self._get_song_details(song_id, salt, token)
                 if not song_details:
-                    print(f"DEBUG: Song not found in API: {song_id}")
+                    print(f"DEBUG: Song not found in API: {song_id}", flush=True)
                     results['errors'].append(f"Song not found: {song_id}")
                     continue
 
                 artist = song_details.get('artist', 'Unknown')
                 title = song_details.get('title', 'Unknown')
                 label = f"{artist} - {title}"
-                print(f"DEBUG: Found song: {label}")
+                print(f"DEBUG: Found song: {label}", flush=True)
 
                 # Get the file path
                 db_path = song_details.get('path', '')
-                print(f"DEBUG: API path: {db_path}")
+                print(f"DEBUG: API path: {db_path}", flush=True)
                 file_path = self._find_actual_song_path(db_path, song_details)
-                print(f"DEBUG: Resolved file_path: {file_path}")
-                print(f"DEBUG: File exists: {os.path.exists(file_path) if file_path else 'N/A'}")
+                print(f"DEBUG: Resolved file_path: {file_path}", flush=True)
+                print(f"DEBUG: File exists: {os.path.exists(file_path) if file_path else 'N/A'}", flush=True)
 
                 if file_path and os.path.exists(file_path):
-                    print(f"DEBUG: Attempting to delete: {file_path}")
+                    print(f"DEBUG: Attempting to delete: {file_path}", flush=True)
                     if self._delete_song(file_path):
                         results['deleted'].append({
                             'artist': artist,
                             'title': title,
                             'album': song_details.get('album', '')
                         })
-                        print(f"  DELETED: {label}")
+                        print(f"  DELETED: {label}", flush=True)
                     else:
-                        print(f"DEBUG: _delete_song returned False for {file_path}")
+                        print(f"DEBUG: _delete_song returned False for {file_path}", flush=True)
                         results['errors'].append(f"Failed to delete file: {label}")
                 else:
                     # File doesn't exist on disk, still count as "deleted"
-                    print(f"DEBUG: File not found, marking as deleted anyway")
+                    print(f"DEBUG: File not found, marking as deleted anyway", flush=True)
                     results['deleted'].append({
                         'artist': artist,
                         'title': title,
                         'album': song_details.get('album', ''),
                         'note': 'file not found on disk'
                     })
-                    print(f"  DELETED (file missing): {label}")
+                    print(f"  DELETED (file missing): {label}", flush=True)
 
             except Exception as e:
-                print(f"DEBUG: Exception processing {song_id}: {e}")
+                print(f"DEBUG: Exception processing {song_id}: {e}", flush=True)
                 import traceback
                 traceback.print_exc()
                 results['errors'].append(f"Error processing {song_id}: {str(e)}")

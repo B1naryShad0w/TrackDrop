@@ -1135,11 +1135,14 @@ def manual_cleanup_preview():
     Only considers songs rated 1-star by the current user.
     """
     username = get_current_user()
-    print(f"Manual cleanup preview requested by: {username}")
+    print(f"[CLEANUP PREVIEW] Requested by: {username}", flush=True)
+    sys.stdout.flush()
     try:
         import asyncio
         results = asyncio.run(navidrome_api_global.preview_manual_cleanup(username))
 
+        print(f"[CLEANUP PREVIEW] Results: scanned={results['scanned']}, to_delete={len(results['to_delete'])}, to_keep={len(results['to_keep'])}", flush=True)
+        sys.stdout.flush()
         return jsonify({
             "status": "success",
             "to_delete": results['to_delete'],
@@ -1148,8 +1151,9 @@ def manual_cleanup_preview():
             "errors": results['errors']
         })
     except Exception as e:
-        print(f"Error during cleanup preview: {e}")
+        print(f"[CLEANUP PREVIEW] Error: {e}", flush=True)
         traceback.print_exc()
+        sys.stdout.flush()
         return jsonify({"status": "error", "message": f"Error during cleanup preview: {e}"}), 500
 
 
@@ -1164,14 +1168,21 @@ def manual_cleanup():
     data = request.get_json() or {}
     song_ids = data.get('song_ids', [])
 
+    print(f"[CLEANUP] Request received for {username}: {len(song_ids)} songs", flush=True)
+    print(f"[CLEANUP] Song IDs: {song_ids}", flush=True)
+    sys.stdout.flush()
+
     if not song_ids:
         return jsonify({"status": "error", "message": "No songs specified for deletion"}), 400
 
-    print(f"Manual cleanup executing for {username}: {len(song_ids)} songs to delete")
     try:
         import asyncio
+        print(f"[CLEANUP] Calling process_manual_cleanup...", flush=True)
+        sys.stdout.flush()
         results = asyncio.run(navidrome_api_global.process_manual_cleanup(username, song_ids))
 
+        print(f"[CLEANUP] Results: deleted={len(results['deleted'])}, errors={len(results['errors'])}", flush=True)
+        sys.stdout.flush()
         msg = f"Deleted {len(results['deleted'])} songs"
         if results['errors']:
             msg += f" ({len(results['errors'])} errors)"
@@ -1183,8 +1194,9 @@ def manual_cleanup():
             "errors": results['errors']
         })
     except Exception as e:
-        print(f"Error during manual cleanup: {e}")
+        print(f"[CLEANUP] Exception: {e}", flush=True)
         traceback.print_exc()
+        sys.stdout.flush()
         return jsonify({"status": "error", "message": f"Error during manual cleanup: {e}"}), 500
 
 
