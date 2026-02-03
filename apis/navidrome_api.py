@@ -1047,12 +1047,19 @@ class NavidromeAPI:
     def _get_user_id_by_username(self, username):
         """Look up a Navidrome user ID by username."""
         if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+            print(f"Navidrome DB path not configured or doesn't exist: {self.navidrome_db_path}")
             return None
         try:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM user WHERE user_name = ?", (username,))
+            # Try 'name' column first (standard Navidrome), fall back to 'user_name'
+            cursor.execute("SELECT id, name FROM user WHERE name = ? OR user_name = ?", (username, username))
             row = cursor.fetchone()
+            if not row:
+                # Debug: list all users to help troubleshoot
+                cursor.execute("SELECT id, name FROM user LIMIT 10")
+                all_users = cursor.fetchall()
+                print(f"Available users in Navidrome: {[u[1] for u in all_users]}")
             conn.close()
             return row[0] if row else None
         except Exception as e:
