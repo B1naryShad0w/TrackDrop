@@ -796,6 +796,13 @@ class NavidromeAPI:
         scored = [(s, _score(s)) for s in all_candidates]
         scored.sort(key=lambda x: x[1], reverse=True)
 
+        # Debug: show top candidates and their scores
+        for s, sc in scored[:5]:
+            s_album = s.get('album', '?')
+            print(f"    Candidate: {s.get('artist','?')} - {s.get('title','?')} [{s_album}] score={sc}", flush=True)
+        if norm_album:
+            print(f"    Searching for album: '{norm_album}'", flush=True)
+
         best_song, best_score = scored[0]
         # Require at least a title or artist partial match (score >= 60)
         if best_score >= 60:
