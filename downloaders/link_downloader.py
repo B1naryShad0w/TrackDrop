@@ -195,13 +195,15 @@ class LinkDownloader:
                             print(f"Could not find Deezer ID for {original_platform} playlist {playlist_id} after all resilient fallback attempts.", file=sys.stderr)
                             return []
             elif re.search(youtube_re, url):
-                print("Detected YouTube (or YouTube Music) Link.")
+                print(f"Detected YouTube (or YouTube Music) Link.", flush=True)
                 video_id = re.search(youtube_re, url).group(1)
                 platform = "youtubeMusic" if "music.youtube.com" in url else "youtube"
                 original_platform = platform
                 original_id = video_id
+                print(f"  Video ID: {video_id}, Platform: {platform}", flush=True)
                 # Use Songlink URL-based lookup (most reliable for YouTube)
                 deezer_id = await self._get_deezer_id_from_songlink_url(url)
+                print(f"  Songlink URL result: deezer_id={deezer_id}", flush=True)
                 # Fallback: get video title via oEmbed and search Deezer
                 if not deezer_id:
                     print(f"  Songlink failed, trying YouTube oEmbed fallback...")
@@ -574,19 +576,29 @@ class LinkDownloader:
         """Use Songlink API with a full URL to get Deezer ID. More reliable than platform+id for YouTube."""
         try:
             api_url = f"{self.songlink_base_url}/links?url={requests.utils.quote(source_url, safe='')}"
+            print(f"  Songlink URL lookup: {api_url}", flush=True)
             response = requests.get(api_url, timeout=15)
+            print(f"  Songlink response status: {response.status_code}", flush=True)
             if response.status_code == 200:
                 data = response.json()
+                platforms = list(data.get('linksByPlatform', {}).keys())
+                print(f"  Songlink platforms found: {platforms}", flush=True)
                 deezer_info = data.get('linksByPlatform', {}).get('deezer')
                 if deezer_info and deezer_info.get('url'):
                     deezer_url = deezer_info['url']
+                    print(f"  Songlink Deezer URL: {deezer_url}", flush=True)
                     match = re.search(r'deezer\.com\/(?:track|album|playlist)\/(\d+)', deezer_url)
                     if match:
                         return match.group(1)
-            elif response.status_code != 404:
-                print(f"  Songlink URL lookup returned {response.status_code}", file=sys.stderr)
+                    print(f"  Could not extract Deezer ID from URL: {deezer_url}", flush=True)
+                else:
+                    print(f"  No Deezer link in Songlink response", flush=True)
+            elif response.status_code == 404:
+                print(f"  Songlink: song not found (404)", flush=True)
+            else:
+                print(f"  Songlink URL lookup returned {response.status_code}: {response.text[:200]}", flush=True)
         except Exception as e:
-            print(f"  Songlink URL lookup failed: {e}", file=sys.stderr)
+            print(f"  Songlink URL lookup failed: {e}", flush=True)
         return None
 
     async def _get_deezer_id_from_songlink(self, item_id, platform, type_param="song"):
