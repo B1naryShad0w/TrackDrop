@@ -470,6 +470,208 @@ def share_target():
         return redirect(url_for('login'))
     return redirect(url_for('index'))
 
+
+@app.route('/api/quick_download', methods=['POST', 'GET'])
+def quick_download():
+    """API endpoint for iOS Shortcuts - accepts API key auth via header or query param."""
+    import re as _re
+
+    # Get API key from header or query param
+    api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+    if not api_key:
+        return jsonify({"status": "error", "message": "API key required. Use X-API-Key header or api_key query param."}), 401
+
+    # Look up user by API key
+    username = user_manager.get_user_by_api_key(api_key)
+    if not username:
+        return jsonify({"status": "error", "message": "Invalid API key."}), 401
+
+    # Get URL from various sources (JSON body, form data, query param)
+    if request.is_json:
+        data = request.get_json()
+        url = data.get('url') or data.get('link') or data.get('text') or ''
+    else:
+        url = request.form.get('url') or request.form.get('link') or request.form.get('text') or \
+              request.args.get('url') or request.args.get('link') or request.args.get('text') or ''
+
+    # Extract URL if text contains other content
+    url_match = _re.search(r'https?://\S+', url)
+    link = url_match.group(0) if url_match else url.strip()
+
+    if not link:
+        return jsonify({"status": "error", "message": "No URL provided."}), 400
+
+    # Queue the download
+    download_id = str(uuid.uuid4())
+    downloads_queue[download_id] = {
+        'id': download_id,
+        'username': username,
+        'artist': 'Link Download',
+        'title': link,
+        'status': 'in_progress',
+        'start_time': datetime.now().isoformat(),
+        'message': 'Download initiated via API.'
+    }
+
+    # Run download in background thread
+    def _run_download():
+        try:
+            result = asyncio.run(link_downloader_global.download_from_url(link, download_id=download_id))
+            if result:
+                current_title = downloads_queue.get(download_id, {}).get('title', link)
+                update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.", title=current_title)
+            else:
+                current_title = downloads_queue.get(download_id, {}).get('title', link)
+                update_download_status(download_id, 'failed', f"No files downloaded.", title=current_title)
+        except Exception as e:
+            update_download_status(download_id, 'failed', f"Error: {str(e)}")
+
+    threading.Thread(target=_run_download, daemon=True).start()
+
+    return jsonify({
+        "status": "success",
+        "message": f"Download queued for {link}",
+        "download_id": download_id
+    })
+
+
+@app.route('/api/generate_api_key', methods=['POST'])
+@login_required
+def generate_api_key():
+    """Generate a new API key for the current user."""
+    username = get_current_user()
+    api_key = user_manager.generate_api_key(username)
+    return jsonify({"status": "success", "api_key": api_key})
+
+
+@app.route('/api/get_api_key', methods=['GET'])
+@login_required
+def get_api_key():
+    """Get the current user's API key."""
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    api_key = settings.get("api_key", "")
+    return jsonify({"api_key": api_key})
+
+
+@app.route('/ios-shortcut')
+@login_required
+def ios_shortcut_setup():
+    """Page with iOS Shortcut setup instructions."""
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    api_key = settings.get("api_key", "")
+    server_url = request.host_url.rstrip('/')
+
+    return f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS Shortcut Setup</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }}
+        h1 {{ color: #fff; }}
+        .card {{ background: #16213e; border-radius: 12px; padding: 20px; margin: 20px 0; }}
+        .api-key {{ font-family: monospace; background: #0f0f23; padding: 12px; border-radius: 8px; word-break: break-all; margin: 10px 0; }}
+        button {{ background: #e94560; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin: 5px; }}
+        button:hover {{ background: #ff6b6b; }}
+        .step {{ margin: 15px 0; padding-left: 20px; border-left: 3px solid #e94560; }}
+        code {{ background: #0f0f23; padding: 2px 6px; border-radius: 4px; }}
+        a {{ color: #e94560; }}
+        .back-link {{ display: inline-block; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">&larr; Back to Home</a>
+    <h1>iOS Shortcut Setup</h1>
+
+    <div class="card">
+        <h2>Your API Key</h2>
+        <div class="api-key" id="apiKeyDisplay">{api_key if api_key else '(No API key generated yet)'}</div>
+        <button onclick="generateKey()">Generate New Key</button>
+        <button onclick="copyKey()">Copy Key</button>
+    </div>
+
+    <div class="card">
+        <h2>Setup Instructions</h2>
+        <div class="step">
+            <strong>1.</strong> Open the <strong>Shortcuts</strong> app on your iPhone/iPad
+        </div>
+        <div class="step">
+            <strong>2.</strong> Tap <strong>+</strong> to create a new shortcut
+        </div>
+        <div class="step">
+            <strong>3.</strong> Add action: <strong>"Receive input from Share Sheet"</strong><br>
+            <small>Set input type to "URLs" and "Text"</small>
+        </div>
+        <div class="step">
+            <strong>4.</strong> Add action: <strong>"Get URLs from Input"</strong>
+        </div>
+        <div class="step">
+            <strong>5.</strong> Add action: <strong>"Get Contents of URL"</strong> with these settings:<br>
+            <small>
+            URL: <code>{server_url}/api/quick_download?api_key={api_key if api_key else 'YOUR_API_KEY'}&url=[URLs]</code><br>
+            Method: <code>GET</code>
+            </small>
+        </div>
+        <div class="step">
+            <strong>6.</strong> Add action: <strong>"Show Notification"</strong> (optional)<br>
+            <small>Title: "Download Queued", Body: "Shortcut Input"</small>
+        </div>
+        <div class="step">
+            <strong>7.</strong> Name the shortcut (e.g., "Download Music") and tap <strong>Done</strong>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Quick Setup URL</h2>
+        <p>Copy this URL and paste it in the "Get Contents of URL" action:</p>
+        <div class="api-key" id="quickUrl">{server_url}/api/quick_download?api_key={api_key if api_key else 'YOUR_API_KEY'}&url=</div>
+        <button onclick="copyUrl()">Copy URL</button>
+        <p><small>The shortcut will append the shared URL automatically.</small></p>
+    </div>
+
+    <div class="card">
+        <h2>Usage</h2>
+        <p>Once set up, you can share any music link (Spotify, Apple Music, YouTube, etc.) and select your shortcut from the share sheet. The download will be queued automatically!</p>
+    </div>
+
+    <script>
+        async function generateKey() {{
+            const resp = await fetch('/api/generate_api_key', {{ method: 'POST' }});
+            const data = await resp.json();
+            if (data.api_key) {{
+                document.getElementById('apiKeyDisplay').textContent = data.api_key;
+                // Update quick URL too
+                const baseUrl = '{server_url}/api/quick_download?api_key=';
+                document.getElementById('quickUrl').textContent = baseUrl + data.api_key + '&url=';
+                alert('New API key generated!');
+            }}
+        }}
+        function copyKey() {{
+            const key = document.getElementById('apiKeyDisplay').textContent;
+            if (key && !key.includes('No API key')) {{
+                navigator.clipboard.writeText(key);
+                alert('API key copied!');
+            }} else {{
+                alert('Generate an API key first.');
+            }}
+        }}
+        function copyUrl() {{
+            const url = document.getElementById('quickUrl').textContent;
+            if (url && !url.includes('YOUR_API_KEY')) {{
+                navigator.clipboard.writeText(url);
+                alert('URL copied!');
+            }} else {{
+                alert('Generate an API key first.');
+            }}
+        }}
+    </script>
+</body>
+</html>'''
+
+
 @app.route('/sw.js')
 def service_worker():
     sw_content = """

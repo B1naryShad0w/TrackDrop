@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "cron_enabled": True,
     "playlist_sources": ["listenbrainz", "lastfm"],
     "first_time_setup_done": False,
+    "api_key": "",  # For iOS Shortcuts / external API access
 }
 
 
@@ -125,6 +126,23 @@ class UserManager:
         with self._lock:
             data = self._load()
         return list(data.keys())
+
+    def generate_api_key(self, username):
+        """Generate a new API key for the user and save it."""
+        api_key = "".join(random.choices(string.ascii_letters + string.digits, k=32))
+        self.update_user_settings(username, {"api_key": api_key})
+        return api_key
+
+    def get_user_by_api_key(self, api_key):
+        """Look up username by API key. Returns None if not found."""
+        if not api_key:
+            return None
+        with self._lock:
+            data = self._load()
+        for username, settings in data.items():
+            if settings.get("api_key") == api_key:
+                return username
+        return None
 
 
 # ---------------------------------------------------------------------------
