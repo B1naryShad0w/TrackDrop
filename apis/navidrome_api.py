@@ -887,15 +887,9 @@ class NavidromeAPI:
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
-                            # Remove from Navidrome DB to avoid 'missing file' entries
-                            if nd_id:
-                                self.remove_song_from_navidrome_db(nd_id)
                             deleted_songs.append(f"{label} ({delete_reason})")
                     else:
                         print(f"    File not found on disk")
-                        # Still remove from DB if song entry exists
-                        if nd_id:
-                            self.remove_song_from_navidrome_db(nd_id)
                         deleted_songs.append(f"{label} (file not found)")
                     tracks_to_remove.append(track)
 
@@ -940,9 +934,12 @@ class NavidromeAPI:
         remove_empty_folders(self.music_library_path)
 
         if deleted_songs:
-            print("Triggering full library scan to remove deleted entries...")
+            print("Triggering full library scan to detect deleted entries...")
             self._start_scan(full_scan=True)
             await self._wait_for_scan_async(timeout=60)
+            # Use Navidrome's native API to purge missing files
+            print("Purging missing files from Navidrome...")
+            self.delete_missing_files_from_navidrome()
 
     async def process_debug_cleanup(self, history_path):
         """Debug cleanup with detailed logging. Returns summary dict."""
@@ -1018,16 +1015,12 @@ class NavidromeAPI:
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
-                            # Remove from Navidrome DB to avoid 'missing file' entries
-                            self.remove_song_from_navidrome_db(nd_id)
                             summary['deleted'].append(f"{label}")
                         else:
                             summary['failed'].append(f"{label} (delete failed)")
                             remaining_tracks.append(track)
                     else:
-                        # File doesn't exist - still remove from DB
-                        self.remove_song_from_navidrome_db(nd_id)
-                        summary['failed'].append(f"{label} (file not found, removed from DB)")
+                        summary['failed'].append(f"{label} (file not found)")
 
                     sys.stdout.flush()
 
@@ -1064,11 +1057,14 @@ class NavidromeAPI:
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
 
-        # Trigger full scan to remove deleted entries from Navidrome
+        # Trigger full scan to detect deleted entries
         print(f"\n[DEBUG CLEANUP] Triggering full library scan")
         self._start_scan(full_scan=True)
         print(f"[DEBUG CLEANUP] Waiting for scan to complete...")
         await self._wait_for_scan_async(timeout=60)
+        # Use Navidrome's native API to purge missing files
+        print(f"[DEBUG CLEANUP] Purging missing files from Navidrome...")
+        self.delete_missing_files_from_navidrome()
 
         print(f"\n{'='*60}")
         print(f"[DEBUG CLEANUP] SUMMARY")
@@ -1159,45 +1155,73 @@ class NavidromeAPI:
             print(f"Error starring song: {e}")
             return False
 
-    def remove_song_from_navidrome_db(self, song_id):
-        """Remove a song and its annotations from Navidrome DB.
+    def _get_navidrome_jwt_token(self):
+        """Authenticate with Navidrome's native REST API and get a JWT token."""
+        try:
+            # Use admin credentials for REST API auth
+            admin_user = self.admin_user or self.user_nd
+            admin_pass = self.admin_password or self.password_nd
 
-        Call this when intentionally deleting files to avoid 'missing file' entries.
+            response = requests.post(
+                f"{self.root_nd}/auth/login",
+                json={"username": admin_user, "password": admin_pass},
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('token')
+            else:
+                print(f"Failed to get Navidrome JWT token: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"Error getting Navidrome JWT token: {e}")
+            return None
+
+    def delete_missing_files_from_navidrome(self, song_ids=None):
+        """Delete missing files from Navidrome using native REST API.
+
+        Uses Navidrome's DELETE /api/missing endpoint (v0.56+).
+        If song_ids is None, deletes ALL missing files.
 
         Args:
-            song_id: The Navidrome song ID to remove
+            song_ids: Optional list of specific song IDs to remove, or None for all
 
         Returns:
             True if successful, False otherwise
         """
-        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
-            print(f"Cannot remove from DB: Navidrome DB path not configured")
-            return False
-
         try:
-            conn = sqlite3.connect(self.navidrome_db_path)
-            cursor = conn.cursor()
+            token = self._get_navidrome_jwt_token()
+            if not token:
+                print("Cannot delete missing files: failed to authenticate with Navidrome")
+                return False
 
-            # Remove annotations (ratings, stars, play counts, etc.)
-            cursor.execute("DELETE FROM annotation WHERE item_id = ? AND item_type = 'media_file'", (song_id,))
-            annotations_deleted = cursor.rowcount
+            headers = {"x-nd-authorization": f"Bearer {token}"}
 
-            # Remove from playlist_tracks
-            cursor.execute("DELETE FROM playlist_tracks WHERE media_file_id = ?", (song_id,))
-            playlist_refs_deleted = cursor.rowcount
+            if song_ids:
+                # Delete specific IDs
+                params = {"id": song_ids}
+                response = requests.delete(
+                    f"{self.root_nd}/api/missing",
+                    headers=headers,
+                    params=params,
+                    timeout=30
+                )
+            else:
+                # Delete all missing files
+                response = requests.delete(
+                    f"{self.root_nd}/api/missing",
+                    headers=headers,
+                    timeout=30
+                )
 
-            # Remove from media_file table
-            cursor.execute("DELETE FROM media_file WHERE id = ?", (song_id,))
-            files_deleted = cursor.rowcount
-
-            conn.commit()
-            conn.close()
-
-            if files_deleted > 0:
-                print(f"Removed song {song_id} from Navidrome DB (annotations: {annotations_deleted}, playlist refs: {playlist_refs_deleted})")
-            return True
+            if response.status_code in (200, 204):
+                print(f"Successfully deleted missing files from Navidrome")
+                return True
+            else:
+                print(f"Failed to delete missing files: {response.status_code} - {response.text}")
+                return False
         except Exception as e:
-            print(f"Error removing song from Navidrome DB: {e}")
+            print(f"Error deleting missing files from Navidrome: {e}")
             return False
 
     async def preview_manual_cleanup(self, username):
@@ -1328,8 +1352,6 @@ class NavidromeAPI:
 
                 if file_path and os.path.exists(file_path):
                     if self._delete_song(file_path):
-                        # Remove from Navidrome DB to avoid 'missing file' entries
-                        self.remove_song_from_navidrome_db(song_id)
                         results['deleted'].append({
                             'artist': artist,
                             'title': title,
@@ -1338,9 +1360,8 @@ class NavidromeAPI:
                     else:
                         results['errors'].append(f"Failed to delete file: {label}")
                 else:
-                    # File doesn't exist on disk - still remove from DB
-                    self.remove_song_from_navidrome_db(song_id)
-                    results['errors'].append(f"File not found (removed from DB): {label}")
+                    # File doesn't exist on disk
+                    results['errors'].append(f"File not found: {label}")
 
             except Exception as e:
                 results['errors'].append(f"Error processing {song_id}: {str(e)}")
@@ -1351,6 +1372,8 @@ class NavidromeAPI:
             remove_empty_folders(self.music_library_path)
             self._start_scan(full_scan=True)
             await self._wait_for_scan_async(timeout=60)
+            # Use Navidrome's native API to purge missing files
+            self.delete_missing_files_from_navidrome()
 
         return results
 
