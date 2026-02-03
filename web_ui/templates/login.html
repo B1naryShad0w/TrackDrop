@@ -175,7 +175,7 @@
                 });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    window.location.href = '/';
+                    window.location.href = '{{ next_url | default("/", true) }}';
                 } else {
                     errEl.className = 'error-msg';
                     if (resp.status === 503) {

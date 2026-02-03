@@ -365,8 +365,9 @@ def poll_download_statuses():
 @app.route('/login', methods=['GET'])
 def login():
     if 'username' in session:
-        return redirect(url_for('index'))
-    return render_template('login.html')
+        next_url = request.args.get('next', '/')
+        return redirect(next_url)
+    return render_template('login.html', next_url=request.args.get('next', '/'))
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -433,16 +434,69 @@ def pwa_manifest():
         "icons": [
             {"src": "/assets/logo.svg", "sizes": "any", "type": "image/svg+xml"},
             {"src": "/favicon.ico", "sizes": "48x48", "type": "image/png"}
-        ]
+        ],
+        "share_target": {
+            "action": "/share",
+            "method": "POST",
+            "enctype": "application/x-www-form-urlencoded",
+            "params": {
+                "title": "title",
+                "text": "text",
+                "url": "url"
+            }
+        }
     }
     return jsonify(manifest)
+
+@app.route('/share', methods=['GET', 'POST'])
+def share_target():
+    """PWA share target: receives a shared URL and queues it for download."""
+    # Extract the shared link from POST form data or GET query params
+    if request.method == 'POST':
+        shared_url = request.form.get('url') or request.form.get('text') or ''
+    else:
+        shared_url = request.args.get('url') or request.args.get('text') or ''
+
+    # Android often sends "Title\nhttps://..." in the text field — extract the URL
+    import re as _re
+    url_match = _re.search(r'https?://\S+', shared_url)
+    link = url_match.group(0) if url_match else shared_url.strip()
+
+    if link:
+        session['pending_share_url'] = link
+
+    # If not logged in, redirect to login which will bounce back to index
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    return redirect(url_for('index'))
 
 @app.route('/sw.js')
 def service_worker():
     sw_content = """
 self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));
+self.addEventListener('fetch', e => {
+    const url = new URL(e.request.url);
+    // Handle PWA share target POST — convert to a server-side POST
+    if (url.pathname === '/share' && e.request.method === 'POST') {
+        e.respondWith((async () => {
+            const formData = await e.request.formData();
+            const params = new URLSearchParams();
+            for (const [key, value] of formData.entries()) {
+                params.append(key, value);
+            }
+            // POST to the server as form data
+            return fetch('/share', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: params.toString(),
+                redirect: 'follow'
+            });
+        })());
+        return;
+    }
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+});
 """
     from flask import Response
     return Response(sw_content.strip(), mimetype='application/javascript')
@@ -495,6 +549,8 @@ def index():
     cron_enabled = user_settings.get('cron_enabled', True)
     cron_timezone = user_settings.get('cron_timezone', 'UTC')
 
+    pending_share = session.pop('pending_share_url', None)
+
     return render_template('index.html',
         cron_schedule=current_cron,
         cron_minute=cron_minute,
@@ -507,7 +563,8 @@ def index():
         first_time=first_time,
         user_settings=json.dumps(user_settings),
         llm_enabled=LLM_ENABLED,
-        hide_fresh_releases=True
+        hide_fresh_releases=True,
+        pending_share_url=pending_share
     )
 
 @app.route('/favicon.ico')

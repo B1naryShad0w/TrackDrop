@@ -2915,6 +2915,21 @@ async function createSmartPlaylists() {
                 console.error('Error loading initial configuration:', error);
                 document.getElementById('welcomeMessage').style.display = 'block';
             }
+
+            // PWA share target: auto-submit shared URL
+            {% if pending_share_url %}
+            const sharedUrl = {{ pending_share_url | tojson }};
+            if (sharedUrl) {
+                const linkInput = document.getElementById('musicLinkInput');
+                if (linkInput) {
+                    linkInput.value = sharedUrl;
+                    // Scroll the download section into view
+                    linkInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Small delay to let UI settle, then trigger download
+                    setTimeout(() => downloadFromLink(), 500);
+                }
+            }
+            {% endif %}
         };
     </script>
 </body>
