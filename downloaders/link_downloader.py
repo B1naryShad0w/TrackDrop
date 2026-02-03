@@ -505,7 +505,6 @@ class LinkDownloader:
             response = requests.get(songlink_url)
             if response.status_code == 200:
                 data = response.json()
-                print(f"Songlink API response data keys: {list(data.keys())}")
                 entities = data.get('entitiesByUniqueId', {})
                 for entity_key, entity in entities.items():
                     if entity.get('id') == item_id and entity.get('type') == type_param:
@@ -517,7 +516,6 @@ class LinkDownloader:
                             'source': platform,
                             'thumbnailUrl': entity.get('thumbnailUrl', '')
                         }
-                        print(f"Found {type_param} info: {metadata}")
                         return metadata
                 print(f"No {type_param} entity found for {platform} ID {item_id}", file=sys.stderr)
             else:
@@ -530,76 +528,50 @@ class LinkDownloader:
             return None
 
     async def _get_deezer_id_from_songlink(self, item_id, platform, type_param="song"):
-        """Use Songlink API to get Deezer ID from other platform ID, with improved fallback."""        
+        """Use Songlink API to get Deezer ID from other platform ID, with improved fallback."""
         try:
             url = f"{self.songlink_base_url}/links?platform={platform}&type={type_param}&id={item_id}"
-            print(f"Calling Songlink API: {url}")
             response = requests.get(url)
-            print(f"Songlink API response status: {response.status_code}")
             if response.status_code == 200:
                 data = response.json()
-                # Full stderr response
-                print(f"===== SONGLINK API RESPONSE DEBUG =====", file=sys.stderr)
-                print(f"URL: {url}", file=sys.stderr)
-                print(f"Platform: {platform}, ID: {item_id}, Type: {type_param}", file=sys.stderr)
-                print(f"Status: {response.status_code}", file=sys.stderr)
-                print(f"Response data keys: {list(data.keys())}", file=sys.stderr)
-                print(f"Full response JSON:", file=sys.stderr)
-                import json
-                print(json.dumps(data, indent=2), file=sys.stderr)
-                print(f"Available platforms: {list(data.get('linksByPlatform', {}).keys()) if 'linksByPlatform' in data else 'None'}", file=sys.stderr)
-                print(f"========================================", file=sys.stderr)
-                
+
                 deezer_info = data.get('linksByPlatform', {}).get('deezer')
                 if deezer_info and deezer_info.get('url'):
                     deezer_url = deezer_info['url']
-                    print(f"Found Deezer URL: {deezer_url}")
                     match = re.search(r'deezer\.com\/(?:track|album|playlist)\/(\d+)', deezer_url)
                     if match:
-                        deezer_id = match.group(1)
-                        print(f"Extracted Deezer ID: {deezer_id}")
-                        return deezer_id
-                    else:
-                        print(f"Could not extract ID from Deezer URL: {deezer_url}", file=sys.stderr)
-                
-                # If no Deezer link found on Songlink, attempt direct Deezer API search
-                if type_param == "album" or type_param == "song":
+                        return match.group(1)
+                    print(f"Could not extract ID from Deezer URL: {deezer_url}", file=sys.stderr)
+
+                # If no Deezer link found, attempt direct Deezer API search via metadata
+                if type_param in ("album", "song"):
                     media_metadata = self._get_media_metadata_from_songlink(item_id, platform, type_param)
                     if media_metadata:
                         if type_param == "album":
                             artist = media_metadata.get('artist', '')
                             album_title = media_metadata.get('album', '')
                             if artist and album_title:
-                                print(f"Attempting direct Deezer album search for artist: '{artist}', album: '{album_title}'", file=sys.stderr)
                                 deezer_album_link = await self.deezer_api.get_deezer_album_link(artist, album_title)
                                 if deezer_album_link:
                                     match = re.search(r'deezer\.com\/album\/(\d+)', deezer_album_link)
                                     if match:
-                                        deezer_id = match.group(1)
-                                        print(f"Found Deezer ID via direct album search: {deezer_id}", file=sys.stderr)
-                                        return deezer_id
+                                        return match.group(1)
                         elif type_param == "song":
                             artist = media_metadata.get('artist', '')
                             title = media_metadata.get('title', '')
                             if artist and title:
-                                print(f"Attempting direct Deezer track search for artist: '{artist}', title: '{title}'", file=sys.stderr)
                                 deezer_track_link = await self.deezer_api.get_deezer_track_link(artist, title)
                                 if deezer_track_link:
                                     match = re.search(r'deezer\.com\/track\/(\d+)', deezer_track_link)
                                     if match:
-                                        deezer_id = match.group(1)
-                                        print(f"Found Deezer ID via direct track search: {deezer_id}", file=sys.stderr)
-                                        return deezer_id
+                                        return match.group(1)
 
-                print(f"No Deezer link found in response for {platform} ID {item_id}, and direct Deezer search also failed for type {type_param}", file=sys.stderr)
+                print(f"No Deezer ID found for {platform} {type_param} {item_id}", file=sys.stderr)
             else:
-                print(f"Songlink API request failed with status {response.status_code}: {response.text}", file=sys.stderr)
-            print(f"Failed to get Deezer ID from Songlink API for {platform} ID {item_id}", file=sys.stderr)
+                print(f"Songlink API failed ({response.status_code}) for {platform} {type_param} {item_id}", file=sys.stderr)
             return None
         except Exception as e:
-            print(f"Error calling Songlink API or direct Deezer search: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
+            print(f"Error resolving Deezer ID via Songlink for {platform} {type_param} {item_id}: {e}", file=sys.stderr)
             return None
     def _find_downloaded_files(self, artist, title):
         """Helper to find a single downloaded file based on artist and title."""
