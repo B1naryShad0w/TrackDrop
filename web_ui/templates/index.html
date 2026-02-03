@@ -1485,6 +1485,9 @@ async function triggerNavidromeCleanup() {
     }
 }
 
+// Store pending deletions for confirmation
+let pendingCleanupSongIds = [];
+
 async function triggerManualCleanup() {
     const button = event.target.closest('button');
     const originalContent = button.innerHTML;
@@ -1492,70 +1495,166 @@ async function triggerManualCleanup() {
     button.disabled = true;
 
     try {
-        const response = await fetch('/api/manual_cleanup', {
+        // Step 1: Get preview of what would be deleted
+        const response = await fetch('/api/manual_cleanup/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
         const data = await response.json();
 
         if (data.status === 'success') {
-            // Build detailed result message
-            let resultHtml = `<strong>Cleanup Complete</strong><br>`;
-            resultHtml += `Scanned ${data.scanned} songs with 1-star ratings<br><br>`;
-
-            if (data.deleted && data.deleted.length > 0) {
-                resultHtml += `<strong>Deleted (${data.deleted.length}):</strong><br>`;
-                data.deleted.forEach(song => {
-                    resultHtml += `&nbsp;&nbsp;- ${song.artist} - ${song.title}<br>`;
-                });
-                resultHtml += '<br>';
-            }
-
-            if (data.kept && data.kept.length > 0) {
-                resultHtml += `<strong>Kept (${data.kept.length}):</strong><br>`;
-                data.kept.forEach(song => {
-                    resultHtml += `&nbsp;&nbsp;- ${song.artist} - ${song.title}<br>`;
-                    resultHtml += `&nbsp;&nbsp;&nbsp;&nbsp;<em>Reason: ${song.reason}</em><br>`;
-                });
-            }
-
-            if (data.deleted.length === 0 && data.kept.length === 0) {
-                resultHtml += 'No 1-star songs found in library.';
-            }
-
-            // Show in modal
-            showCleanupResults(resultHtml);
-            showMessage('success', data.message);
+            // Show confirmation dialog
+            showCleanupConfirmation(data);
         } else {
             showMessage('error', data.message);
         }
     } catch (error) {
-        console.error('Manual cleanup error:', error);
-        showMessage('error', 'Failed to run cleanup: ' + error.message);
+        console.error('Manual cleanup preview error:', error);
+        showMessage('error', 'Failed to scan library: ' + error.message);
     } finally {
         button.innerHTML = originalContent;
         button.disabled = false;
     }
 }
 
-function showCleanupResults(htmlContent) {
+function showCleanupConfirmation(data) {
+    // Store song IDs for deletion
+    pendingCleanupSongIds = data.to_delete.map(s => s.navidrome_id);
+
     // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'cleanup-confirm-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--card-bg);border-radius:8px;padding:20px;max-width:600px;max-height:80vh;overflow-y:auto;color:var(--text-color);min-width:400px;';
+
+    let contentHtml = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <h3 style="margin:0;">Cleanup Preview</h3>
+            <button onclick="document.getElementById('cleanup-confirm-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;">&times;</button>
+        </div>
+        <p style="margin-bottom:15px;">Found <strong>${data.scanned}</strong> songs you rated 1-star.</p>
+    `;
+
+    if (data.to_delete.length > 0) {
+        contentHtml += `<div style="margin-bottom:15px;padding:10px;background:rgba(192,57,43,0.2);border-radius:4px;border-left:4px solid #c0392b;">
+            <strong style="color:#e74c3c;">Will be deleted (${data.to_delete.length}):</strong>
+            <ul style="margin:10px 0 0 20px;padding:0;">`;
+        data.to_delete.forEach(song => {
+            contentHtml += `<li style="margin:5px 0;">${song.artist} - ${song.title} <span style="color:#888;">[${song.album}]</span></li>`;
+        });
+        contentHtml += `</ul></div>`;
+    }
+
+    if (data.to_keep.length > 0) {
+        contentHtml += `<div style="margin-bottom:15px;padding:10px;background:rgba(46,204,113,0.2);border-radius:4px;border-left:4px solid #27ae60;">
+            <strong style="color:#2ecc71;">Will be kept (${data.to_keep.length}):</strong>
+            <ul style="margin:10px 0 0 20px;padding:0;">`;
+        data.to_keep.forEach(song => {
+            contentHtml += `<li style="margin:5px 0;">${song.artist} - ${song.title} <span style="color:#888;">[${song.album}]</span><br><em style="font-size:0.85em;color:#888;">Reason: ${song.reason}</em></li>`;
+        });
+        contentHtml += `</ul></div>`;
+    }
+
+    if (data.to_delete.length === 0 && data.to_keep.length === 0) {
+        contentHtml += `<p style="color:#888;">No 1-star songs found in your library.</p>`;
+    }
+
+    if (data.errors && data.errors.length > 0) {
+        contentHtml += `<p style="color:#e74c3c;margin-top:10px;">Errors: ${data.errors.join(', ')}</p>`;
+    }
+
+    contentHtml += `<div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end;">`;
+    contentHtml += `<button onclick="document.getElementById('cleanup-confirm-modal').remove()" style="padding:10px 20px;background:#666;color:white;border:none;border-radius:4px;cursor:pointer;">Cancel</button>`;
+
+    if (data.to_delete.length > 0) {
+        contentHtml += `<button onclick="executeManualCleanup()" style="padding:10px 20px;background:#c0392b;color:white;border:none;border-radius:4px;cursor:pointer;">Delete ${data.to_delete.length} Songs</button>`;
+    }
+    contentHtml += `</div>`;
+
+    modal.innerHTML = contentHtml;
+    overlay.appendChild(modal);
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
+}
+
+async function executeManualCleanup() {
+    const modal = document.getElementById('cleanup-confirm-modal');
+    const buttons = modal.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true);
+
+    // Find the delete button and show spinner
+    const deleteBtn = Array.from(buttons).find(b => b.textContent.includes('Delete'));
+    if (deleteBtn) {
+        deleteBtn.innerHTML = '<div class="spinner" style="width:16px;height:16px;display:inline-block;margin-right:8px;"></div>Deleting...';
+    }
+
+    try {
+        const response = await fetch('/api/manual_cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ song_ids: pendingCleanupSongIds })
+        });
+        const data = await response.json();
+
+        // Close confirmation modal
+        modal.parentElement.remove();
+
+        if (data.status === 'success') {
+            // Show results
+            showCleanupResults(data);
+            showMessage('success', data.message);
+        } else {
+            showMessage('error', data.message);
+        }
+    } catch (error) {
+        console.error('Manual cleanup error:', error);
+        showMessage('error', 'Failed to delete songs: ' + error.message);
+        modal.parentElement.remove();
+    }
+
+    pendingCleanupSongIds = [];
+}
+
+function showCleanupResults(data) {
     const overlay = document.createElement('div');
     overlay.id = 'cleanup-results-modal';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
 
     const modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card-bg);border-radius:8px;padding:20px;max-width:600px;max-height:80vh;overflow-y:auto;color:var(--text-color);';
+    modal.style.cssText = 'background:var(--card-bg);border-radius:8px;padding:20px;max-width:500px;max-height:80vh;overflow-y:auto;color:var(--text-color);';
 
-    modal.innerHTML = `
+    let contentHtml = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;">Manual Cleanup Results</h3>
+            <h3 style="margin:0;">Cleanup Complete</h3>
             <button onclick="document.getElementById('cleanup-results-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;">&times;</button>
         </div>
-        <div style="font-size:14px;line-height:1.6;">${htmlContent}</div>
-        <button onclick="document.getElementById('cleanup-results-modal').remove()" style="margin-top:15px;padding:8px 16px;background:var(--primary-color);color:white;border:none;border-radius:4px;cursor:pointer;">Close</button>
     `;
 
+    if (data.deleted && data.deleted.length > 0) {
+        contentHtml += `<p style="color:#2ecc71;"><strong>Deleted ${data.deleted.length} songs:</strong></p>
+        <ul style="margin:10px 0 15px 20px;padding:0;">`;
+        data.deleted.forEach(song => {
+            contentHtml += `<li style="margin:5px 0;">${song.artist} - ${song.title}</li>`;
+        });
+        contentHtml += `</ul>`;
+    } else {
+        contentHtml += `<p>No songs were deleted.</p>`;
+    }
+
+    if (data.errors && data.errors.length > 0) {
+        contentHtml += `<p style="color:#e74c3c;"><strong>Errors:</strong></p>
+        <ul style="margin:10px 0 15px 20px;padding:0;">`;
+        data.errors.forEach(err => {
+            contentHtml += `<li style="margin:5px 0;">${err}</li>`;
+        });
+        contentHtml += `</ul>`;
+    }
+
+    contentHtml += `<button onclick="document.getElementById('cleanup-results-modal').remove()" style="margin-top:10px;padding:10px 20px;background:var(--primary-color);color:white;border:none;border-radius:4px;cursor:pointer;">Close</button>`;
+
+    modal.innerHTML = contentHtml;
     overlay.appendChild(modal);
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     document.body.appendChild(overlay);

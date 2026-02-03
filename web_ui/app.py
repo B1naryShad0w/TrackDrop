@@ -1127,34 +1127,59 @@ def trigger_debug_cleanup():
         return jsonify({"status": "error", "message": f"Error during debug cleanup: {e}"}), 500
 
 
+@app.route('/api/manual_cleanup/preview', methods=['POST'])
+@login_required
+def manual_cleanup_preview():
+    """
+    Preview what would be deleted by manual cleanup.
+    Only considers songs rated 1-star by the current user.
+    """
+    username = get_current_user()
+    print(f"Manual cleanup preview requested by: {username}")
+    try:
+        import asyncio
+        results = asyncio.run(navidrome_api_global.preview_manual_cleanup(username))
+
+        return jsonify({
+            "status": "success",
+            "to_delete": results['to_delete'],
+            "to_keep": results['to_keep'],
+            "scanned": results['scanned'],
+            "errors": results['errors']
+        })
+    except Exception as e:
+        print(f"Error during cleanup preview: {e}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error during cleanup preview: {e}"}), 500
+
+
 @app.route('/api/manual_cleanup', methods=['POST'])
 @login_required
 def manual_cleanup():
     """
-    Manual cleanup: Scan the entire library for 1-star songs and delete them.
-    Only deletes songs that have 1-star AND are not protected by other users.
+    Execute manual cleanup: Delete the specified songs.
+    Expects JSON body with 'song_ids' list from the preview confirmation.
     """
-    print("Manual cleanup triggered - scanning library for 1-star songs...")
+    username = get_current_user()
+    data = request.get_json() or {}
+    song_ids = data.get('song_ids', [])
+
+    if not song_ids:
+        return jsonify({"status": "error", "message": "No songs specified for deletion"}), 400
+
+    print(f"Manual cleanup executing for {username}: {len(song_ids)} songs to delete")
     try:
         import asyncio
-        results = asyncio.run(navidrome_api_global.process_manual_cleanup())
+        results = asyncio.run(navidrome_api_global.process_manual_cleanup(username, song_ids))
 
-        # Build response message
-        msg_parts = []
-        msg_parts.append(f"Scanned {results['scanned']} songs with 1-star ratings")
-        if results['deleted']:
-            msg_parts.append(f"Deleted {len(results['deleted'])} songs")
-        if results['kept']:
-            msg_parts.append(f"Kept {len(results['kept'])} songs (protected by other users)")
+        msg = f"Deleted {len(results['deleted'])} songs"
         if results['errors']:
-            msg_parts.append(f"{len(results['errors'])} errors")
+            msg += f" ({len(results['errors'])} errors)"
 
         return jsonify({
             "status": "success",
-            "message": '. '.join(msg_parts),
+            "message": msg,
             "deleted": results['deleted'],
-            "kept": results['kept'],
-            "scanned": results['scanned'],
             "errors": results['errors']
         })
     except Exception as e:

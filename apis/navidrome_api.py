@@ -1044,20 +1044,35 @@ class NavidromeAPI:
 
         return summary
 
-    async def process_manual_cleanup(self, user_id=None):
+    def _get_user_id_by_username(self, username):
+        """Look up a Navidrome user ID by username."""
+        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+            return None
+        try:
+            conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM user WHERE user_name = ?", (username,))
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else None
+        except Exception as e:
+            print(f"Error looking up user ID: {e}")
+            return None
+
+    async def preview_manual_cleanup(self, username):
         """
-        Manual cleanup: Scan the entire library for 1-star songs and delete them.
-        This is triggered manually from the UI and checks ALL songs, not just auto-downloaded ones.
+        Preview what would be deleted by manual cleanup for a specific user.
+        Only considers songs that THIS USER rated 1-star.
 
         Args:
-            user_id: Optional user ID to filter by (if None, checks all 1-star songs)
+            username: The username whose 1-star ratings to check
 
         Returns:
-            Dict with 'deleted', 'kept', and 'scanned' lists for UI display
+            Dict with 'to_delete' and 'to_keep' lists for confirmation
         """
         results = {
-            'deleted': [],
-            'kept': [],
+            'to_delete': [],
+            'to_keep': [],
             'scanned': 0,
             'errors': []
         }
@@ -1066,76 +1081,54 @@ class NavidromeAPI:
             results['errors'].append("Navidrome database path not configured")
             return results
 
-        print(f"\n{'='*60}")
-        print("MANUAL CLEANUP - Scanning library for 1-star songs")
-        print(f"{'='*60}")
+        user_id = self._get_user_id_by_username(username)
+        if not user_id:
+            results['errors'].append(f"Could not find user ID for '{username}'")
+            return results
 
-        salt, token = self._get_navidrome_auth_params()
+        print(f"\nPreviewing cleanup for user: {username} (ID: {user_id[:8]}...)")
 
         try:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
 
-            # Find all songs with 1-star rating
-            if user_id:
-                cursor.execute("""
-                    SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
-                    FROM annotation a
-                    JOIN media_file mf ON a.item_id = mf.id
-                    WHERE a.item_type = 'media_file' AND a.rating = 1 AND a.user_id = ?
-                """, (user_id,))
-            else:
-                cursor.execute("""
-                    SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
-                    FROM annotation a
-                    JOIN media_file mf ON a.item_id = mf.id
-                    WHERE a.item_type = 'media_file' AND a.rating = 1
-                """)
+            # Find songs rated 1-star BY THIS USER
+            cursor.execute("""
+                SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
+                FROM annotation a
+                JOIN media_file mf ON a.item_id = mf.id
+                WHERE a.item_type = 'media_file' AND a.rating = 1 AND a.user_id = ?
+            """, (user_id,))
 
             one_star_songs = cursor.fetchall()
             conn.close()
 
             results['scanned'] = len(one_star_songs)
-            print(f"\nFound {len(one_star_songs)} songs with 1-star ratings")
+            print(f"Found {len(one_star_songs)} songs rated 1-star by {username}")
 
             for song_id, title, artist, album, db_path in one_star_songs:
-                label = f"{artist} - {title}"
                 protection = self._check_song_protection(song_id)
 
-                # For manual cleanup: delete if 1-star AND no protection from other users
-                # Protection means: another user starred, added to playlist, or rated > 2
-                can_delete = protection['has_one_star'] and not (
+                # Can delete if no OTHER user has protected it
+                # (we ignore the current user's 1-star since that's what triggered this)
+                other_user_protection = (
                     protection['is_starred'] or
                     protection['in_user_playlist'] or
                     protection['max_rating'] > 2
                 )
 
-                if can_delete:
-                    # Find and delete the file
-                    song_details = self._get_song_details(song_id, salt, token)
-                    file_path = self._find_actual_song_path(db_path, song_details)
+                song_info = {
+                    'navidrome_id': song_id,
+                    'artist': artist,
+                    'title': title,
+                    'album': album,
+                    'path': db_path
+                }
 
-                    if file_path and os.path.exists(file_path):
-                        if self._delete_song(file_path):
-                            results['deleted'].append({
-                                'artist': artist,
-                                'title': title,
-                                'album': album,
-                                'reason': '1-star with no other user protection'
-                            })
-                            print(f"  DELETED: {label}")
-                        else:
-                            results['errors'].append(f"Failed to delete: {label}")
-                    else:
-                        results['deleted'].append({
-                            'artist': artist,
-                            'title': title,
-                            'album': album,
-                            'reason': '1-star (file not found on disk)'
-                        })
-                        print(f"  DELETED (file missing): {label}")
+                if not other_user_protection:
+                    song_info['reason'] = 'No other user protection'
+                    results['to_delete'].append(song_info)
                 else:
-                    # Keep the song - build reason string
                     keep_reasons = []
                     if protection['is_starred']:
                         keep_reasons.append("favorited by another user")
@@ -1143,38 +1136,100 @@ class NavidromeAPI:
                         keep_reasons.append("in a user playlist")
                     if protection['max_rating'] > 2:
                         keep_reasons.append(f"rated {protection['max_rating']}/5 by another user")
-
-                    results['kept'].append({
-                        'artist': artist,
-                        'title': title,
-                        'album': album,
-                        'reason': '; '.join(keep_reasons) if keep_reasons else 'protected'
-                    })
-                    print(f"  KEPT: {label} ({'; '.join(keep_reasons)})")
+                    song_info['reason'] = '; '.join(keep_reasons)
+                    results['to_keep'].append(song_info)
 
         except Exception as e:
             results['errors'].append(f"Database error: {str(e)}")
-            print(f"Error during manual cleanup: {e}")
+            print(f"Error during cleanup preview: {e}")
 
-        # Clean up empty folders
+        return results
+
+    async def process_manual_cleanup(self, username, song_ids=None):
+        """
+        Manual cleanup: Delete specified 1-star songs for a user.
+        Only deletes songs from the provided list (from preview confirmation).
+
+        Args:
+            username: The username performing the cleanup
+            song_ids: List of Navidrome song IDs to delete (from preview)
+
+        Returns:
+            Dict with 'deleted' and 'errors' lists
+        """
+        results = {
+            'deleted': [],
+            'errors': []
+        }
+
+        if not song_ids:
+            results['errors'].append("No songs specified for deletion")
+            return results
+
+        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+            results['errors'].append("Navidrome database path not configured")
+            return results
+
+        print(f"\n{'='*60}")
+        print(f"MANUAL CLEANUP - Deleting {len(song_ids)} songs for {username}")
+        print(f"{'='*60}")
+
+        salt, token = self._get_navidrome_auth_params()
+
+        for song_id in song_ids:
+            try:
+                song_details = self._get_song_details(song_id, salt, token)
+                if not song_details:
+                    results['errors'].append(f"Song not found: {song_id}")
+                    continue
+
+                artist = song_details.get('artist', 'Unknown')
+                title = song_details.get('title', 'Unknown')
+                label = f"{artist} - {title}"
+
+                # Get the file path
+                db_path = song_details.get('path', '')
+                file_path = self._find_actual_song_path(db_path, song_details)
+
+                if file_path and os.path.exists(file_path):
+                    if self._delete_song(file_path):
+                        results['deleted'].append({
+                            'artist': artist,
+                            'title': title,
+                            'album': song_details.get('album', '')
+                        })
+                        print(f"  DELETED: {label}")
+                    else:
+                        results['errors'].append(f"Failed to delete file: {label}")
+                else:
+                    # File doesn't exist on disk, still count as "deleted"
+                    results['deleted'].append({
+                        'artist': artist,
+                        'title': title,
+                        'album': song_details.get('album', ''),
+                        'note': 'file not found on disk'
+                    })
+                    print(f"  DELETED (file missing): {label}")
+
+            except Exception as e:
+                results['errors'].append(f"Error processing {song_id}: {str(e)}")
+
+        # Clean up empty folders and trigger scan
         if results['deleted']:
             print("\nRemoving empty folders...")
             from utils import remove_empty_folders
             remove_empty_folders(self.music_library_path)
 
-            # Trigger library scan
             print("Triggering library scan...")
             self._start_scan()
 
         # Summary
         print(f"\n{'='*60}")
-        print("MANUAL CLEANUP SUMMARY")
-        print(f"{'='*60}")
-        print(f"  Scanned: {results['scanned']} songs with 1-star ratings")
+        print("CLEANUP COMPLETE")
         print(f"  Deleted: {len(results['deleted'])} songs")
-        print(f"  Kept: {len(results['kept'])} songs (protected by other users)")
         if results['errors']:
             print(f"  Errors: {len(results['errors'])}")
+        print(f"{'='*60}")
 
         return results
 
