@@ -344,7 +344,11 @@ class LinkDownloader:
                             print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
                             # Auto-favorite for the requesting user
                             if username:
-                                self.navidrome_api.star_song_for_user(existing['id'], username)
+                                print(f"[STAR] Starring existing song {existing['id']} for user {username}", flush=True)
+                                result = self.navidrome_api.star_song_for_user(existing['id'], username)
+                                print(f"[STAR] star_song_for_user result: {result}", flush=True)
+                            else:
+                                print(f"[STAR] No username provided, skipping star", flush=True)
                             update_status_file(download_id, "completed", f"Already in library (added to favorites): {search_artist} - {search_title}",
                                                title=f"{search_artist} - {search_title}")
                             return []
@@ -523,6 +527,7 @@ class LinkDownloader:
                 # Auto-favorite: Trigger scan, wait, then star the new songs
                 if username and moved_files:
                     try:
+                        print(f"[STAR] Starting auto-favorite for user {username}, {len(moved_files)} files", flush=True)
                         self.navidrome_api._start_scan()
                         await self.navidrome_api._wait_for_scan_async(timeout=60)
 
@@ -534,19 +539,29 @@ class LinkDownloader:
                             # Path format: /dest/Artist/Album/Title.flac
                             import os
                             parts = new_path.split(os.sep)
+                            print(f"[STAR] Processing: {new_path}", flush=True)
+                            print(f"[STAR] Path parts: {parts}", flush=True)
                             if len(parts) >= 3:
                                 search_title = os.path.splitext(parts[-1])[0]  # Filename without extension
                                 search_album = parts[-2] if len(parts) >= 2 else None
                                 search_artist = parts[-3] if len(parts) >= 3 else None
+                                print(f"[STAR] Searching: artist={search_artist}, title={search_title}, album={search_album}", flush=True)
                                 if search_artist and search_title:
                                     existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
+                                    print(f"[STAR] Search result: {existing}", flush=True)
                                     if existing:
-                                        self.navidrome_api.star_song_for_user(existing['id'], username)
-                                        starred_count += 1
+                                        result = self.navidrome_api.star_song_for_user(existing['id'], username)
+                                        print(f"[STAR] star_song_for_user result: {result}", flush=True)
+                                        if result:
+                                            starred_count += 1
                         if starred_count > 0:
                             print(f"  Added {starred_count} songs to favorites for {username}")
+                        else:
+                            print(f"[STAR] No songs were starred", flush=True)
                     except Exception as e:
-                        print(f"  Warning: Could not auto-favorite songs: {e}")
+                        print(f"  Warning: Could not auto-favorite songs: {e}", flush=True)
+                        import traceback
+                        traceback.print_exc()
 
                 if resolved_title:
                     update_status_file(download_id, "completed", f"Downloaded: {resolved_title}", title=resolved_title)

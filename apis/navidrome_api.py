@@ -1116,17 +1116,22 @@ class NavidromeAPI:
         Returns:
             True if successful, False otherwise
         """
+        print(f"[STAR DB] star_song_for_user called: song_id={song_id}, username={username}", flush=True)
+        print(f"[STAR DB] navidrome_db_path={self.navidrome_db_path}", flush=True)
+
         if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
-            print(f"Cannot star song: Navidrome DB path not configured")
+            print(f"[STAR DB] Cannot star song: Navidrome DB path not configured or doesn't exist", flush=True)
             return False
 
         user_id = self._get_user_id_by_username(username)
+        print(f"[STAR DB] Looked up user_id: {user_id}", flush=True)
         if not user_id:
-            print(f"Cannot star song: user '{username}' not found")
+            print(f"[STAR DB] Cannot star song: user '{username}' not found", flush=True)
             return False
 
         try:
             # Open with write access
+            print(f"[STAR DB] Opening database for write...", flush=True)
             conn = sqlite3.connect(self.navidrome_db_path)
             cursor = conn.cursor()
 
@@ -1136,12 +1141,14 @@ class NavidromeAPI:
                 (song_id, user_id)
             )
             row = cursor.fetchone()
+            print(f"[STAR DB] Existing annotation: {row}", flush=True)
 
             from datetime import datetime
             now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
             if row:
                 # Update existing annotation
+                print(f"[STAR DB] Updating existing annotation...", flush=True)
                 cursor.execute(
                     "UPDATE annotation SET starred = 1, starred_at = ? WHERE item_id = ? AND item_type = 'media_file' AND user_id = ?",
                     (now, song_id, user_id)
@@ -1149,17 +1156,21 @@ class NavidromeAPI:
             else:
                 # Insert new annotation - need to generate a UUID for the id column
                 annotation_id = str(uuid.uuid4())
+                print(f"[STAR DB] Inserting new annotation with id={annotation_id}...", flush=True)
                 cursor.execute(
                     "INSERT INTO annotation (ann_id, user_id, item_id, item_type, starred, starred_at) VALUES (?, ?, ?, 'media_file', 1, ?)",
                     (annotation_id, user_id, song_id, now)
                 )
 
             conn.commit()
+            print(f"[STAR DB] Committed successfully", flush=True)
             conn.close()
-            print(f"Starred song {song_id} for user {username}")
+            print(f"[STAR DB] Starred song {song_id} for user {username}", flush=True)
             return True
         except Exception as e:
-            print(f"Error starring song: {e}")
+            print(f"[STAR DB] Error starring song: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
             return False
 
     def _get_navidrome_jwt_token(self):
