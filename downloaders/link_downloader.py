@@ -334,19 +334,18 @@ class LinkDownloader:
                                 print(f"  DEBUG: streamrip_config.{attr} = {val}")
                 except Exception as e:
                     print(f"  DEBUG: Could not dump streamrip config: {e}")
-                if hasattr(media, 'meta'):
-                    print(f"  DEBUG: media.meta = {vars(media.meta) if hasattr(media.meta, '__dict__') else media.meta}")
-                await media.rip()
-                # Also check if streamrip wrote to its own configured folder
-                if hasattr(self.streamrip_config, 'session') and hasattr(self.streamrip_config.session, 'downloads'):
-                    print(f"  DEBUG: Streamrip downloads dir: {self.streamrip_config.session.downloads.folder}")
-                elif hasattr(self.streamrip_config, 'downloads_folder'):
-                    print(f"  DEBUG: Streamrip downloads_folder: {self.streamrip_config.downloads_folder}")
+                print(f"  DEBUG: media type: {type(media).__name__}, attrs: {[a for a in dir(media) if not a.startswith('_')]}")
+                try:
+                    await media.rip()
+                    print(f"  DEBUG: media.rip() completed successfully")
+                except Exception as rip_err:
+                    print(f"  DEBUG: media.rip() FAILED: {rip_err}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
                 # Check media.path after rip
-                if hasattr(media, 'path'):
-                    print(f"  DEBUG: media.path after rip: {media.path}")
-                    if media.path:
-                        print(f"  DEBUG: media.path exists: {os.path.exists(str(media.path))}")
+                for attr in ('path', 'paths', 'downloaded_path'):
+                    if hasattr(media, attr):
+                        print(f"  DEBUG: media.{attr} = {getattr(media, attr)}")
                 files_after = self._snapshot_audio_files()
                 new_files = [f for f in files_after if f not in files_before]
                 print(f"  DEBUG: Files after rip: {len(files_after)}")
