@@ -200,10 +200,8 @@ class LinkDownloader:
                 platform = "youtubeMusic" if "music.youtube.com" in url else "youtube"
                 original_platform = platform
                 original_id = video_id
-                # Try youtubeMusic platform first (better Songlink coverage), then youtube
-                deezer_id = await self._get_deezer_id_from_songlink(video_id, "youtubeMusic")
-                if not deezer_id and platform == "youtube":
-                    deezer_id = await self._get_deezer_id_from_songlink(video_id, "youtube")
+                # Use Songlink URL-based lookup (most reliable for YouTube)
+                deezer_id = await self._get_deezer_id_from_songlink_url(url)
                 # Fallback: get video title via oEmbed and search Deezer
                 if not deezer_id:
                     print(f"  Songlink failed, trying YouTube oEmbed fallback...")
@@ -570,6 +568,25 @@ class LinkDownloader:
                 return {"artist": artist, "title": title, "album": album}
         except Exception as e:
             print(f"  Could not fetch Spotify metadata: {e}", file=sys.stderr)
+        return None
+
+    async def _get_deezer_id_from_songlink_url(self, source_url):
+        """Use Songlink API with a full URL to get Deezer ID. More reliable than platform+id for YouTube."""
+        try:
+            api_url = f"{self.songlink_base_url}/links?url={requests.utils.quote(source_url, safe='')}"
+            response = requests.get(api_url, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                deezer_info = data.get('linksByPlatform', {}).get('deezer')
+                if deezer_info and deezer_info.get('url'):
+                    deezer_url = deezer_info['url']
+                    match = re.search(r'deezer\.com\/(?:track|album|playlist)\/(\d+)', deezer_url)
+                    if match:
+                        return match.group(1)
+            elif response.status_code != 404:
+                print(f"  Songlink URL lookup returned {response.status_code}", file=sys.stderr)
+        except Exception as e:
+            print(f"  Songlink URL lookup failed: {e}", file=sys.stderr)
         return None
 
     async def _get_deezer_id_from_songlink(self, item_id, platform, type_param="song"):
