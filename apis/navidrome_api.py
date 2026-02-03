@@ -543,20 +543,27 @@ class NavidromeAPI:
 
     # ---- Library Scan ----
 
-    def _start_scan(self, _salt=None, _token=None):
-        """Trigger a Navidrome library scan."""
+    def _start_scan(self, _salt=None, _token=None, full_scan=False):
+        """Trigger a Navidrome library scan.
+
+        Args:
+            full_scan: If True, forces a full rescan which detects deleted files
+        """
         admin_user, salt, token = self._get_admin_auth_params()
         url = f"{self.root_nd}/rest/startScan.view"
         params = {
             'u': admin_user, 't': token, 's': salt,
             'v': '1.16.1', 'c': 'trackdrop', 'f': 'json'
         }
+        if full_scan:
+            params['fullScan'] = 'true'
         try:
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             if data.get('subsonic-response', {}).get('status') == 'ok':
-                print("Library scan triggered")
+                scan_type = "full library scan" if full_scan else "library scan"
+                print(f"{scan_type.capitalize()} triggered")
                 return True
             print(f"Error triggering scan: {data}")
         except Exception as e:
@@ -912,6 +919,11 @@ class NavidromeAPI:
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
 
+        if deleted_songs:
+            print("Triggering full library scan to remove deleted entries...")
+            self._start_scan(full_scan=True)
+            self._wait_for_scan(timeout=60)
+
     async def process_debug_cleanup(self, history_path):
         """Debug cleanup with detailed logging. Returns summary dict."""
         import sys
@@ -1029,9 +1041,11 @@ class NavidromeAPI:
         from utils import remove_empty_folders
         remove_empty_folders(self.music_library_path)
 
-        # Trigger scan
-        print(f"\n[DEBUG CLEANUP] Triggering library scan")
-        self._start_scan()
+        # Trigger full scan to remove deleted entries from Navidrome
+        print(f"\n[DEBUG CLEANUP] Triggering full library scan")
+        self._start_scan(full_scan=True)
+        print(f"[DEBUG CLEANUP] Waiting for scan to complete...")
+        self._wait_for_scan(timeout=60)
 
         print(f"\n{'='*60}")
         print(f"[DEBUG CLEANUP] SUMMARY")
@@ -1227,8 +1241,11 @@ class NavidromeAPI:
             from utils import remove_empty_folders
             remove_empty_folders(self.music_library_path)
 
-            print("Triggering library scan...")
-            self._start_scan()
+            print("Triggering full library scan to remove deleted entries...")
+            self._start_scan(full_scan=True)
+
+            print("Waiting for scan to complete...")
+            self._wait_for_scan(timeout=60)
 
         # Summary
         print(f"\n{'='*60}")
