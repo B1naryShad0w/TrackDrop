@@ -815,6 +815,7 @@ class NavidromeAPI:
             return
 
         deleted_songs = []
+        deleted_song_ids = []  # Track IDs of successfully deleted songs for API cleanup
         kept_songs = []
 
         playlist_name_map = {
@@ -887,6 +888,8 @@ class NavidromeAPI:
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
+                            if nd_id:
+                                deleted_song_ids.append(nd_id)
                             deleted_songs.append(f"{label} ({delete_reason})")
                     else:
                         print(f"    File not found on disk")
@@ -937,9 +940,10 @@ class NavidromeAPI:
             print("Triggering full library scan to detect deleted entries...")
             self._start_scan(full_scan=True)
             await self._wait_for_scan_async(timeout=60)
-            # Use Navidrome's native API to purge missing files
-            print("Purging missing files from Navidrome...")
-            self.delete_missing_files_from_navidrome()
+            # Use Navidrome's native API to purge ONLY the specific songs we deleted
+            if deleted_song_ids:
+                print(f"Purging {len(deleted_song_ids)} deleted songs from Navidrome...")
+                self.delete_missing_files_from_navidrome(song_ids=deleted_song_ids)
 
     async def process_debug_cleanup(self, history_path):
         """Debug cleanup with detailed logging. Returns summary dict."""
@@ -961,6 +965,7 @@ class NavidromeAPI:
             sys.stdout.flush()
 
         summary = {'deleted': [], 'kept': [], 'failed': [], 'playlists_cleared': []}
+        deleted_song_ids = []  # Track IDs of successfully deleted songs for API cleanup
 
         playlist_name_map = {
             'ListenBrainz': 'ListenBrainz Weekly',
@@ -1015,6 +1020,7 @@ class NavidromeAPI:
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
+                            deleted_song_ids.append(nd_id)
                             summary['deleted'].append(f"{label}")
                         else:
                             summary['failed'].append(f"{label} (delete failed)")
@@ -1062,9 +1068,10 @@ class NavidromeAPI:
         self._start_scan(full_scan=True)
         print(f"[DEBUG CLEANUP] Waiting for scan to complete...")
         await self._wait_for_scan_async(timeout=60)
-        # Use Navidrome's native API to purge missing files
-        print(f"[DEBUG CLEANUP] Purging missing files from Navidrome...")
-        self.delete_missing_files_from_navidrome()
+        # Use Navidrome's native API to purge ONLY the specific songs we deleted
+        if deleted_song_ids:
+            print(f"[DEBUG CLEANUP] Purging {len(deleted_song_ids)} deleted songs from Navidrome...")
+            self.delete_missing_files_from_navidrome(song_ids=deleted_song_ids)
 
         print(f"\n{'='*60}")
         print(f"[DEBUG CLEANUP] SUMMARY")
@@ -1324,6 +1331,7 @@ class NavidromeAPI:
             'deleted': [],
             'errors': []
         }
+        deleted_song_ids = []  # Track IDs of successfully deleted songs
 
         if not song_ids:
             results['errors'].append("No songs specified for deletion")
@@ -1352,6 +1360,7 @@ class NavidromeAPI:
 
                 if file_path and os.path.exists(file_path):
                     if self._delete_song(file_path):
+                        deleted_song_ids.append(song_id)
                         results['deleted'].append({
                             'artist': artist,
                             'title': title,
@@ -1372,8 +1381,9 @@ class NavidromeAPI:
             remove_empty_folders(self.music_library_path)
             self._start_scan(full_scan=True)
             await self._wait_for_scan_async(timeout=60)
-            # Use Navidrome's native API to purge missing files
-            self.delete_missing_files_from_navidrome()
+            # Use Navidrome's native API to purge ONLY the specific songs we deleted
+            if deleted_song_ids:
+                self.delete_missing_files_from_navidrome(song_ids=deleted_song_ids)
 
         return results
 
