@@ -292,13 +292,17 @@ class LinkDownloader:
                     search_title = deezer_details.get("title")
                     search_album = deezer_details.get("album")
                     print(f"  Deezer metadata: {search_artist} - {search_title} [{search_album}]")
+                    # Update queue with resolved track name
+                    update_status_file(download_id, "in_progress", f"Downloading: {search_artist} - {search_title}",
+                                       title=f"{search_artist} - {search_title}")
                     if search_artist and search_title:
                         print(f"  Checking Navidrome for existing match...")
                         existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
                         if existing:
                             matched_album = existing.get('album', '?')
                             print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
-                            update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}")
+                            update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}",
+                                               title=f"{search_artist} - {search_title}")
                             return []
                         print(f"  Not found in library, proceeding with download.")
 

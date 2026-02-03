@@ -1463,10 +1463,13 @@ def download_from_link():
         result = asyncio.run(link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id))
 
         if result:
-            update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.")
+            # Preserve the resolved title from the status file if available
+            current_title = downloads_queue.get(download_id, {}).get('title', link)
+            update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.", title=current_title)
             return jsonify({"status": "success", "message": f"Successfully downloaded and organized {len(result)} files from {link}."})
         else:
-            update_download_status(download_id, 'failed', f"No files downloaded from {link}. The track may not be available on Deezer.")
+            current_title = downloads_queue.get(download_id, {}).get('title', link)
+            update_download_status(download_id, 'failed', f"No files downloaded. The track may not be available on Deezer.", title=current_title)
             return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
 
     except Exception as e:
