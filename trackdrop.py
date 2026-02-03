@@ -11,7 +11,7 @@ import asyncio
 import sys
 
 from config import (
-    ROOT_ND, USER_ND, PASSWORD_ND, MUSIC_LIBRARY_PATH, TEMP_DOWNLOAD_FOLDER,
+    ROOT_ND, USER_ND, PASSWORD_ND, MUSIC_LIBRARY_PATH, MUSIC_DOWNLOAD_PATH, TEMP_DOWNLOAD_FOLDER,
     LISTENBRAINZ_ENABLED, ROOT_LB, TOKEN_LB, USER_LB,
     LASTFM_ENABLED, LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME,
     LASTFM_PASSWORD, LASTFM_SESSION_KEY,
@@ -263,7 +263,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     moved_files = {}
     if downloaded_songs:
         print("\n--- Organizing Files ---")
-        moved_files = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+        moved_files = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
     print("\n--- Updating Playlists ---")
     navidrome_api.update_api_playlists(
@@ -367,7 +367,7 @@ async def process_fresh_releases(download_id=None):
 
     if downloaded_albums:
         print("\n--- Organizing Files ---")
-        navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+        navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
     print("\n" + "=" * 60)
     print(f"Fresh Releases Complete: {len(downloaded_albums)}/{total} albums downloaded")

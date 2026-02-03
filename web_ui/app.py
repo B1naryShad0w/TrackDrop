@@ -1581,7 +1581,7 @@ def trigger_fresh_release_download():
 
         if result["status"] == "success":
             # Organize the downloaded files -> music library
-            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
             return jsonify({
                 "status": "success",
                 "message": f"Successfully downloaded and organized album {artist} - {album} with {len(result.get('files', []))} tracks.",
@@ -1673,7 +1673,7 @@ def trigger_track_download():
         if downloaded_path:
             update_download_status(download_id, 'completed', "Download completed.")
             # Organize the downloaded files -> music library
-            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+            navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
             return jsonify({"status": "success", "message": f"Successfully downloaded and organized track: {artist} - {title}."})
         elif track_info.get('_duplicate'):
             update_download_status(download_id, 'completed', f"Already in library: {artist} - {title}")
@@ -2016,7 +2016,7 @@ async def download_llm_recommendations_background(recommendations, download_id):
             print(f"Failed to download LLM recommendation: {label}")
 
     # Organize files after all downloads are attempted
-    navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+    navidrome_api_global.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
     parts = [f"{downloaded_count} downloaded"]
     if skipped_count:

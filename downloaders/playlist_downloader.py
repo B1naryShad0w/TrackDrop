@@ -18,7 +18,7 @@ from typing import List, Optional, Dict
 
 import requests
 
-from config import TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH
+from config import TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH, MUSIC_DOWNLOAD_PATH
 from downloaders.track_downloader import TrackDownloader
 from apis.navidrome_api import NavidromeAPI
 from utils import Tagger, update_status_file
@@ -570,7 +570,7 @@ async def download_playlist(
     if newly_downloaded:
         _update("in_progress", "Organizing downloaded files...",
                 title=playlist_name, current=downloaded_count, total=total)
-        file_path_map = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+        file_path_map = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
         _update("in_progress", "Scanning library for new files...",
                 title=playlist_name, current=downloaded_count, total=total)

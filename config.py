@@ -9,6 +9,7 @@ ROOT_ND = ""
 USER_ND = ""
 PASSWORD_ND = ""
 MUSIC_LIBRARY_PATH = "/path/to/music"
+MUSIC_DOWNLOAD_PATH = "/path/to/music"  # Where to organize downloads (defaults to MUSIC_LIBRARY_PATH)
 TEMP_DOWNLOAD_FOLDER = "/path/to/temp"
 
 # ListenBrainz API Configuration
