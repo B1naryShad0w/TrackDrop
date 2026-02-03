@@ -1675,17 +1675,14 @@ def trigger_track_download():
 @app.route('/api/download_from_link', methods=['POST'])
 @login_required
 def download_from_link():
-    print("[DOWNLOAD] Starting download_from_link...", flush=True)
     try:
         data = request.get_json()
         link = data.get('link')
         lb_recommendation = data.get('lb_recommendation', False) # Get the checkbox value, default to False
-        print(f"[DOWNLOAD] Link: {link}, lb_recommendation: {lb_recommendation}", flush=True)
 
         # Auto-detect ListenBrainz playlist URLs and set lb_recommendation=True
         if 'listenbrainz.org/playlist' in link.lower():
             lb_recommendation = True
-            print(f"[DOWNLOAD] Detected ListenBrainz playlist URL, automatically setting lb_recommendation=True", flush=True)
 
         if not link:
             return jsonify({"status": "error", "message": "Link is required"}), 400
@@ -1758,18 +1755,14 @@ def download_from_link():
         }
 
         # Use globally initialized link_downloader
-        print(f"[DOWNLOAD] Calling link_downloader_global.download_from_url...", flush=True)
         result = asyncio.run(link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id))
-        print(f"[DOWNLOAD] download_from_url returned: {result}", flush=True)
 
         if result:
-            print(f"[DOWNLOAD] Success - {len(result)} files: {result}", flush=True)
             # Preserve the resolved title from the status file if available
             current_title = downloads_queue.get(download_id, {}).get('title', link)
             update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.", title=current_title)
             return jsonify({"status": "success", "message": f"Successfully downloaded and organized {len(result)} files from {link}."})
         else:
-            print(f"[DOWNLOAD] No files downloaded", flush=True)
             current_title = downloads_queue.get(download_id, {}).get('title', link)
             update_download_status(download_id, 'failed', f"No files downloaded. The track may not be available on Deezer.", title=current_title)
             return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
