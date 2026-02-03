@@ -340,7 +340,7 @@ class Tagger:
             't': token,
             's': salt,
             'v': '1.16.1',
-            'c': 'python-script',
+            'c': 'trackdrop',
             'id': album_id,
             'size': 1200
         }
@@ -356,7 +356,7 @@ def update_status_file(download_id, status, message=None, title=None, current_tr
     if not download_id:
         return
 
-    status_dir = "/tmp/recommand_download_status"
+    status_dir = "/tmp/trackdrop_download_status"
     os.makedirs(status_dir, exist_ok=True)
     status_file_path = os.path.join(status_dir, f"{download_id}.json")
 

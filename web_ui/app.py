@@ -33,7 +33,7 @@ from web_ui.user_manager import UserManager, login_required, get_current_user
 import uuid
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('RECOMMAND_SECRET_KEY') or os.urandom(24)
+app.secret_key = os.environ.get('TRACKDROP_SECRET_KEY') or os.urandom(24)
 
 # User manager for per-user settings
 user_manager = UserManager()
@@ -172,7 +172,7 @@ def validate_deemix_arl(arl_to_validate):
 def get_current_cron_schedule():
     try:
         # Read the crontab file
-        with open('/etc/cron.d/re-command-cron', 'r') as f:
+        with open('/etc/cron.d/trackdrop-cron', 'r') as f:
             cron_line = f.read().strip()
         # Extract the schedule part (e.g., "0 0 * * 2")
         match = re.match(r"^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+.*", cron_line)
@@ -183,7 +183,7 @@ def get_current_cron_schedule():
     return "0 0 * * 2"
 
 def rebuild_cron_from_settings():
-    """Rebuild /etc/cron.d/re-command-cron from all users' persisted settings.
+    """Rebuild /etc/cron.d/trackdrop-cron from all users' persisted settings.
     Each enabled user gets their own cron line with --user <username>."""
     try:
         all_users = user_manager.get_all_users()
@@ -199,10 +199,10 @@ def rebuild_cron_from_settings():
             # Convert user's local time to UTC for the container's cron
             utc_minute, utc_hour, utc_day = convert_local_to_utc(minute, hour, day, timezone)
             cron_lines.append(
-                f"{utc_minute} {utc_hour} * * {utc_day} root /usr/local/bin/python3 /app/re-command.py --user {username} >> /proc/1/fd/1 2>&1"
+                f"{utc_minute} {utc_hour} * * {utc_day} root /usr/local/bin/python3 /app/trackdrop.py --user {username} >> /proc/1/fd/1 2>&1"
             )
 
-        cron_file = '/etc/cron.d/re-command-cron'
+        cron_file = '/etc/cron.d/trackdrop-cron'
         if cron_lines:
             with open(cron_file, 'w') as f:
                 f.write('\n'.join(cron_lines) + '\n')
@@ -223,14 +223,14 @@ def rebuild_cron_from_settings():
 def update_cron_schedule(new_schedule):
     """Legacy helper — kept for backwards compatibility but prefer rebuild_cron_from_settings."""
     try:
-        with open('/etc/cron.d/re-command-cron', 'r') as f:
+        with open('/etc/cron.d/trackdrop-cron', 'r') as f:
             cron_line = f.read().strip()
 
         command_match = re.match(r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(.*)", cron_line)
         if command_match:
             command_part = command_match.group(1)
             new_cron_line = f"{new_schedule} {command_part}"
-            with open('/etc/cron.d/re-command-cron', 'w') as f:
+            with open('/etc/cron.d/trackdrop-cron', 'w') as f:
                 f.write(new_cron_line + '\n')
             return True
     except Exception as e:
@@ -274,7 +274,7 @@ def update_download_status(download_id, status, message=None, title=None, curren
                 new_item[key] = kwargs[key]
         downloads_queue[download_id] = new_item
 
-DOWNLOAD_STATUS_DIR = "/tmp/recommand_download_status"
+DOWNLOAD_STATUS_DIR = "/tmp/trackdrop_download_status"
 DOWNLOAD_QUEUE_CLEANUP_INTERVAL_SECONDS = 300 # 5 minutes
 
 def poll_download_statuses():
@@ -1006,9 +1006,9 @@ def trigger_listenbrainz_download():
             'failed_count': 0,
         }
 
-        # Execute re-command.py in a separate process for non-blocking download, bypassing playlist check
+        # Execute trackdrop.py in a separate process for non-blocking download, bypassing playlist check
         subprocess.Popen([
-            sys.executable, '/app/re-command.py',
+            sys.executable, '/app/trackdrop.py',
             '--source', 'listenbrainz',
             '--bypass-playlist-check',
             '--download-id', download_id,
@@ -1069,9 +1069,9 @@ def trigger_lastfm_download():
             'failed_count': 0,
         }
 
-        # Execute re-command.py in a separate process for non-blocking download
+        # Execute trackdrop.py in a separate process for non-blocking download
         subprocess.Popen([
-            sys.executable, '/app/re-command.py',
+            sys.executable, '/app/trackdrop.py',
             '--source', 'lastfm',
             '--download-id', download_id,
             '--user', get_current_user()
@@ -1225,7 +1225,7 @@ def run_now():
             'total_track_count': None,
         }
         subprocess.Popen([
-            sys.executable, '/app/re-command.py',
+            sys.executable, '/app/trackdrop.py',
             '--source', 'all',
             '--bypass-playlist-check',
             '--download-id', download_id,

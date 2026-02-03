@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Optional
 
 MONITORED_PLAYLISTS_PATH = os.getenv(
-    "RECOMMAND_MONITORED_PLAYLISTS_PATH",
+    "TRACKDROP_MONITORED_PLAYLISTS_PATH",
     "/app/data/monitored_playlists.json",
 )
 

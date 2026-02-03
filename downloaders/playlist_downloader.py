@@ -24,7 +24,7 @@ from apis.navidrome_api import NavidromeAPI
 from utils import Tagger, update_status_file
 
 
-PLAYLIST_HISTORY_DIR = os.getenv("RECOMMAND_PLAYLIST_HISTORY_DIR", "/app/data/playlist_history")
+PLAYLIST_HISTORY_DIR = os.getenv("TRACKDROP_PLAYLIST_HISTORY_DIR", "/app/data/playlist_history")
 
 
 # ---------------------------------------------------------------------------

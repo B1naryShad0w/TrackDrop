@@ -237,7 +237,7 @@ class NavidromeAPI:
         """
         Attempts to find the actual file path on disk given the Navidrome relative path.
         Navidrome may store paths relative to its own music folder which can differ
-        from re-command's music_library_path mount point.
+        from TrackDrop's music_library_path mount point.
         """
         print(f"[PATH RESOLVE] Trying to find: '{navidrome_relative_path}'", flush=True)
         print(f"[PATH RESOLVE] Music library: '{self.music_library_path}'", flush=True)
@@ -808,7 +808,7 @@ class NavidromeAPI:
     def _find_song_by_path(self, file_path):
         """Look up a song in Navidrome's SQLite DB by file path.
         Returns a dict with 'id' and 'path' keys, or None if not found.
-        Handles path prefix differences between re-command and Navidrome mounts."""
+        Handles path prefix differences between TrackDrop and Navidrome mounts."""
         if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
             return None
 
@@ -817,8 +817,8 @@ class NavidromeAPI:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
 
-            # The file_path from organize is absolute under re-command's mount (e.g. /app/music/Artist/Album/Track.flac)
-            # Navidrome stores paths relative to its own music folder (e.g. /music/re-command/Artist/Album/Track.flac)
+            # The file_path from organize is absolute under TrackDrop's mount (e.g. /app/music/Artist/Album/Track.flac)
+            # Navidrome stores paths relative to its own music folder (e.g. /music/trackdrop/Artist/Album/Track.flac)
             # Try multiple path suffixes to match
             candidates = [file_path]
 
@@ -830,8 +830,8 @@ class NavidromeAPI:
                     candidates.append(rel)
                     # Navidrome might prepend its own base
                     candidates.append(f"/music/{rel}")
-                    candidates.append(f"/music/re-command/{rel}")
-                    candidates.append(f"re-command/{rel}")
+                    candidates.append(f"/music/trackdrop/{rel}")
+                    candidates.append(f"trackdrop/{rel}")
                     break
 
             for path_candidate in candidates:
@@ -1385,7 +1385,7 @@ class NavidromeAPI:
 
     async def process_debug_cleanup(self, history_path):
         """Debug cleanup:
-        - Only deletes FILES for songs tracked in download history (songs re-command downloaded)
+        - Only deletes FILES for songs tracked in download history (songs TrackDrop downloaded)
           that are not protected (rated, starred, in a user playlist).
         - Purges ALL songs from recommendation playlists regardless.
         - Only removes successfully-deleted songs from download history.

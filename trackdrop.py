@@ -73,11 +73,11 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     """
     Processes recommendations from specified sources (ListenBrainz, Last.fm, or all).
     """
-    print(f"Starting re-command script for source: {source}...")
+    print(f"Starting TrackDrop script for source: {source}...")
     # Clear debug log
     try:
         with open('/app/debug.log', 'w') as f:
-            f.write(f"Starting re-command script for source: {source}\n")
+            f.write(f"Starting TrackDrop script for source: {source}\n")
     except:
         pass
 
@@ -318,7 +318,7 @@ async def process_fresh_releases_albums(download_id=None):
     """
     Downloads albums from Fresh Releases.
     """
-    print("Starting re-command script for fresh releases albums...")
+    print("Starting TrackDrop script for fresh releases albums...")
 
     tagger = Tagger()
     listenbrainz_api = ListenBrainzAPI(
@@ -414,7 +414,7 @@ if __name__ == "__main__":
     # Initialize streamrip database at the very start
     initialize_streamrip_db()
 
-    parser = argparse.ArgumentParser(description="Re-command Recommendation Script.")
+    parser = argparse.ArgumentParser(description="TrackDrop Recommendation Script.")
     parser.add_argument(
         "--source",
         type=str,

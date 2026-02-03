@@ -13,7 +13,7 @@ from flask import redirect, session, url_for
 
 import config
 
-SETTINGS_FILE = os.getenv("RECOMMAND_USER_SETTINGS_PATH", "/app/data/user_settings.json")
+SETTINGS_FILE = os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json")
 
 DEFAULT_SETTINGS = {
     "listenbrainz_enabled": False,
