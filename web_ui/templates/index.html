@@ -1227,19 +1227,6 @@
                         <p style="color: #888; font-size: 0.85em;">Opens a page with setup instructions and your personal API key.</p>
                     </div>
                 </details>
-
-<details>
-    <summary>Debug</summary>
-    <div style="padding: 15px;">
-        <div class="form-group">
-            <label>Debug Cleanup:</label>
-            <button onclick="triggerDebugCleanup()" style="background-color: var(--error-color);">Clear Playlists & Remove Unrated Songs</button>
-            <small style="color: #b0b0b0; display: block; margin-top: 5px;">
-                Runs the cleanup logic: removes songs from playlists and deletes files for any song not rated 4-5 stars. Use this to test the cleanup process.
-            </small>
-        </div>
-    </div>
-</details>
             </div>
         </div>
     </div>
@@ -1439,21 +1426,6 @@
             }
         }
 
-async function triggerDebugCleanup() {
-    if (!confirm('This will DELETE all songs not rated 4-5 stars, clear all recommendation playlists, and wipe the download history. Are you sure?')) return;
-    showMessage('info', 'Running debug cleanup...');
-    try {
-        const response = await fetch('/api/trigger_debug_cleanup', { method: 'POST' });
-        const data = await response.json();
-        showMessage(data.status, data.message);
-        if (data.summary) {
-            console.log('Debug cleanup summary:', data.summary);
-        }
-    } catch (error) {
-        console.error('Error during debug cleanup:', error);
-        showMessage('error', 'Failed to run debug cleanup');
-    }
-}
 
 async function triggerNavidromeCleanup() {
     const response = await fetch('/api/trigger_navidrome_cleanup', {
