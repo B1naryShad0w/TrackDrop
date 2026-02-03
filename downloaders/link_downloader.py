@@ -321,28 +321,19 @@ class LinkDownloader:
             if media:
                 # Snapshot files before rip so we can find new ones after
                 files_before = self._snapshot_audio_files()
-                print(f"  DEBUG: Temp folder: {self.temp_download_folder} (exists={os.path.exists(self.temp_download_folder)})", flush=True)
-                print(f"  DEBUG: Files before rip: {len(files_before)}", flush=True)
-                print(f"  DEBUG: media type: {type(media).__name__}", flush=True)
-                try:
-                    await media.rip()
-                    print(f"  DEBUG: media.rip() completed successfully", flush=True)
-                except Exception as rip_err:
-                    print(f"  DEBUG: media.rip() FAILED: {rip_err}", flush=True)
-                    import traceback
-                    traceback.print_exc()
-                # Check where the file ended up
-                if hasattr(media, 'download_path'):
-                    print(f"  DEBUG: media.download_path = {media.download_path}", flush=True)
-                    if media.download_path:
-                        print(f"  DEBUG: download_path exists: {os.path.exists(str(media.download_path))}", flush=True)
-                if hasattr(media, 'folder'):
-                    print(f"  DEBUG: media.folder = {media.folder}", flush=True)
+                await media.rip()
                 files_after = self._snapshot_audio_files()
-                new_files = [f for f in files_after if f not in files_before]
-                print(f"  DEBUG: Files after rip: {len(files_after)}, new: {len(new_files)}", flush=True)
-                for f in new_files:
-                    print(f"  DEBUG: New file: {f}", flush=True)
+                # Detect files that are new or were modified (overwritten in place)
+                new_files = []
+                for fp, (mtime, size) in files_after.items():
+                    before = files_before.get(fp)
+                    if before is None or before != (mtime, size):
+                        new_files.append(fp)
+                # Also use media.download_path as authoritative if it exists
+                if not new_files and hasattr(media, 'download_path') and media.download_path:
+                    dp = str(media.download_path)
+                    if os.path.exists(dp):
+                        new_files = [dp]
 
                 if new_files:
                     downloaded_files.extend(new_files)
@@ -533,13 +524,18 @@ class LinkDownloader:
             print(f"Error resolving Deezer ID via Songlink for {platform} {type_param} {item_id}: {e}", file=sys.stderr)
             return None
     def _snapshot_audio_files(self):
-        """Return a set of all audio file paths currently in the temp download folder."""
+        """Return a dict of audio file path -> (mtime, size) in the temp download folder."""
         audio_extensions = (".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wma")
-        files = set()
+        files = {}
         for root, _, filenames in os.walk(self.temp_download_folder):
             for f in filenames:
                 if f.endswith(audio_extensions):
-                    files.add(os.path.join(root, f))
+                    fp = os.path.join(root, f)
+                    try:
+                        st = os.stat(fp)
+                        files[fp] = (st.st_mtime, st.st_size)
+                    except OSError:
+                        pass
         return files
 
     def _find_downloaded_files(self, artist, title):
