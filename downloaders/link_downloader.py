@@ -204,18 +204,19 @@ class LinkDownloader:
                 # Use Songlink URL-based lookup (most reliable for YouTube)
                 deezer_id = await self._get_deezer_id_from_songlink_url(url)
                 print(f"  Songlink URL result: deezer_id={deezer_id}", flush=True)
-                # Fallback: get video title via oEmbed and search Deezer
+                # Fallback: use Songlink metadata or video title to search Deezer
                 if not deezer_id:
-                    print(f"  Songlink failed, trying YouTube oEmbed fallback...")
+                    print(f"  Deezer not in Songlink, trying oEmbed fallback...", flush=True)
                     try:
                         oembed_resp = requests.get(
                             f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json",
                             timeout=10)
+                        print(f"  oEmbed status: {oembed_resp.status_code}", flush=True)
                         if oembed_resp.status_code == 200:
                             oembed_data = oembed_resp.json()
                             yt_title = oembed_data.get("title", "")
                             yt_author = oembed_data.get("author_name", "")
-                            print(f"  YouTube metadata: {yt_author} - {yt_title}")
+                            print(f"  YouTube metadata: '{yt_author}' - '{yt_title}'", flush=True)
                             if yt_title:
                                 # Try "artist - title" split if title contains " - "
                                 if " - " in yt_title:
@@ -224,16 +225,18 @@ class LinkDownloader:
                                 else:
                                     search_artist, search_title = yt_author, yt_title
                                 # Clean common YouTube suffixes
-                                import re as _re
-                                search_title = _re.sub(r'\s*[\(\[]?(official\s*)?(music\s*)?(video|audio|lyric|lyrics|visualizer|hd|4k)[\)\]]?\s*$', '', search_title, flags=_re.IGNORECASE).strip()
-                                print(f"  Searching Deezer for: {search_artist} - {search_title}")
+                                search_title = re.sub(r'\s*[\(\[]?(official\s*)?(music\s*)?(video|audio|lyric|lyrics|visualizer|hd|4k)[\)\]]?\s*$', '', search_title, flags=re.IGNORECASE).strip()
+                                print(f"  Searching Deezer for: '{search_artist}' - '{search_title}'", flush=True)
                                 deezer_link = await self.deezer_api.get_deezer_track_link(search_artist, search_title)
+                                print(f"  Deezer search result: {deezer_link}", flush=True)
                                 if deezer_link:
                                     match = re.search(r'deezer\.com\/track\/(\d+)', deezer_link)
                                     if match:
                                         deezer_id = match.group(1)
+                        else:
+                            print(f"  oEmbed failed: {oembed_resp.text[:200]}", flush=True)
                     except Exception as e:
-                        print(f"  YouTube oEmbed fallback failed: {e}", file=sys.stderr)
+                        print(f"  YouTube oEmbed fallback failed: {e}", flush=True)
                 if deezer_id:
                     print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
