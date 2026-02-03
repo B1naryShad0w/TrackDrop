@@ -174,6 +174,7 @@ def _scheduler_loop(navidrome_api, update_status_fn, downloads_queue):
                 download_id = str(uuid.uuid4())
                 downloads_queue[download_id] = {
                     "id": download_id,
+                    "username": entry.get("username", ""),
                     "artist": "Playlist Sync",
                     "title": entry["name"],
                     "status": "in_progress",

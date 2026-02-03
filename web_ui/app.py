@@ -260,6 +260,7 @@ def update_download_status(download_id, status, message=None, title=None, curren
         print(f"Download ID {download_id} not in memory queue. Creating new entry from status file.")
         new_item = {
             'id': download_id,
+            'username': '',
             'artist': 'Playlist Download',
             'title': title or f'Download {download_id[:8]}...',
             'status': status,
@@ -471,9 +472,11 @@ def get_download_queue():
                 except Exception as e:
                     print(f"Error processing status file {filepath} in /api/download_queue: {e}")
 
-    # Filter out older completed/failed tasks to keep the queue clean
-    # For now, let's keep everything, a cleanup mechanism can be added later
-    queue_list = list(downloads_queue.values())
+    # Filter to only show downloads belonging to the current user
+    username = get_current_user()
+    queue_list = [item for item in downloads_queue.values() if item.get('username') == username]
+    # Most recent first
+    queue_list.sort(key=lambda x: x.get('start_time', ''), reverse=True)
     return jsonify({"status": "success", "queue": queue_list})
 
 @app.route('/')
@@ -739,6 +742,7 @@ def trigger_listenbrainz_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
+            'username': get_current_user(),
             'artist': 'ListenBrainz Playlist',
             'title': 'Multiple Tracks',
             'status': 'in_progress',
@@ -801,6 +805,7 @@ def trigger_lastfm_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
+            'username': get_current_user(),
             'artist': 'Last.fm Playlist',
             'title': 'Multiple Tracks',
             'status': 'in_progress',
@@ -960,6 +965,7 @@ def run_now():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
+            'username': username,
             'artist': 'All Sources',
             'title': 'Weekly Recommendations',
             'status': 'in_progress',
@@ -1178,6 +1184,7 @@ def trigger_llm_download():
     download_id = str(uuid.uuid4())
     downloads_queue[download_id] = {
         'id': download_id,
+        'username': get_current_user(),
         'artist': 'LLM Playlist',
         'title': f'{len(recommendations)} Tracks',
         'status': 'in_progress',
@@ -1225,6 +1232,7 @@ def trigger_fresh_release_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
+            'username': get_current_user(),
             'artist': artist,
             'title': album, # Using album as title for fresh releases
             'status': 'in_progress',
@@ -1329,6 +1337,7 @@ def trigger_track_download():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
+            'username': get_current_user(),
             'artist': artist,
             'title': title,
             'status': 'in_progress',
@@ -1393,6 +1402,7 @@ def download_from_link():
 
             downloads_queue[download_id] = {
                 'id': download_id,
+                'username': get_current_user(),
                 'artist': 'Playlist Download',
                 'title': link,
                 'status': 'in_progress',
@@ -1441,6 +1451,7 @@ def download_from_link():
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
+            'username': get_current_user(),
             'artist': 'Link Download',
             'title': link,
             'status': 'in_progress',
@@ -1565,6 +1576,7 @@ def api_sync_monitored_playlist(playlist_id):
     download_id = str(uuid.uuid4())
     downloads_queue[download_id] = {
         'id': download_id,
+        'username': get_current_user(),
         'artist': 'Playlist Sync',
         'title': entry['name'],
         'status': 'in_progress',
