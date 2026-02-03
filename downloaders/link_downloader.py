@@ -9,6 +9,13 @@ from streamrip.media import PendingSingle, PendingAlbum, PendingPlaylist
 from streamrip.config import Config
 from streamrip.db import Database, Downloads, Failed, Dummy
 from config import *
+
+# Debug: print config values at import time
+print(f"[CONFIG DEBUG] MUSIC_LIBRARY_PATH={MUSIC_LIBRARY_PATH}", flush=True)
+print(f"[CONFIG DEBUG] MUSIC_DOWNLOAD_PATH={MUSIC_DOWNLOAD_PATH}", flush=True)
+print(f"[CONFIG DEBUG] DOWNLOAD_HISTORY_PATH={DOWNLOAD_HISTORY_PATH}", flush=True)
+print(f"[CONFIG DEBUG] TEMP_DOWNLOAD_FOLDER={TEMP_DOWNLOAD_FOLDER}", flush=True)
+
 from utils import Tagger, sanitize_filename, update_status_file
 from apis.navidrome_api import NavidromeAPI
 from downloaders.track_downloader import TrackDownloader

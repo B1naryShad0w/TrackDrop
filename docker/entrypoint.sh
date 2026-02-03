@@ -19,6 +19,8 @@ echo "MUSIC_LIBRARY_PATH = os.getenv(\"MUSIC_LIBRARY_PATH\", \"${TRACKDROP_MUSIC
 echo "# MUSIC_DOWNLOAD_PATH: where to organize downloads (defaults to MUSIC_LIBRARY_PATH)" >> config.py
 echo "MUSIC_DOWNLOAD_PATH = os.getenv(\"MUSIC_DOWNLOAD_PATH\", \"${TRACKDROP_MUSIC_DOWNLOAD_PATH:-}\")" >> config.py
 echo "if not MUSIC_DOWNLOAD_PATH: MUSIC_DOWNLOAD_PATH = MUSIC_LIBRARY_PATH" >> config.py
+echo "print(f'[ENTRYPOINT GENERATED] MUSIC_LIBRARY_PATH={MUSIC_LIBRARY_PATH}', flush=True)" >> config.py
+echo "print(f'[ENTRYPOINT GENERATED] MUSIC_DOWNLOAD_PATH={MUSIC_DOWNLOAD_PATH}', flush=True)" >> config.py
 echo "TEMP_DOWNLOAD_FOLDER = os.getenv(\"TEMP_DOWNLOAD_FOLDER\", \"/app/temp_downloads\")" >> config.py
 echo "" >> config.py
 
