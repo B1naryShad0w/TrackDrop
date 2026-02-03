@@ -280,11 +280,16 @@ class NavidromeAPI:
                 seen.add(c)
                 unique_candidates.append(c)
 
+        print(f"DEBUG _find_actual_song_path: music_library_path={self.music_library_path}")
+        print(f"DEBUG _find_actual_song_path: candidates={unique_candidates}")
+
         # Try each candidate
         for candidate in unique_candidates:
             if os.path.isabs(candidate) and os.path.exists(candidate):
+                print(f"DEBUG _find_actual_song_path: Found absolute path: {candidate}")
                 return candidate
             full = os.path.join(self.music_library_path, candidate)
+            print(f"DEBUG _find_actual_song_path: Trying {full} - exists={os.path.exists(full)}")
             if os.path.exists(full):
                 return full
 
@@ -593,12 +598,18 @@ class NavidromeAPI:
         """Wait for an ongoing library scan to complete (async version)."""
         import asyncio
         start = time.time()
+        check_count = 0
+        print(f"DEBUG: Starting async scan wait (timeout={timeout}s)")
         while time.time() - start < timeout:
-            if not self._get_scan_status():
-                print("Library scan completed")
+            check_count += 1
+            scanning = self._get_scan_status()
+            elapsed = time.time() - start
+            print(f"DEBUG: Scan check #{check_count} - scanning={scanning}, elapsed={elapsed:.1f}s")
+            if not scanning:
+                print(f"Library scan completed after {elapsed:.1f}s")
                 return True
             await asyncio.sleep(2)
-        print(f"Scan did not complete within {timeout}s, continuing anyway")
+        print(f"DEBUG: Scan did not complete within {timeout}s, continuing anyway")
         return False
 
     def _wait_for_scan(self, timeout=120):
@@ -1128,10 +1139,23 @@ class NavidromeAPI:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
 
-            # Find songs rated 1 star or less BY THIS USER (includes half-star)
-            # Navidrome uses 0-10 scale: 1=half-star, 2=1-star, so <= 2 means "1 star or less"
+            # Debug: Show all ratings for this user to understand the scale
             cursor.execute("""
-                SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
+                SELECT a.rating, COUNT(*) as count
+                FROM annotation a
+                WHERE a.item_type = 'media_file' AND a.user_id = ? AND a.rating > 0
+                GROUP BY a.rating
+                ORDER BY a.rating
+            """, (user_id,))
+            rating_counts = cursor.fetchall()
+            print(f"DEBUG: Rating distribution for {username}:")
+            for rating_val, count in rating_counts:
+                print(f"  Rating {rating_val}: {count} songs")
+
+            # Find songs rated 1 star or less BY THIS USER (includes half-star)
+            # Check for both integer scale (1, 2) and decimal scale (0.5, 1.0)
+            cursor.execute("""
+                SELECT DISTINCT a.item_id, a.rating, mf.title, mf.artist, mf.album, mf.path
                 FROM annotation a
                 JOIN media_file mf ON a.item_id = mf.id
                 WHERE a.item_type = 'media_file' AND a.rating > 0 AND a.rating <= 2 AND a.user_id = ?
@@ -1143,7 +1167,8 @@ class NavidromeAPI:
             results['scanned'] = len(low_rated_songs)
             print(f"Found {len(low_rated_songs)} songs rated 1 star or less by {username}")
 
-            for song_id, title, artist, album, db_path in low_rated_songs:
+            for song_id, db_rating, title, artist, album, db_path in low_rated_songs:
+                print(f"  DEBUG: {artist} - {title} has rating={db_rating} in DB, path={db_path}")
                 protection = self._check_song_protection(song_id)
 
                 # Can delete if no OTHER user has protected it
@@ -1215,20 +1240,27 @@ class NavidromeAPI:
 
         for song_id in song_ids:
             try:
+                print(f"\nDEBUG: Processing song_id={song_id}")
                 song_details = self._get_song_details(song_id, salt, token)
                 if not song_details:
+                    print(f"DEBUG: Song not found in API: {song_id}")
                     results['errors'].append(f"Song not found: {song_id}")
                     continue
 
                 artist = song_details.get('artist', 'Unknown')
                 title = song_details.get('title', 'Unknown')
                 label = f"{artist} - {title}"
+                print(f"DEBUG: Found song: {label}")
 
                 # Get the file path
                 db_path = song_details.get('path', '')
+                print(f"DEBUG: API path: {db_path}")
                 file_path = self._find_actual_song_path(db_path, song_details)
+                print(f"DEBUG: Resolved file_path: {file_path}")
+                print(f"DEBUG: File exists: {os.path.exists(file_path) if file_path else 'N/A'}")
 
                 if file_path and os.path.exists(file_path):
+                    print(f"DEBUG: Attempting to delete: {file_path}")
                     if self._delete_song(file_path):
                         results['deleted'].append({
                             'artist': artist,
@@ -1237,9 +1269,11 @@ class NavidromeAPI:
                         })
                         print(f"  DELETED: {label}")
                     else:
+                        print(f"DEBUG: _delete_song returned False for {file_path}")
                         results['errors'].append(f"Failed to delete file: {label}")
                 else:
                     # File doesn't exist on disk, still count as "deleted"
+                    print(f"DEBUG: File not found, marking as deleted anyway")
                     results['deleted'].append({
                         'artist': artist,
                         'title': title,
@@ -1249,6 +1283,9 @@ class NavidromeAPI:
                     print(f"  DELETED (file missing): {label}")
 
             except Exception as e:
+                print(f"DEBUG: Exception processing {song_id}: {e}")
+                import traceback
+                traceback.print_exc()
                 results['errors'].append(f"Error processing {song_id}: {str(e)}")
 
         # Clean up empty folders and trigger scan
