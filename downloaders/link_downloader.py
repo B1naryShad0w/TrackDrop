@@ -321,38 +321,28 @@ class LinkDownloader:
             if media:
                 # Snapshot files before rip so we can find new ones after
                 files_before = self._snapshot_audio_files()
-                print(f"  DEBUG: Temp folder: {self.temp_download_folder}")
-                print(f"  DEBUG: Temp folder exists: {os.path.exists(self.temp_download_folder)}")
-                print(f"  DEBUG: Files before rip: {len(files_before)}")
-                # Dump streamrip config to find where it downloads to
-                try:
-                    sc = self.streamrip_config
-                    for attr in dir(sc):
-                        if not attr.startswith('_'):
-                            val = getattr(sc, attr)
-                            if not callable(val):
-                                print(f"  DEBUG: streamrip_config.{attr} = {val}")
-                except Exception as e:
-                    print(f"  DEBUG: Could not dump streamrip config: {e}")
-                print(f"  DEBUG: media type: {type(media).__name__}, attrs: {[a for a in dir(media) if not a.startswith('_')]}")
+                print(f"  DEBUG: Temp folder: {self.temp_download_folder} (exists={os.path.exists(self.temp_download_folder)})", flush=True)
+                print(f"  DEBUG: Files before rip: {len(files_before)}", flush=True)
+                print(f"  DEBUG: media type: {type(media).__name__}", flush=True)
                 try:
                     await media.rip()
-                    print(f"  DEBUG: media.rip() completed successfully")
+                    print(f"  DEBUG: media.rip() completed successfully", flush=True)
                 except Exception as rip_err:
-                    print(f"  DEBUG: media.rip() FAILED: {rip_err}", file=sys.stderr)
+                    print(f"  DEBUG: media.rip() FAILED: {rip_err}", flush=True)
                     import traceback
-                    traceback.print_exc(file=sys.stderr)
-                # Check media.path after rip
-                for attr in ('path', 'paths', 'downloaded_path'):
-                    if hasattr(media, attr):
-                        print(f"  DEBUG: media.{attr} = {getattr(media, attr)}")
+                    traceback.print_exc()
+                # Check where the file ended up
+                if hasattr(media, 'download_path'):
+                    print(f"  DEBUG: media.download_path = {media.download_path}", flush=True)
+                    if media.download_path:
+                        print(f"  DEBUG: download_path exists: {os.path.exists(str(media.download_path))}", flush=True)
+                if hasattr(media, 'folder'):
+                    print(f"  DEBUG: media.folder = {media.folder}", flush=True)
                 files_after = self._snapshot_audio_files()
                 new_files = [f for f in files_after if f not in files_before]
-                print(f"  DEBUG: Files after rip: {len(files_after)}")
-                print(f"  DEBUG: New files found: {len(new_files)}")
-                if new_files:
-                    for f in new_files:
-                        print(f"  DEBUG: New file: {f}")
+                print(f"  DEBUG: Files after rip: {len(files_after)}, new: {len(new_files)}", flush=True)
+                for f in new_files:
+                    print(f"  DEBUG: New file: {f}", flush=True)
 
                 if new_files:
                     downloaded_files.extend(new_files)
