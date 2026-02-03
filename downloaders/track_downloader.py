@@ -37,16 +37,6 @@ class TrackDownloader:
         else:
             comment = config.LASTFM_TARGET_COMMENT
 
-        # Debug logging
-        debug_info = {
-            'song_info': song_info,
-            'lb_recommendation': lb_recommendation,
-            'determined_comment': comment,
-            'timestamp': __import__('datetime').datetime.now().isoformat()
-        }
-        with open('/app/debug.log', 'a') as f:
-            f.write(f"TRACK_DOWNLOADER_START: {debug_info}\n")
-
         if not deezer_link:
             deezer_link = await self._get_deezer_link_and_details(song_info)
         if not deezer_link:
