@@ -1524,52 +1524,59 @@ function showCleanupConfirmation(data) {
     // Create modal overlay
     const overlay = document.createElement('div');
     overlay.id = 'cleanup-confirm-modal';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:1000;';
 
     const modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card-bg);border-radius:8px;padding:20px;max-width:600px;max-height:80vh;overflow-y:auto;color:var(--text-color);min-width:400px;';
+    modal.style.cssText = 'background:var(--card-background);border-radius:12px;padding:24px;max-width:600px;max-height:80vh;overflow-y:auto;color:var(--text-color);min-width:400px;border:1px solid var(--border-color);box-shadow:0 8px 32px rgba(0,0,0,0.5);';
 
     let contentHtml = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;">Cleanup Preview</h3>
-            <button onclick="document.getElementById('cleanup-confirm-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;">&times;</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:1px solid var(--border-color);">
+            <h3 style="margin:0;color:var(--primary-color);font-size:1.3em;">Cleanup Preview</h3>
+            <button onclick="document.getElementById('cleanup-confirm-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">&times;</button>
         </div>
-        <p style="margin-bottom:15px;">Found <strong>${data.scanned}</strong> songs you rated 1-star.</p>
+        <p style="margin-bottom:20px;color:#b0b0b0;">Found <strong style="color:var(--text-color);">${data.scanned}</strong> songs you rated 1 star or less.</p>
     `;
 
     if (data.to_delete.length > 0) {
-        contentHtml += `<div style="margin-bottom:15px;padding:10px;background:rgba(192,57,43,0.2);border-radius:4px;border-left:4px solid #c0392b;">
-            <strong style="color:#e74c3c;">Will be deleted (${data.to_delete.length}):</strong>
-            <ul style="margin:10px 0 0 20px;padding:0;">`;
+        contentHtml += `<div style="margin-bottom:20px;padding:15px;background:#3a2020;border-radius:8px;border:1px solid #5a3030;">
+            <strong style="color:#ff6b6b;display:block;margin-bottom:10px;">⚠ Will be deleted (${data.to_delete.length}):</strong>
+            <ul style="margin:0;padding-left:20px;list-style-type:none;">`;
         data.to_delete.forEach(song => {
-            contentHtml += `<li style="margin:5px 0;">${song.artist} - ${song.title} <span style="color:#888;">[${song.album}]</span></li>`;
+            contentHtml += `<li style="margin:8px 0;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;">
+                <span style="color:var(--text-color);">${song.artist} - ${song.title}</span>
+                <span style="color:#666;font-size:0.9em;"> [${song.album}]</span>
+            </li>`;
         });
         contentHtml += `</ul></div>`;
     }
 
     if (data.to_keep.length > 0) {
-        contentHtml += `<div style="margin-bottom:15px;padding:10px;background:rgba(46,204,113,0.2);border-radius:4px;border-left:4px solid #27ae60;">
-            <strong style="color:#2ecc71;">Will be kept (${data.to_keep.length}):</strong>
-            <ul style="margin:10px 0 0 20px;padding:0;">`;
+        contentHtml += `<div style="margin-bottom:20px;padding:15px;background:#203a20;border-radius:8px;border:1px solid #305a30;">
+            <strong style="color:#6bff6b;display:block;margin-bottom:10px;">✓ Will be kept (${data.to_keep.length}):</strong>
+            <ul style="margin:0;padding-left:20px;list-style-type:none;">`;
         data.to_keep.forEach(song => {
-            contentHtml += `<li style="margin:5px 0;">${song.artist} - ${song.title} <span style="color:#888;">[${song.album}]</span><br><em style="font-size:0.85em;color:#888;">Reason: ${song.reason}</em></li>`;
+            contentHtml += `<li style="margin:8px 0;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;">
+                <span style="color:var(--text-color);">${song.artist} - ${song.title}</span>
+                <span style="color:#666;font-size:0.9em;"> [${song.album}]</span>
+                <div style="font-size:0.85em;color:#888;margin-top:4px;font-style:italic;">↳ ${song.reason}</div>
+            </li>`;
         });
         contentHtml += `</ul></div>`;
     }
 
     if (data.to_delete.length === 0 && data.to_keep.length === 0) {
-        contentHtml += `<p style="color:#888;">No 1-star songs found in your library.</p>`;
+        contentHtml += `<p style="color:#888;text-align:center;padding:20px;">No low-rated songs found in your library.</p>`;
     }
 
     if (data.errors && data.errors.length > 0) {
-        contentHtml += `<p style="color:#e74c3c;margin-top:10px;">Errors: ${data.errors.join(', ')}</p>`;
+        contentHtml += `<div style="margin-top:15px;padding:10px;background:#4a3030;border-radius:6px;"><span style="color:#ff6b6b;">Errors:</span> ${data.errors.join(', ')}</div>`;
     }
 
-    contentHtml += `<div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end;">`;
-    contentHtml += `<button onclick="document.getElementById('cleanup-confirm-modal').remove()" style="padding:10px 20px;background:#666;color:white;border:none;border-radius:4px;cursor:pointer;">Cancel</button>`;
+    contentHtml += `<div style="margin-top:24px;display:flex;gap:12px;justify-content:flex-end;padding-top:15px;border-top:1px solid var(--border-color);">`;
+    contentHtml += `<button onclick="document.getElementById('cleanup-confirm-modal').remove()" style="padding:12px 24px;background:#3a3a5a;color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#4a4a6a'" onmouseout="this.style.background='#3a3a5a'">Cancel</button>`;
 
     if (data.to_delete.length > 0) {
-        contentHtml += `<button onclick="executeManualCleanup()" style="padding:10px 20px;background:#c0392b;color:white;border:none;border-radius:4px;cursor:pointer;">Delete ${data.to_delete.length} Songs</button>`;
+        contentHtml += `<button onclick="executeManualCleanup()" style="padding:12px 24px;background:#c0392b;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;transition:background 0.2s;" onmouseover="this.style.background='#e74c3c'" onmouseout="this.style.background='#c0392b'">Delete ${data.to_delete.length} Songs</button>`;
     }
     contentHtml += `</div>`;
 
@@ -1620,39 +1627,43 @@ async function executeManualCleanup() {
 function showCleanupResults(data) {
     const overlay = document.createElement('div');
     overlay.id = 'cleanup-results-modal';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:1000;';
 
     const modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card-bg);border-radius:8px;padding:20px;max-width:500px;max-height:80vh;overflow-y:auto;color:var(--text-color);';
+    modal.style.cssText = 'background:var(--card-background);border-radius:12px;padding:24px;max-width:500px;max-height:80vh;overflow-y:auto;color:var(--text-color);min-width:350px;border:1px solid var(--border-color);box-shadow:0 8px 32px rgba(0,0,0,0.5);';
 
     let contentHtml = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;">Cleanup Complete</h3>
-            <button onclick="document.getElementById('cleanup-results-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;">&times;</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:1px solid var(--border-color);">
+            <h3 style="margin:0;color:var(--primary-color);font-size:1.3em;">✓ Cleanup Complete</h3>
+            <button onclick="document.getElementById('cleanup-results-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">&times;</button>
         </div>
     `;
 
     if (data.deleted && data.deleted.length > 0) {
-        contentHtml += `<p style="color:#2ecc71;"><strong>Deleted ${data.deleted.length} songs:</strong></p>
-        <ul style="margin:10px 0 15px 20px;padding:0;">`;
+        contentHtml += `<div style="margin-bottom:20px;padding:15px;background:#203a20;border-radius:8px;border:1px solid #305a30;">
+            <strong style="color:#6bff6b;display:block;margin-bottom:10px;">Deleted ${data.deleted.length} songs:</strong>
+            <ul style="margin:0;padding-left:20px;list-style-type:none;">`;
         data.deleted.forEach(song => {
-            contentHtml += `<li style="margin:5px 0;">${song.artist} - ${song.title}</li>`;
+            contentHtml += `<li style="margin:6px 0;padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:4px;">${song.artist} - ${song.title}</li>`;
         });
-        contentHtml += `</ul>`;
+        contentHtml += `</ul></div>`;
     } else {
-        contentHtml += `<p>No songs were deleted.</p>`;
+        contentHtml += `<p style="color:#888;text-align:center;padding:20px;">No songs were deleted.</p>`;
     }
 
     if (data.errors && data.errors.length > 0) {
-        contentHtml += `<p style="color:#e74c3c;"><strong>Errors:</strong></p>
-        <ul style="margin:10px 0 15px 20px;padding:0;">`;
+        contentHtml += `<div style="margin-bottom:20px;padding:15px;background:#3a2020;border-radius:8px;border:1px solid #5a3030;">
+            <strong style="color:#ff6b6b;display:block;margin-bottom:10px;">Errors:</strong>
+            <ul style="margin:0;padding-left:20px;list-style-type:none;">`;
         data.errors.forEach(err => {
-            contentHtml += `<li style="margin:5px 0;">${err}</li>`;
+            contentHtml += `<li style="margin:6px 0;padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:0.9em;">${err}</li>`;
         });
-        contentHtml += `</ul>`;
+        contentHtml += `</ul></div>`;
     }
 
-    contentHtml += `<button onclick="document.getElementById('cleanup-results-modal').remove()" style="margin-top:10px;padding:10px 20px;background:var(--primary-color);color:white;border:none;border-radius:4px;cursor:pointer;">Close</button>`;
+    contentHtml += `<div style="margin-top:20px;padding-top:15px;border-top:1px solid var(--border-color);text-align:right;">
+        <button onclick="document.getElementById('cleanup-results-modal').remove()" style="padding:12px 24px;background:var(--primary-color);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;transition:filter 0.2s;" onmouseover="this.style.filter='brightness(1.2)'" onmouseout="this.style.filter='none'">Close</button>
+    </div>`;
 
     modal.innerHTML = contentHtml;
     overlay.appendChild(modal);

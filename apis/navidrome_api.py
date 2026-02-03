@@ -128,9 +128,9 @@ class NavidromeAPI:
                     if rating > 0 or starred or starred_at:
                         result['has_interaction'] = True
 
-                    if rating == 1:
+                    if 0 < rating <= 1:
                         result['has_one_star'] = True
-                        result['reasons'].append(f"1-star by user {user_id[:8]}...")
+                        result['reasons'].append(f"rated {rating}/5 (low) by user {user_id[:8]}...")
 
                     if rating > 2:
                         result['reasons'].append(f"rated {rating}/5 by user {user_id[:8]}...")
@@ -173,9 +173,9 @@ class NavidromeAPI:
             if user_rating > 0 or starred:
                 result['has_interaction'] = True
 
-            if user_rating == 1:
+            if 0 < user_rating <= 1:
                 result['has_one_star'] = True
-                result['reasons'].append(f"1-star by {self.user_nd}")
+                result['reasons'].append(f"rated {user_rating}/5 (low) by {self.user_nd}")
 
             if starred:
                 result['is_starred'] = True
@@ -198,9 +198,9 @@ class NavidromeAPI:
                 if admin_rating > 0 or starred:
                     result['has_interaction'] = True
 
-                if admin_rating == 1:
+                if 0 < admin_rating <= 1:
                     result['has_one_star'] = True
-                    result['reasons'].append(f"1-star by {self.admin_user}")
+                    result['reasons'].append(f"rated {admin_rating}/5 (low) by {self.admin_user}")
 
                 if starred:
                     result['is_starred'] = True
@@ -1099,21 +1099,21 @@ class NavidromeAPI:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
 
-            # Find songs rated 1-star BY THIS USER
+            # Find songs rated 1 star or less BY THIS USER (includes half-star)
             cursor.execute("""
                 SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
                 FROM annotation a
                 JOIN media_file mf ON a.item_id = mf.id
-                WHERE a.item_type = 'media_file' AND a.rating = 1 AND a.user_id = ?
+                WHERE a.item_type = 'media_file' AND a.rating > 0 AND a.rating <= 1 AND a.user_id = ?
             """, (user_id,))
 
-            one_star_songs = cursor.fetchall()
+            low_rated_songs = cursor.fetchall()
             conn.close()
 
-            results['scanned'] = len(one_star_songs)
-            print(f"Found {len(one_star_songs)} songs rated 1-star by {username}")
+            results['scanned'] = len(low_rated_songs)
+            print(f"Found {len(low_rated_songs)} songs rated 1 star or less by {username}")
 
-            for song_id, title, artist, album, db_path in one_star_songs:
+            for song_id, title, artist, album, db_path in low_rated_songs:
                 protection = self._check_song_protection(song_id)
 
                 # Can delete if no OTHER user has protected it
