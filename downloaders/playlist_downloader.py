@@ -481,12 +481,13 @@ async def download_playlist(
         # Search Navidrome using Deezer metadata first, fall back to playlist metadata
         search_artist = deezer_artist or artist
         search_title = deezer_title or title
+        search_album = deezer_details.get("album") if deezer_details else track.get("album")
         track_statuses[i]["message"] = "Checking library..."
 
-        existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
+        existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
         # If Deezer metadata didn't match, try original playlist metadata as fallback
         if not existing and deezer_artist:
-            existing = navidrome_api._search_song_in_navidrome(artist, title, salt, token)
+            existing = navidrome_api._search_song_in_navidrome(artist, title, salt, token, album=search_album)
         if existing:
             print(f"  Already in Navidrome: {label} (id={existing['id']})")
             all_navidrome_ids.append(existing["id"])
