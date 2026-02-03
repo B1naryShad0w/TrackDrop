@@ -15,9 +15,10 @@ echo "" >> config.py
 echo "ROOT_ND = os.getenv(\"ROOT_ND\", \"${TRACKDROP_ROOT_ND:-}\")" >> config.py
 echo "USER_ND = os.getenv(\"USER_ND\", \"${TRACKDROP_USER_ND:-}\")" >> config.py
 echo "PASSWORD_ND = os.getenv(\"PASSWORD_ND\", \"${TRACKDROP_PASSWORD_ND:-}\")" >> config.py
-echo "MUSIC_LIBRARY_PATH = os.getenv(\"MUSIC_LIBRARY_PATH\", \"/app/music\")" >> config.py
+echo "MUSIC_LIBRARY_PATH = os.getenv(\"MUSIC_LIBRARY_PATH\", \"${TRACKDROP_MUSIC_LIBRARY_PATH:-/app/music}\")" >> config.py
 echo "# MUSIC_DOWNLOAD_PATH: where to organize downloads (defaults to MUSIC_LIBRARY_PATH)" >> config.py
-echo "MUSIC_DOWNLOAD_PATH = os.getenv(\"MUSIC_DOWNLOAD_PATH\", os.getenv(\"MUSIC_LIBRARY_PATH\", \"/app/music\"))" >> config.py
+echo "MUSIC_DOWNLOAD_PATH = os.getenv(\"MUSIC_DOWNLOAD_PATH\", \"${TRACKDROP_MUSIC_DOWNLOAD_PATH:-}\")" >> config.py
+echo "if not MUSIC_DOWNLOAD_PATH: MUSIC_DOWNLOAD_PATH = MUSIC_LIBRARY_PATH" >> config.py
 echo "TEMP_DOWNLOAD_FOLDER = os.getenv(\"TEMP_DOWNLOAD_FOLDER\", \"/app/temp_downloads\")" >> config.py
 echo "" >> config.py
 
