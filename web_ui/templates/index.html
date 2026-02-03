@@ -1659,6 +1659,7 @@ async function createSmartPlaylists() {
 
         // Start polling the download queue when the page loads
         document.addEventListener('DOMContentLoaded', () => {
+            fetchDownloadQueueStatus(); // Initial fetch immediately
             downloadQueueInterval = setInterval(fetchDownloadQueueStatus, 3000); // Poll every 3 seconds
         });
 
