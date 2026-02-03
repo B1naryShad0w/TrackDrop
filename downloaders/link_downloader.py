@@ -58,8 +58,20 @@ class LinkDownloader:
                 track_id = re.search(spotify_track_re, url).group(1)
                 original_platform = "spotify"
                 original_id = track_id
-                print(f"  Resolving Deezer ID via Songlink...")
-                deezer_id = await self._get_deezer_id_from_songlink(track_id, "spotify", "song")
+                # Get Spotify metadata for album-aware Deezer search
+                deezer_id = None
+                spotify_meta = self._get_spotify_track_metadata(track_id)
+                if spotify_meta:
+                    print(f"  Spotify metadata: {spotify_meta['artist']} - {spotify_meta['title']} [{spotify_meta['album']}]")
+                    deezer_link = await self.deezer_api.get_deezer_track_link(
+                        spotify_meta['artist'], spotify_meta['title'], album=spotify_meta['album'])
+                    if deezer_link:
+                        match = re.search(r'deezer\.com\/track\/(\d+)', deezer_link)
+                        if match:
+                            deezer_id = match.group(1)
+                if not spotify_meta or not deezer_id:
+                    print(f"  Falling back to Songlink resolution...")
+                    deezer_id = await self._get_deezer_id_from_songlink(track_id, "spotify", "song")
                 if deezer_id:
                     print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
@@ -493,6 +505,28 @@ class LinkDownloader:
             import traceback
             traceback.print_exc(file=sys.stderr)
             return None
+
+    def _get_spotify_track_metadata(self, track_id):
+        """Fetch artist, title, and album name from Spotify for a track ID."""
+        try:
+            from downloaders.playlist_downloader import _get_spotify_client_token
+            token = _get_spotify_client_token()
+            if not token:
+                return None
+            resp = requests.get(
+                f"https://api.spotify.com/v1/tracks/{track_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                artist = ", ".join(a["name"] for a in data.get("artists", []))
+                title = data.get("name", "")
+                album = data.get("album", {}).get("name", "")
+                return {"artist": artist, "title": title, "album": album}
+        except Exception as e:
+            print(f"  Could not fetch Spotify metadata: {e}", file=sys.stderr)
+        return None
 
     async def _get_deezer_id_from_songlink(self, item_id, platform, type_param="song"):
         """Use Songlink API to get Deezer ID from other platform ID, with improved fallback."""
