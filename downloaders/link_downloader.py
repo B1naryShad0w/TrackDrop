@@ -58,20 +58,26 @@ class LinkDownloader:
                 track_id = re.search(spotify_track_re, url).group(1)
                 original_platform = "spotify"
                 original_id = track_id
-                # Get Spotify metadata for album-aware Deezer search
-                deezer_id = None
-                spotify_meta = self._get_spotify_track_metadata(track_id)
-                if spotify_meta:
-                    print(f"  Spotify metadata: {spotify_meta['artist']} - {spotify_meta['title']} [{spotify_meta['album']}]")
-                    deezer_link = await self.deezer_api.get_deezer_track_link(
-                        spotify_meta['artist'], spotify_meta['title'], album=spotify_meta['album'])
-                    if deezer_link:
-                        match = re.search(r'deezer\.com\/track\/(\d+)', deezer_link)
-                        if match:
-                            deezer_id = match.group(1)
-                if not spotify_meta or not deezer_id:
-                    print(f"  Falling back to Songlink resolution...")
-                    deezer_id = await self._get_deezer_id_from_songlink(track_id, "spotify", "song")
+                print(f"  Resolving Deezer ID via Songlink...")
+                deezer_id = await self._get_deezer_id_from_songlink(track_id, "spotify", "song")
+                # Verify album matches; if not, search Deezer directly with correct album
+                if deezer_id:
+                    spotify_meta = self._get_spotify_track_metadata(track_id)
+                    if spotify_meta and spotify_meta.get('album'):
+                        deezer_details = await self.deezer_api.get_deezer_track_details(deezer_id)
+                        if deezer_details:
+                            deezer_album = (deezer_details.get("album") or "").lower().strip()
+                            source_album = spotify_meta["album"].lower().strip()
+                            if deezer_album != source_album and source_album not in deezer_album and deezer_album not in source_album:
+                                print(f"  Album mismatch: Deezer has '{deezer_details.get('album')}', Spotify has '{spotify_meta['album']}'")
+                                print(f"  Searching Deezer for correct album version...")
+                                better_link = await self.deezer_api.get_deezer_track_link(
+                                    spotify_meta['artist'], spotify_meta['title'], album=spotify_meta['album'])
+                                if better_link:
+                                    match = re.search(r'deezer\.com\/track\/(\d+)', better_link)
+                                    if match:
+                                        deezer_id = match.group(1)
+                                        print(f"  Found correct version: Deezer ID {deezer_id}")
                 if deezer_id:
                     print(f"  Deezer ID: {deezer_id}")
                     song_info = {'deezer_id': deezer_id, 'type': 'track'}
