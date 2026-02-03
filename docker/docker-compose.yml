@@ -18,6 +18,11 @@ services:
       - TRACKDROP_USER_ND=${TRACKDROP_USER_ND:-}
       - TRACKDROP_PASSWORD_ND=${TRACKDROP_PASSWORD_ND:-}
 
+      # Music paths (MUSIC_DOWNLOAD_PATH defaults to MUSIC_LIBRARY_PATH if not set)
+      # Set MUSIC_DOWNLOAD_PATH to organize downloads to a subfolder while keeping
+      # full library access for cleanup (e.g., /app/music/trackdrop)
+      - TRACKDROP_MUSIC_DOWNLOAD_PATH=${TRACKDROP_MUSIC_DOWNLOAD_PATH:-}
+
       # ListenBrainz Configuration (disabled by default)
       - TRACKDROP_LISTENBRAINZ_ENABLED=${TRACKDROP_LISTENBRAINZ_ENABLED:-False}
       - TRACKDROP_TOKEN_LB=${TRACKDROP_TOKEN_LB:-}
