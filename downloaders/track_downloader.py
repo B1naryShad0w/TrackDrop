@@ -51,9 +51,15 @@ class TrackDownloader:
             search_album = song_info.get('album') or None
             try:
                 salt, token = navidrome_api._get_navidrome_auth_params()
-                existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
+                # Try with album first for precision, fall back to any version
+                existing = None
+                if search_album:
+                    existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
+                if not existing:
+                    existing = navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token)
                 if existing:
-                    print(f"  Already in Navidrome: {search_artist} - {search_title} [{search_album}] (id={existing['id']})")
+                    matched_album = existing.get('album', '?')
+                    print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
                     song_info['_duplicate'] = True
                     return None
             except Exception as e:

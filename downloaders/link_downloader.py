@@ -278,7 +278,8 @@ class LinkDownloader:
                         print(f"  Checking Navidrome for existing match...")
                         existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
                         if existing:
-                            print(f"  Already in Navidrome: {search_artist} - {search_title} [{search_album}] (id={existing['id']})")
+                            matched_album = existing.get('album', '?')
+                            print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
                             update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}")
                             return []
                         print(f"  Not found in library, proceeding with download.")
