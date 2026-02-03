@@ -1126,6 +1126,43 @@ def trigger_debug_cleanup():
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"Error during debug cleanup: {e}"}), 500
 
+
+@app.route('/api/manual_cleanup', methods=['POST'])
+@login_required
+def manual_cleanup():
+    """
+    Manual cleanup: Scan the entire library for 1-star songs and delete them.
+    Only deletes songs that have 1-star AND are not protected by other users.
+    """
+    print("Manual cleanup triggered - scanning library for 1-star songs...")
+    try:
+        import asyncio
+        results = asyncio.run(navidrome_api_global.process_manual_cleanup())
+
+        # Build response message
+        msg_parts = []
+        msg_parts.append(f"Scanned {results['scanned']} songs with 1-star ratings")
+        if results['deleted']:
+            msg_parts.append(f"Deleted {len(results['deleted'])} songs")
+        if results['kept']:
+            msg_parts.append(f"Kept {len(results['kept'])} songs (protected by other users)")
+        if results['errors']:
+            msg_parts.append(f"{len(results['errors'])} errors")
+
+        return jsonify({
+            "status": "success",
+            "message": '. '.join(msg_parts),
+            "deleted": results['deleted'],
+            "kept": results['kept'],
+            "scanned": results['scanned'],
+            "errors": results['errors']
+        })
+    except Exception as e:
+        print(f"Error during manual cleanup: {e}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error during manual cleanup: {e}"}), 500
+
+
 @app.route('/api/get_fresh_releases', methods=['GET'])
 @login_required
 async def get_fresh_releases():

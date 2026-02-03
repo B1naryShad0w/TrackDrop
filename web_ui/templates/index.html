@@ -1227,6 +1227,27 @@
                         <p style="color: #888; font-size: 0.85em;">Opens a page with setup instructions and your personal API key.</p>
                     </div>
                 </details>
+
+                <details>
+                    <summary>Library Maintenance</summary>
+                    <div style="padding: 15px;">
+                        <h3>Cleanup 1-Star Songs</h3>
+                        <p style="color: #b0b0b0; margin-bottom: 15px;">
+                            Scan your entire library for songs you've rated 1 star and remove them.
+                            Songs will only be deleted if no other user has favorited them, added them to a playlist, or given them a higher rating.
+                        </p>
+                        <button onclick="triggerManualCleanup()" style="background-color: #c0392b;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align: middle; margin-right: 6px;">
+                                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Cleanup Now
+                        </button>
+                        <p style="color: #888; font-size: 0.85em; margin-top: 10px;">
+                            <strong>Note:</strong> This scans all songs in your library, not just auto-downloaded recommendations.
+                            Auto-downloaded songs are automatically cleaned up based on their ratings during the scheduled cleanup.
+                        </p>
+                    </div>
+                </details>
             </div>
         </div>
     </div>
@@ -1462,6 +1483,82 @@ async function triggerNavidromeCleanup() {
         }
         console.groupEnd();
     }
+}
+
+async function triggerManualCleanup() {
+    const button = event.target.closest('button');
+    const originalContent = button.innerHTML;
+    button.innerHTML = '<div class="spinner"></div> Scanning...';
+    button.disabled = true;
+
+    try {
+        const response = await fetch('/api/manual_cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            // Build detailed result message
+            let resultHtml = `<strong>Cleanup Complete</strong><br>`;
+            resultHtml += `Scanned ${data.scanned} songs with 1-star ratings<br><br>`;
+
+            if (data.deleted && data.deleted.length > 0) {
+                resultHtml += `<strong>Deleted (${data.deleted.length}):</strong><br>`;
+                data.deleted.forEach(song => {
+                    resultHtml += `&nbsp;&nbsp;- ${song.artist} - ${song.title}<br>`;
+                });
+                resultHtml += '<br>';
+            }
+
+            if (data.kept && data.kept.length > 0) {
+                resultHtml += `<strong>Kept (${data.kept.length}):</strong><br>`;
+                data.kept.forEach(song => {
+                    resultHtml += `&nbsp;&nbsp;- ${song.artist} - ${song.title}<br>`;
+                    resultHtml += `&nbsp;&nbsp;&nbsp;&nbsp;<em>Reason: ${song.reason}</em><br>`;
+                });
+            }
+
+            if (data.deleted.length === 0 && data.kept.length === 0) {
+                resultHtml += 'No 1-star songs found in library.';
+            }
+
+            // Show in modal
+            showCleanupResults(resultHtml);
+            showMessage('success', data.message);
+        } else {
+            showMessage('error', data.message);
+        }
+    } catch (error) {
+        console.error('Manual cleanup error:', error);
+        showMessage('error', 'Failed to run cleanup: ' + error.message);
+    } finally {
+        button.innerHTML = originalContent;
+        button.disabled = false;
+    }
+}
+
+function showCleanupResults(htmlContent) {
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'cleanup-results-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--card-bg);border-radius:8px;padding:20px;max-width:600px;max-height:80vh;overflow-y:auto;color:var(--text-color);';
+
+    modal.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <h3 style="margin:0;">Manual Cleanup Results</h3>
+            <button onclick="document.getElementById('cleanup-results-modal').remove()" style="background:none;border:none;color:var(--text-color);font-size:24px;cursor:pointer;">&times;</button>
+        </div>
+        <div style="font-size:14px;line-height:1.6;">${htmlContent}</div>
+        <button onclick="document.getElementById('cleanup-results-modal').remove()" style="margin-top:15px;padding:8px 16px;background:var(--primary-color);color:white;border:none;border-radius:4px;cursor:pointer;">Close</button>
+    `;
+
+    overlay.appendChild(modal);
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
 }
 
         // --- Download Queue Functions ---
