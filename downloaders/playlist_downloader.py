@@ -18,7 +18,7 @@ from typing import List, Optional, Dict
 
 import requests
 
-from config import TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH, MUSIC_DOWNLOAD_PATH
+from config import TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH
 from downloaders.track_downloader import TrackDownloader
 from apis.navidrome_api import NavidromeAPI
 from utils import Tagger, update_status_file

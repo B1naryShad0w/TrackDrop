@@ -20,7 +20,7 @@ class LinkDownloader:
         self.navidrome_api = navidrome_api
         self.deezer_api = deezer_api
         self.temp_download_folder = TEMP_DOWNLOAD_FOLDER
-        self.music_library_path = MUSIC_LIBRARY_PATH
+        self.music_library_path = MUSIC_DOWNLOAD_PATH
         self.track_downloader = TrackDownloader(tagger)
         self.streamrip_config = Config("/root/.config/streamrip/config.toml")
         self.deezer_client = DeezerClient(config=self.streamrip_config)

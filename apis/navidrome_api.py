@@ -280,16 +280,11 @@ class NavidromeAPI:
                 seen.add(c)
                 unique_candidates.append(c)
 
-        print(f"DEBUG _find_actual_song_path: music_library_path={self.music_library_path}", flush=True)
-        print(f"DEBUG _find_actual_song_path: candidates={unique_candidates}", flush=True)
-
         # Try each candidate
         for candidate in unique_candidates:
             if os.path.isabs(candidate) and os.path.exists(candidate):
-                print(f"DEBUG _find_actual_song_path: Found absolute path: {candidate}", flush=True)
                 return candidate
             full = os.path.join(self.music_library_path, candidate)
-            print(f"DEBUG _find_actual_song_path: Trying {full} - exists={os.path.exists(full)}", flush=True)
             if os.path.exists(full):
                 return full
 
@@ -598,18 +593,10 @@ class NavidromeAPI:
         """Wait for an ongoing library scan to complete (async version)."""
         import asyncio
         start = time.time()
-        check_count = 0
-        print(f"DEBUG: Starting async scan wait (timeout={timeout}s)", flush=True)
         while time.time() - start < timeout:
-            check_count += 1
-            scanning = self._get_scan_status()
-            elapsed = time.time() - start
-            print(f"DEBUG: Scan check #{check_count} - scanning={scanning}, elapsed={elapsed:.1f}s", flush=True)
-            if not scanning:
-                print(f"Library scan completed after {elapsed:.1f}s", flush=True)
+            if not self._get_scan_status():
                 return True
             await asyncio.sleep(2)
-        print(f"DEBUG: Scan did not complete within {timeout}s, continuing anyway", flush=True)
         return False
 
     def _wait_for_scan(self, timeout=120):
@@ -1133,42 +1120,25 @@ class NavidromeAPI:
             results['errors'].append(f"Could not find user ID for '{username}'")
             return results
 
-        print(f"\nPreviewing cleanup for user: {username} (ID: {user_id[:8]}...)", flush=True)
-
         try:
             conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
 
-            # Debug: Show all ratings for this user to understand the scale
-            cursor.execute("""
-                SELECT a.rating, COUNT(*) as count
-                FROM annotation a
-                WHERE a.item_type = 'media_file' AND a.user_id = ? AND a.rating > 0
-                GROUP BY a.rating
-                ORDER BY a.rating
-            """, (user_id,))
-            rating_counts = cursor.fetchall()
-            print(f"DEBUG: Rating distribution for {username}:", flush=True)
-            for rating_val, count in rating_counts:
-                print(f"  Rating {rating_val}: {count} songs", flush=True)
-
             # Find songs rated 1 star or less BY THIS USER (includes half-star)
-            # Check for both integer scale (1, 2) and decimal scale (0.5, 1.0)
+            # Navidrome uses integer scale: 1 = 1 star, 2 = 2 stars, etc.
             cursor.execute("""
-                SELECT DISTINCT a.item_id, a.rating, mf.title, mf.artist, mf.album, mf.path
+                SELECT DISTINCT a.item_id, mf.title, mf.artist, mf.album, mf.path
                 FROM annotation a
                 JOIN media_file mf ON a.item_id = mf.id
-                WHERE a.item_type = 'media_file' AND a.rating > 0 AND a.rating <= 2 AND a.user_id = ?
+                WHERE a.item_type = 'media_file' AND a.rating > 0 AND a.rating <= 1 AND a.user_id = ?
             """, (user_id,))
 
             low_rated_songs = cursor.fetchall()
             conn.close()
 
             results['scanned'] = len(low_rated_songs)
-            print(f"Found {len(low_rated_songs)} songs rated 1 star or less by {username}", flush=True)
 
-            for song_id, db_rating, title, artist, album, db_path in low_rated_songs:
-                print(f"  DEBUG: {artist} - {title} has rating={db_rating} in DB, path={db_path}", flush=True)
+            for song_id, title, artist, album, db_path in low_rated_songs:
                 protection = self._check_song_protection(song_id)
 
                 # Can delete if no OTHER user has protected it
@@ -1232,81 +1202,45 @@ class NavidromeAPI:
             results['errors'].append("Navidrome database path not configured")
             return results
 
-        print(f"\n{'='*60}", flush=True)
-        print(f"MANUAL CLEANUP - Deleting {len(song_ids)} songs for {username}", flush=True)
-        print(f"{'='*60}", flush=True)
-
         salt, token = self._get_navidrome_auth_params()
 
         for song_id in song_ids:
             try:
-                print(f"\nDEBUG: Processing song_id={song_id}", flush=True)
                 song_details = self._get_song_details(song_id, salt, token)
                 if not song_details:
-                    print(f"DEBUG: Song not found in API: {song_id}", flush=True)
                     results['errors'].append(f"Song not found: {song_id}")
                     continue
 
                 artist = song_details.get('artist', 'Unknown')
                 title = song_details.get('title', 'Unknown')
                 label = f"{artist} - {title}"
-                print(f"DEBUG: Found song: {label}", flush=True)
 
                 # Get the file path
                 db_path = song_details.get('path', '')
-                print(f"DEBUG: API path: {db_path}", flush=True)
                 file_path = self._find_actual_song_path(db_path, song_details)
-                print(f"DEBUG: Resolved file_path: {file_path}", flush=True)
-                print(f"DEBUG: File exists: {os.path.exists(file_path) if file_path else 'N/A'}", flush=True)
 
                 if file_path and os.path.exists(file_path):
-                    print(f"DEBUG: Attempting to delete: {file_path}", flush=True)
                     if self._delete_song(file_path):
                         results['deleted'].append({
                             'artist': artist,
                             'title': title,
                             'album': song_details.get('album', '')
                         })
-                        print(f"  DELETED: {label}", flush=True)
                     else:
-                        print(f"DEBUG: _delete_song returned False for {file_path}", flush=True)
                         results['errors'].append(f"Failed to delete file: {label}")
                 else:
-                    # File doesn't exist on disk, still count as "deleted"
-                    print(f"DEBUG: File not found, marking as deleted anyway", flush=True)
-                    results['deleted'].append({
-                        'artist': artist,
-                        'title': title,
-                        'album': song_details.get('album', ''),
-                        'note': 'file not found on disk'
-                    })
-                    print(f"  DELETED (file missing): {label}", flush=True)
+                    # File doesn't exist on disk - report as error
+                    results['errors'].append(f"File not found: {label}")
 
             except Exception as e:
-                print(f"DEBUG: Exception processing {song_id}: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
                 results['errors'].append(f"Error processing {song_id}: {str(e)}")
 
         # Clean up empty folders and trigger scan
         if results['deleted']:
-            print("\nRemoving empty folders...")
             from utils import remove_empty_folders
             remove_empty_folders(self.music_library_path)
-
-            print("Triggering full library scan to remove deleted entries...")
             self._start_scan(full_scan=True)
-
-            print("Waiting for scan to complete...")
             await self._wait_for_scan_async(timeout=60)
-
-        # Summary
-        print(f"\n{'='*60}")
-        print("CLEANUP COMPLETE")
-        print(f"  Deleted: {len(results['deleted'])} songs")
-        if results['errors']:
-            print(f"  Errors: {len(results['errors'])}")
-        print(f"{'='*60}")
 
         return results
 
