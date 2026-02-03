@@ -28,7 +28,7 @@ class LinkDownloader:
         self.rip_db = Database(downloads=Dummy(), failed=Dummy())
         self.songlink_base_url = "https://api.song.link/v1-alpha.1"
 
-    async def download_from_url(self, url: str, lb_recommendation: bool = False, download_id: Optional[str] = None):
+    async def download_from_url(self, url: str, lb_recommendation: bool = False, download_id: Optional[str] = None, username: Optional[str] = None):
         # Regex for supported platforms
         spotify_track_re = r"open\.spotify\.com\/track\/([a-zA-Z0-9]+)"
         spotify_album_re = r"open\.spotify\.com\/album\/([a-zA-Z0-9]+)"
@@ -342,7 +342,10 @@ class LinkDownloader:
                         if existing:
                             matched_album = existing.get('album', '?')
                             print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
-                            update_status_file(download_id, "completed", f"Already in library: {search_artist} - {search_title}",
+                            # Auto-favorite for the requesting user
+                            if username:
+                                self.navidrome_api.star_song_for_user(existing['id'], username)
+                            update_status_file(download_id, "completed", f"Already in library (added to favorites): {search_artist} - {search_title}",
                                                title=f"{search_artist} - {search_title}")
                             return []
                         print(f"  Not found in library, proceeding with download.")
@@ -354,11 +357,15 @@ class LinkDownloader:
                     album_tracks = album_resp.json().get("data", [])
                     if album_tracks:
                         all_exist = True
+                        existing_songs = []
                         for t in album_tracks:
                             t_artist = t.get("artist", {}).get("name", "")
                             t_title = t.get("title", "")
                             if t_artist and t_title:
-                                if not self.navidrome_api._search_song_in_navidrome(t_artist, t_title, salt, token):
+                                existing = self.navidrome_api._search_song_in_navidrome(t_artist, t_title, salt, token)
+                                if existing:
+                                    existing_songs.append(existing)
+                                else:
                                     all_exist = False
                                     break
                             else:
@@ -366,7 +373,12 @@ class LinkDownloader:
                                 break
                         if all_exist:
                             print(f"  All {len(album_tracks)} album tracks already in Navidrome, skipping download.")
-                            update_status_file(download_id, "completed", f"Album already in library ({len(album_tracks)} tracks).")
+                            # Auto-favorite all tracks for the requesting user
+                            if username and existing_songs:
+                                for song in existing_songs:
+                                    self.navidrome_api.star_song_for_user(song['id'], username)
+                                print(f"  Added {len(existing_songs)} tracks to favorites for {username}")
+                            update_status_file(download_id, "completed", f"Album already in library ({len(album_tracks)} tracks, added to favorites).")
                             return []
 
             # Download using streamrip for all Deezer IDs
@@ -507,6 +519,35 @@ class LinkDownloader:
             # After downloading, organize files
             if downloaded_files:
                 moved_files = self.navidrome_api.organize_music_files(self.temp_download_folder, self.music_library_path)
+
+                # Auto-favorite: Trigger scan, wait, then star the new songs
+                if username and moved_files:
+                    try:
+                        self.navidrome_api._start_scan()
+                        await self.navidrome_api._wait_for_scan_async(timeout=60)
+
+                        # Find and star the newly added songs
+                        salt, token = self.navidrome_api._get_navidrome_auth_params()
+                        starred_count = 0
+                        for old_path, new_path in moved_files.items():
+                            # Extract metadata from filename/path for search
+                            # Path format: /dest/Artist/Album/Title.flac
+                            import os
+                            parts = new_path.split(os.sep)
+                            if len(parts) >= 3:
+                                search_title = os.path.splitext(parts[-1])[0]  # Filename without extension
+                                search_album = parts[-2] if len(parts) >= 2 else None
+                                search_artist = parts[-3] if len(parts) >= 3 else None
+                                if search_artist and search_title:
+                                    existing = self.navidrome_api._search_song_in_navidrome(search_artist, search_title, salt, token, album=search_album)
+                                    if existing:
+                                        self.navidrome_api.star_song_for_user(existing['id'], username)
+                                        starred_count += 1
+                        if starred_count > 0:
+                            print(f"  Added {starred_count} songs to favorites for {username}")
+                    except Exception as e:
+                        print(f"  Warning: Could not auto-favorite songs: {e}")
+
                 if resolved_title:
                     update_status_file(download_id, "completed", f"Downloaded: {resolved_title}", title=resolved_title)
                 else:

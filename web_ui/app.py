@@ -514,7 +514,7 @@ def quick_download():
     # Run download in background thread
     def _run_download():
         try:
-            result = asyncio.run(link_downloader_global.download_from_url(link, download_id=download_id))
+            result = asyncio.run(link_downloader_global.download_from_url(link, download_id=download_id, username=username))
             if result:
                 current_title = downloads_queue.get(download_id, {}).get('title', link)
                 update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.", title=current_title)
@@ -1755,7 +1755,8 @@ def download_from_link():
         }
 
         # Use globally initialized link_downloader
-        result = asyncio.run(link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id))
+        username = get_current_user()
+        result = asyncio.run(link_downloader_global.download_from_url(link, lb_recommendation=lb_recommendation, download_id=download_id, username=username))
 
         if result:
             # Preserve the resolved title from the status file if available

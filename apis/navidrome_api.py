@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import time
+import uuid
 
 import requests
 from config import TEMP_DOWNLOAD_FOLDER
@@ -886,9 +887,15 @@ class NavidromeAPI:
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
+                            # Remove from Navidrome DB to avoid 'missing file' entries
+                            if nd_id:
+                                self.remove_song_from_navidrome_db(nd_id)
                             deleted_songs.append(f"{label} ({delete_reason})")
                     else:
                         print(f"    File not found on disk")
+                        # Still remove from DB if song entry exists
+                        if nd_id:
+                            self.remove_song_from_navidrome_db(nd_id)
                         deleted_songs.append(f"{label} (file not found)")
                     tracks_to_remove.append(track)
 
@@ -1011,13 +1018,16 @@ class NavidromeAPI:
                     file_path = self._find_actual_song_path(file_rel_path, song_details)
                     if file_path and os.path.exists(file_path):
                         if self._delete_song(file_path):
+                            # Remove from Navidrome DB to avoid 'missing file' entries
+                            self.remove_song_from_navidrome_db(nd_id)
                             summary['deleted'].append(f"{label}")
                         else:
                             summary['failed'].append(f"{label} (delete failed)")
                             remaining_tracks.append(track)
                     else:
-                        summary['failed'].append(f"{label} (file not found)")
-                        remaining_tracks.append(track)
+                        # File doesn't exist - still remove from DB
+                        self.remove_song_from_navidrome_db(nd_id)
+                        summary['failed'].append(f"{label} (file not found, removed from DB)")
 
                     sys.stdout.flush()
 
@@ -1092,6 +1102,103 @@ class NavidromeAPI:
         except Exception as e:
             print(f"Error looking up user ID: {e}")
             return None
+
+    def star_song_for_user(self, song_id, username):
+        """Add a song to a user's favorites by writing to Navidrome DB.
+
+        Args:
+            song_id: The Navidrome song ID
+            username: The username to add the favorite for
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+            print(f"Cannot star song: Navidrome DB path not configured")
+            return False
+
+        user_id = self._get_user_id_by_username(username)
+        if not user_id:
+            print(f"Cannot star song: user '{username}' not found")
+            return False
+
+        try:
+            # Open with write access
+            conn = sqlite3.connect(self.navidrome_db_path)
+            cursor = conn.cursor()
+
+            # Check if annotation already exists
+            cursor.execute(
+                "SELECT starred FROM annotation WHERE item_id = ? AND item_type = 'media_file' AND user_id = ?",
+                (song_id, user_id)
+            )
+            row = cursor.fetchone()
+
+            from datetime import datetime
+            now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+            if row:
+                # Update existing annotation
+                cursor.execute(
+                    "UPDATE annotation SET starred = 1, starred_at = ? WHERE item_id = ? AND item_type = 'media_file' AND user_id = ?",
+                    (now, song_id, user_id)
+                )
+            else:
+                # Insert new annotation - need to generate a UUID for the id column
+                annotation_id = str(uuid.uuid4())
+                cursor.execute(
+                    "INSERT INTO annotation (ann_id, user_id, item_id, item_type, starred, starred_at) VALUES (?, ?, ?, 'media_file', 1, ?)",
+                    (annotation_id, user_id, song_id, now)
+                )
+
+            conn.commit()
+            conn.close()
+            print(f"Starred song {song_id} for user {username}")
+            return True
+        except Exception as e:
+            print(f"Error starring song: {e}")
+            return False
+
+    def remove_song_from_navidrome_db(self, song_id):
+        """Remove a song and its annotations from Navidrome DB.
+
+        Call this when intentionally deleting files to avoid 'missing file' entries.
+
+        Args:
+            song_id: The Navidrome song ID to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+            print(f"Cannot remove from DB: Navidrome DB path not configured")
+            return False
+
+        try:
+            conn = sqlite3.connect(self.navidrome_db_path)
+            cursor = conn.cursor()
+
+            # Remove annotations (ratings, stars, play counts, etc.)
+            cursor.execute("DELETE FROM annotation WHERE item_id = ? AND item_type = 'media_file'", (song_id,))
+            annotations_deleted = cursor.rowcount
+
+            # Remove from playlist_tracks
+            cursor.execute("DELETE FROM playlist_tracks WHERE media_file_id = ?", (song_id,))
+            playlist_refs_deleted = cursor.rowcount
+
+            # Remove from media_file table
+            cursor.execute("DELETE FROM media_file WHERE id = ?", (song_id,))
+            files_deleted = cursor.rowcount
+
+            conn.commit()
+            conn.close()
+
+            if files_deleted > 0:
+                print(f"Removed song {song_id} from Navidrome DB (annotations: {annotations_deleted}, playlist refs: {playlist_refs_deleted})")
+            return True
+        except Exception as e:
+            print(f"Error removing song from Navidrome DB: {e}")
+            return False
 
     async def preview_manual_cleanup(self, username):
         """
@@ -1221,6 +1328,8 @@ class NavidromeAPI:
 
                 if file_path and os.path.exists(file_path):
                     if self._delete_song(file_path):
+                        # Remove from Navidrome DB to avoid 'missing file' entries
+                        self.remove_song_from_navidrome_db(song_id)
                         results['deleted'].append({
                             'artist': artist,
                             'title': title,
@@ -1229,8 +1338,9 @@ class NavidromeAPI:
                     else:
                         results['errors'].append(f"Failed to delete file: {label}")
                 else:
-                    # File doesn't exist on disk - report as error
-                    results['errors'].append(f"File not found: {label}")
+                    # File doesn't exist on disk - still remove from DB
+                    self.remove_song_from_navidrome_db(song_id)
+                    results['errors'].append(f"File not found (removed from DB): {label}")
 
             except Exception as e:
                 results['errors'].append(f"Error processing {song_id}: {str(e)}")
