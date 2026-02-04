@@ -1147,13 +1147,13 @@
                 </details>
 
                 <details>
-                    <summary>Automation</summary>
+                    <summary>Scheduled Recommendations</summary>
                     <div style="padding: 15px;">
+                        <small style="color: #b0b0b0; display: block; margin-bottom: 12px;">
+                            Automatically download recommendations from ListenBrainz and Last.fm on a weekly schedule.
+                        </small>
                         <div class="form-group">
-                            <label for="cronInput">Cron Schedule:</label>
-                            <small style="color: #b0b0b0; display: block; margin-bottom: 8px;">
-                                Set when the automatic download should run weekly.
-                            </small>
+                            <label for="cronInput">Schedule:</label>
                             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
                                 <select id="cronHour" style="padding: 8px; border-radius: 4px; background-color: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
                                     {% for hour in range(24) %}
@@ -1193,15 +1193,17 @@
                         <div class="form-group">
                             <label>
                                 <input type="checkbox" id="disableCron" {% if not cron_enabled %}checked{% endif %}>
-                                Disable Automatic Downloads
+                                Disable Scheduled Downloads
                             </label>
                         </div>
 
-                        <button onclick="saveAutomationOptions()">Save Automation Options</button>
+                        <button onclick="saveAutomationOptions()">Save Schedule</button>
+                    </div>
+                </details>
 
-                        <hr style="border-color: var(--border-color); margin: 20px 0;">
-
-                        <h3 style="margin-bottom: 8px;">Monitored Playlists</h3>
+                <details>
+                    <summary>Monitored Playlists</summary>
+                    <div style="padding: 15px;">
                         <small style="color: #b0b0b0; display: block; margin-bottom: 12px;">
                             Playlists below are automatically checked for new tracks at their configured interval.
                         </small>

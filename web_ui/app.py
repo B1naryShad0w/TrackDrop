@@ -33,7 +33,39 @@ from web_ui.user_manager import UserManager, login_required, get_current_user
 import uuid
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('TRACKDROP_SECRET_KEY') or os.urandom(24)
+
+# Persistent secret key for sessions to survive container restarts
+def get_or_create_secret_key():
+    """Get secret key from env, file, or generate and persist a new one."""
+    # 1. Check environment variable first
+    env_key = os.environ.get('TRACKDROP_SECRET_KEY')
+    if env_key:
+        return env_key
+
+    # 2. Check for persisted secret key file
+    secret_file = os.path.join(os.getenv('TRACKDROP_DATA_PATH', '/app/data'), '.secret_key')
+    if os.path.exists(secret_file):
+        try:
+            with open(secret_file, 'rb') as f:
+                return f.read()
+        except Exception:
+            pass
+
+    # 3. Generate new key and persist it
+    new_key = os.urandom(24)
+    try:
+        os.makedirs(os.path.dirname(secret_file), exist_ok=True)
+        with open(secret_file, 'wb') as f:
+            f.write(new_key)
+    except Exception as e:
+        print(f"Warning: Could not persist secret key: {e}", file=sys.stderr)
+    return new_key
+
+app.secret_key = get_or_create_secret_key()
+
+# Configure permanent sessions to last 90 days
+from datetime import timedelta
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=90)
 
 # User manager for per-user settings
 user_manager = UserManager()
@@ -374,6 +406,7 @@ def api_login():
         return jsonify({"status": "error", "message": "Username and password are required"}), 400
     success, error_reason = user_manager.authenticate(username, password)
     if success:
+        session.permanent = True  # Use configured PERMANENT_SESSION_LIFETIME
         session['username'] = username
         return jsonify({"status": "success", "message": "Login successful"})
     if error_reason == "offline":
