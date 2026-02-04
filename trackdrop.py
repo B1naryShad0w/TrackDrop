@@ -366,6 +366,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         moved_files = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
     print("\n--- Updating Playlists ---")
+    print(f"[DEBUG] Calling update_api_playlists with target_user='{username}'")
     navidrome_api.update_api_playlists(
         unique_recommendations, history_path, downloaded_songs,
         file_path_map=moved_files, target_user=username

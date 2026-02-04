@@ -758,10 +758,13 @@ class NavidromeAPI:
 
             # Use admin REST API to create playlist for target user, or fall back to Subsonic API
             if target_user:
+                print(f"[DEBUG] update_api_playlists: using target_user='{target_user}' for playlist '{playlist_name}'")
                 existing = self._find_playlist_by_name_for_user(playlist_name, target_user)
                 if existing:
+                    print(f"[DEBUG] Found existing playlist id={existing['id']} for user '{target_user}'")
                     self._update_playlist_for_user(existing['id'], song_ids)
                 else:
+                    print(f"[DEBUG] No existing playlist, creating new for user '{target_user}'")
                     self._create_playlist_for_user(playlist_name, song_ids, target_user)
             else:
                 existing = self._find_playlist_by_name(playlist_name, salt, token)
@@ -1201,6 +1204,7 @@ class NavidromeAPI:
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
+                print(f"[DEBUG] _get_user_id_by_username: failed to get JWT token")
                 return None
 
             headers = {"x-nd-authorization": f"Bearer {token}"}
@@ -1211,9 +1215,12 @@ class NavidromeAPI:
             )
             if response.status_code == 200:
                 users = response.json()
+                print(f"[DEBUG] _get_user_id_by_username: looking for '{username}', found users: {[u.get('userName') for u in users]}")
                 for user in users:
                     if user.get('userName', '').lower() == username.lower():
+                        print(f"[DEBUG] _get_user_id_by_username: matched user ID {user.get('id')}")
                         return user.get('id')
+                print(f"[DEBUG] _get_user_id_by_username: no match found for '{username}'")
             return None
         except Exception as e:
             print(f"Error looking up user ID: {e}")
@@ -1224,6 +1231,7 @@ class NavidromeAPI:
 
         Uses admin credentials to create a playlist owned by the specified user.
         """
+        print(f"[DEBUG] _create_playlist_for_user called with owner_username='{owner_username}'")
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
