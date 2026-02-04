@@ -63,9 +63,9 @@ def get_or_create_secret_key():
 
 app.secret_key = get_or_create_secret_key()
 
-# Configure permanent sessions to last 90 days
+# Configure permanent sessions to last 180 days
 from datetime import timedelta
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=90)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=180)
 
 # User manager for per-user settings
 user_manager = UserManager()
