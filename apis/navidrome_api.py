@@ -1229,7 +1229,8 @@ class NavidromeAPI:
     def _create_playlist_for_user(self, name, song_ids, owner_username):
         """Create a playlist for a specific user using the Navidrome REST API.
 
-        Uses admin credentials to create a playlist owned by the specified user.
+        Uses admin credentials to create a playlist, then updates ownership to the specified user.
+        Note: Navidrome's POST /api/playlist ignores ownerId, so we must update it after creation.
         """
         print(f"[DEBUG] _create_playlist_for_user called with owner_username='{owner_username}'")
         try:
@@ -1249,10 +1250,9 @@ class NavidromeAPI:
                 "Content-Type": "application/json"
             }
 
-            # Create the playlist with the specified owner
+            # Create the playlist (will be owned by admin initially)
             playlist_data = {
                 "name": name,
-                "ownerId": owner_id,
                 "public": False,
                 "rules": None,
                 "sync": False
@@ -1268,7 +1268,19 @@ class NavidromeAPI:
             if response.status_code in (200, 201):
                 playlist = response.json()
                 playlist_id = playlist.get('id')
-                print(f"Created playlist '{name}' for user '{owner_username}'")
+                print(f"[DEBUG] Created playlist id={playlist_id}, now updating owner to '{owner_username}' (id={owner_id})")
+
+                # Update the playlist ownership to the target user
+                update_response = requests.put(
+                    f"{self.root_nd}/api/playlist/{playlist_id}",
+                    headers=headers,
+                    json={"ownerId": owner_id},
+                    timeout=30
+                )
+                if update_response.status_code in (200, 201):
+                    print(f"Created playlist '{name}' for user '{owner_username}'")
+                else:
+                    print(f"  Warning: Failed to update playlist owner: {update_response.status_code} - {update_response.text}")
 
                 # Add songs to the playlist
                 if song_ids and playlist_id:
