@@ -95,13 +95,18 @@ class ListenBrainzAPI:
 
     async def _get_recommendation_playlist(self, username, **params):
         """Fetches the recommendation playlist from ListenBrainz asynchronously."""
+        url = f"{self.root_lb}/1/user/{username}/playlists/recommendations"
+        print(f"[DEBUG] Fetching recommendations from: {url}")
         response = await self._make_request_with_retries(
             method="GET",
-            url=f"{self.root_lb}/1/user/{username}/playlists/recommendations",
+            url=url,
             params=params,
             headers=self.auth_header_lb,
         )
-        return response.json()
+        data = response.json()
+        print(f"[DEBUG] API response keys: {list(data.keys()) if data else 'None'}")
+        print(f"[DEBUG] Playlists count: {len(data.get('playlists', []))}")
+        return data
 
     async def _get_playlist_by_mbid(self, playlist_mbid, **params):
         """Fetches a playlist by its MBID from ListenBrainz asynchronously."""
