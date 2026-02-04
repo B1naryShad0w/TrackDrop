@@ -2922,7 +2922,8 @@ function showCleanupResults(data) {
                     return;
                 }
                 container.innerHTML = data.playlists.map(p => {
-                    const lastSync = p.last_synced ? new Date(p.last_synced).toLocaleString() : 'Never';
+                    const userTimezone = document.getElementById('cronTimezone')?.value || 'UTC';
+                    const lastSync = p.last_synced ? new Date(p.last_synced).toLocaleString(undefined, { timeZone: userTimezone }) : 'Never';
                     const platform = (p.platform || '').charAt(0).toUpperCase() + (p.platform || '').slice(1);
                     return `
                         <div class="mp-item" data-id="${p.id}">
