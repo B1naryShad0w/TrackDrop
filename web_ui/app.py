@@ -775,6 +775,8 @@ def index():
 
     pending_share = session.pop('pending_share_url', None)
 
+    display_name = user_settings.get('display_name', '') or username
+
     return render_template('index.html',
         cron_schedule=current_cron,
         cron_minute=cron_minute,
@@ -784,6 +786,7 @@ def index():
         cron_timezone=cron_timezone,
         timezones=TIMEZONE_LIST,
         username=username,
+        display_name=display_name,
         first_time=first_time,
         user_settings=json.dumps(user_settings),
         llm_enabled=LLM_ENABLED,
@@ -1314,6 +1317,68 @@ def run_now():
         return jsonify({"status": "success", "message": "Fetching recommendations from all enabled sources in the background."})
     except Exception as e:
         print(f"Error running now: {e}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error: {e}"}), 500
+
+@app.route('/api/recommendations/listenbrainz', methods=['POST'])
+@login_required
+def fetch_listenbrainz_recommendations():
+    """Fetch and download ListenBrainz recommendations only."""
+    try:
+        username = get_current_user()
+        download_id = str(uuid.uuid4())
+        downloads_queue[download_id] = {
+            'id': download_id,
+            'username': username,
+            'artist': 'ListenBrainz',
+            'title': 'Weekly Recommendations',
+            'status': 'in_progress',
+            'start_time': datetime.now().isoformat(),
+            'message': 'Fetching ListenBrainz recommendations...',
+            'current_track_count': 0,
+            'total_track_count': None,
+        }
+        subprocess.Popen([
+            sys.executable, '/app/trackdrop.py',
+            '--source', 'listenbrainz',
+            '--bypass-playlist-check',
+            '--download-id', download_id,
+            '--user', username,
+        ])
+        return jsonify({"status": "success", "message": "Fetching ListenBrainz recommendations in the background."})
+    except Exception as e:
+        print(f"Error fetching ListenBrainz recommendations: {e}")
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Error: {e}"}), 500
+
+@app.route('/api/recommendations/lastfm', methods=['POST'])
+@login_required
+def fetch_lastfm_recommendations():
+    """Fetch and download Last.fm recommendations only."""
+    try:
+        username = get_current_user()
+        download_id = str(uuid.uuid4())
+        downloads_queue[download_id] = {
+            'id': download_id,
+            'username': username,
+            'artist': 'Last.fm',
+            'title': 'Weekly Recommendations',
+            'status': 'in_progress',
+            'start_time': datetime.now().isoformat(),
+            'message': 'Fetching Last.fm recommendations...',
+            'current_track_count': 0,
+            'total_track_count': None,
+        }
+        subprocess.Popen([
+            sys.executable, '/app/trackdrop.py',
+            '--source', 'lastfm',
+            '--bypass-playlist-check',
+            '--download-id', download_id,
+            '--user', username,
+        ])
+        return jsonify({"status": "success", "message": "Fetching Last.fm recommendations in the background."})
+    except Exception as e:
+        print(f"Error fetching Last.fm recommendations: {e}")
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"Error: {e}"}), 500
 
