@@ -607,15 +607,16 @@ async def download_playlist(
                 print(f"  Could not find in Navidrome after scan: {entry['artist']} - {entry['title']} "
                       f"(dl_path={dl_path}, organized={organized_path})")
 
-    # Create/update Navidrome playlist
+    # Create/update Navidrome playlist for the specific user
     if all_navidrome_ids:
-        _update("in_progress", f"Creating Navidrome playlist '{playlist_name}'...",
+        _update("in_progress", f"Creating Navidrome playlist '{playlist_name}' for user '{username}'...",
                 title=playlist_name, current=downloaded_count, total=total)
-        existing_pl = navidrome_api._find_playlist_by_name(playlist_name, salt, token)
+        # Use user-specific playlist functions to ensure correct ownership
+        existing_pl = navidrome_api._find_playlist_by_name_for_user(playlist_name, username)
         if existing_pl:
-            navidrome_api._update_playlist(existing_pl["id"], all_navidrome_ids, salt, token)
+            navidrome_api._update_playlist_for_user(existing_pl["id"], all_navidrome_ids)
         else:
-            navidrome_api._create_playlist(playlist_name, all_navidrome_ids, salt, token)
+            navidrome_api._create_playlist_for_user(playlist_name, all_navidrome_ids, username)
 
     # Save download history (only newly downloaded tracks)
     if newly_downloaded:

@@ -1873,7 +1873,7 @@ def download_from_link():
 @app.route('/api/playlist_preflight', methods=['POST'])
 @login_required
 def playlist_preflight():
-    """Check a playlist URL: extract name/platform, check if name already exists in Navidrome."""
+    """Check a playlist URL: extract name/platform, check if name already exists in Navidrome for the current user."""
     try:
         data = request.get_json()
         url = data.get('url', '').strip()
@@ -1884,9 +1884,9 @@ def playlist_preflight():
         if not tracks:
             return jsonify({"status": "error", "message": f"Could not extract tracks from playlist. Platform: {platform}"}), 400
 
-        # Check if a playlist with this name already exists in Navidrome
-        salt, token = navidrome_api_global._get_navidrome_auth_params()
-        existing = navidrome_api_global._find_playlist_by_name(name, salt, token)
+        # Check if a playlist with this name already exists for the current user
+        username = get_current_user()
+        existing = navidrome_api_global._find_playlist_by_name_for_user(name, username)
 
         return jsonify({
             "status": "success",
