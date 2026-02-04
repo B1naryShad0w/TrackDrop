@@ -408,8 +408,6 @@ def api_login():
     if success:
         session.permanent = True  # Use configured PERMANENT_SESSION_LIFETIME
         session['username'] = username
-        # Save password to user settings for playlist creation under user's account
-        user_manager.update_user_settings(username, {"navidrome_password": password})
         return jsonify({"status": "success", "message": "Login successful"})
     if error_reason == "offline":
         return jsonify({"status": "error", "message": "Could not connect to Navidrome. Check that the server is running and accessible."}), 503

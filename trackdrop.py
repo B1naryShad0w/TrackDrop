@@ -42,26 +42,17 @@ def load_user_settings(username):
         return {}
 
 
-def create_navidrome_api(username=None, user_settings=None):
+def create_navidrome_api():
     """Create a NavidromeAPI instance with current configuration.
 
-    If username and user_settings are provided, use the user's stored password
-    for playlist creation under their account. Otherwise use global config.
+    Uses admin credentials for playlist operations via the REST API.
     """
     from apis.navidrome_api import NavidromeAPI
 
-    # Use user's stored password if available (for per-user playlists)
-    if username and user_settings and user_settings.get('navidrome_password'):
-        user = username.lower()
-        password = user_settings.get('navidrome_password')
-    else:
-        user = USER_ND
-        password = PASSWORD_ND
-
     return NavidromeAPI(
         root_nd=ROOT_ND,
-        user_nd=user,
-        password_nd=password,
+        user_nd=USER_ND,
+        password_nd=PASSWORD_ND,
         music_library_path=MUSIC_LIBRARY_PATH,
         listenbrainz_enabled=LISTENBRAINZ_ENABLED,
         lastfm_enabled=LASTFM_ENABLED,
@@ -144,8 +135,7 @@ async def process_cleanup(username=None):
     lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
     lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
 
-    # Use user's stored credentials for playlist operations
-    navidrome_api = create_navidrome_api(username=cleanup_user if username else None, user_settings=user_settings)
+    navidrome_api = create_navidrome_api()
     listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
     lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
 
@@ -181,8 +171,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
 
     # Initialize APIs
     tagger = Tagger()
-    # Use user's stored credentials for playlist operations
-    navidrome_api = create_navidrome_api(username=rec_user if username else None, user_settings=user_settings)
+    navidrome_api = create_navidrome_api()
     listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
     lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
 
@@ -347,7 +336,8 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
 
     print("\n--- Updating Playlists ---")
     navidrome_api.update_api_playlists(
-        unique_recommendations, history_path, downloaded_songs, file_path_map=moved_files
+        unique_recommendations, history_path, downloaded_songs,
+        file_path_map=moved_files, target_user=username
     )
 
     # Final status

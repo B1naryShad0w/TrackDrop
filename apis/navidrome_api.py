@@ -664,8 +664,16 @@ class NavidromeAPI:
 
     # ---- Update Playlists After Download ----
 
-    def update_api_playlists(self, all_recommendations, history_path, downloaded_songs_info=None, file_path_map=None):
-        """After downloading, update Navidrome API playlists for each source."""
+    def update_api_playlists(self, all_recommendations, history_path, downloaded_songs_info=None, file_path_map=None, target_user=None):
+        """After downloading, update Navidrome API playlists for each source.
+
+        Args:
+            all_recommendations: List of recommended songs
+            history_path: Path to download history file
+            downloaded_songs_info: List of songs that were downloaded
+            file_path_map: Mapping from temp paths to final paths
+            target_user: If specified, create playlists for this user using admin API
+        """
         if downloaded_songs_info is None:
             downloaded_songs_info = []
         if file_path_map is None:
@@ -705,7 +713,10 @@ class NavidromeAPI:
             tracks_by_source[playlist_name].append(song)
 
         for playlist_name, songs in tracks_by_source.items():
-            print(f"\n=== Updating playlist: {playlist_name} ===")
+            if target_user:
+                print(f"\n=== Updating playlist: {playlist_name} (for user: {target_user}) ===")
+            else:
+                print(f"\n=== Updating playlist: {playlist_name} ===")
             song_ids = []
 
             for song in songs:
@@ -745,11 +756,19 @@ class NavidromeAPI:
                 print(f"  No tracks found for '{playlist_name}', skipping")
                 continue
 
-            existing = self._find_playlist_by_name(playlist_name, salt, token)
-            if existing:
-                self._update_playlist(existing['id'], song_ids, salt, token)
+            # Use admin REST API to create playlist for target user, or fall back to Subsonic API
+            if target_user:
+                existing = self._find_playlist_by_name_for_user(playlist_name, target_user)
+                if existing:
+                    self._update_playlist_for_user(existing['id'], song_ids)
+                else:
+                    self._create_playlist_for_user(playlist_name, song_ids, target_user)
             else:
-                self._create_playlist(playlist_name, song_ids, salt, token)
+                existing = self._find_playlist_by_name(playlist_name, salt, token)
+                if existing:
+                    self._update_playlist(existing['id'], song_ids, salt, token)
+                else:
+                    self._create_playlist(playlist_name, song_ids, salt, token)
 
     # ---- Cleanup ----
 
@@ -1175,6 +1194,159 @@ class NavidromeAPI:
                 return None
         except Exception as e:
             print(f"Error getting Navidrome JWT token: {e}")
+            return None
+
+    def _get_user_id_by_username(self, username):
+        """Look up a Navidrome user ID by username using the admin REST API."""
+        try:
+            token = self._get_navidrome_jwt_token()
+            if not token:
+                return None
+
+            headers = {"x-nd-authorization": f"Bearer {token}"}
+            response = requests.get(
+                f"{self.root_nd}/api/user",
+                headers=headers,
+                timeout=10
+            )
+            if response.status_code == 200:
+                users = response.json()
+                for user in users:
+                    if user.get('userName', '').lower() == username.lower():
+                        return user.get('id')
+            return None
+        except Exception as e:
+            print(f"Error looking up user ID: {e}")
+            return None
+
+    def _create_playlist_for_user(self, name, song_ids, owner_username):
+        """Create a playlist for a specific user using the Navidrome REST API.
+
+        Uses admin credentials to create a playlist owned by the specified user.
+        """
+        try:
+            token = self._get_navidrome_jwt_token()
+            if not token:
+                print("Cannot create playlist: failed to authenticate with Navidrome")
+                return False
+
+            # Look up the user ID
+            owner_id = self._get_user_id_by_username(owner_username)
+            if not owner_id:
+                print(f"Cannot create playlist: user '{owner_username}' not found")
+                return False
+
+            headers = {
+                "x-nd-authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            # Create the playlist with the specified owner
+            playlist_data = {
+                "name": name,
+                "ownerId": owner_id,
+                "public": False,
+                "rules": None,
+                "sync": False
+            }
+
+            response = requests.post(
+                f"{self.root_nd}/api/playlist",
+                headers=headers,
+                json=playlist_data,
+                timeout=30
+            )
+
+            if response.status_code in (200, 201):
+                playlist = response.json()
+                playlist_id = playlist.get('id')
+                print(f"Created playlist '{name}' for user '{owner_username}'")
+
+                # Add songs to the playlist
+                if song_ids and playlist_id:
+                    tracks_response = requests.post(
+                        f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
+                        headers=headers,
+                        json={"ids": song_ids},
+                        timeout=60
+                    )
+                    if tracks_response.status_code in (200, 201):
+                        print(f"  Added {len(song_ids)} tracks to playlist")
+                    else:
+                        print(f"  Warning: Failed to add tracks: {tracks_response.status_code}")
+
+                return True
+            else:
+                print(f"Error creating playlist: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            print(f"Error creating playlist for user: {e}")
+            return False
+
+    def _update_playlist_for_user(self, playlist_id, song_ids):
+        """Update a playlist's tracks using the Navidrome REST API."""
+        try:
+            token = self._get_navidrome_jwt_token()
+            if not token:
+                return False
+
+            headers = {
+                "x-nd-authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            # Clear existing tracks and add new ones
+            # First, get current tracks to remove them
+            response = requests.delete(
+                f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
+                headers=headers,
+                timeout=30
+            )
+
+            # Add new tracks
+            if song_ids:
+                response = requests.post(
+                    f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
+                    headers=headers,
+                    json={"ids": song_ids},
+                    timeout=60
+                )
+                if response.status_code in (200, 201):
+                    print(f"  Updated playlist with {len(song_ids)} tracks")
+                    return True
+                else:
+                    print(f"  Warning: Failed to update tracks: {response.status_code}")
+                    return False
+
+            return True
+        except Exception as e:
+            print(f"Error updating playlist: {e}")
+            return False
+
+    def _find_playlist_by_name_for_user(self, name, owner_username):
+        """Find a playlist by name owned by a specific user."""
+        try:
+            token = self._get_navidrome_jwt_token()
+            if not token:
+                return None
+
+            headers = {"x-nd-authorization": f"Bearer {token}"}
+            response = requests.get(
+                f"{self.root_nd}/api/playlist",
+                headers=headers,
+                params={"_end": 100, "_order": "ASC", "_sort": "name", "_start": 0},
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                playlists = response.json()
+                owner_id = self._get_user_id_by_username(owner_username)
+                for pl in playlists:
+                    if pl.get('name') == name and pl.get('ownerId') == owner_id:
+                        return pl
+            return None
+        except Exception as e:
+            print(f"Error finding playlist: {e}")
             return None
 
     def delete_missing_files_from_navidrome(self, song_ids=None):
