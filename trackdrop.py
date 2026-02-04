@@ -10,6 +10,9 @@ import argparse
 import asyncio
 import sys
 
+import json
+import os
+
 from config import (
     ROOT_ND, USER_ND, PASSWORD_ND, MUSIC_LIBRARY_PATH, MUSIC_DOWNLOAD_PATH, TEMP_DOWNLOAD_FOLDER,
     LISTENBRAINZ_ENABLED, ROOT_LB, TOKEN_LB, USER_LB,
@@ -20,6 +23,23 @@ from config import (
     ADMIN_USER, ADMIN_PASSWORD, NAVIDROME_DB_PATH,
 )
 from utils import initialize_streamrip_db, update_status_file, get_user_history_path, Tagger
+
+
+def load_user_settings(username):
+    """Load user-specific settings from the user settings file.
+
+    Returns a dict with user settings, or empty dict if not found.
+    """
+    settings_file = os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json")
+    if not os.path.exists(settings_file):
+        return {}
+    try:
+        with open(settings_file, 'r') as f:
+            all_settings = json.load(f)
+        return all_settings.get(username, {})
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Warning: Could not load user settings: {e}")
+        return {}
 
 
 def create_navidrome_api():
@@ -39,27 +59,59 @@ def create_navidrome_api():
     )
 
 
-def create_listenbrainz_api():
-    """Create a ListenBrainzAPI instance."""
+def create_listenbrainz_api(user_settings=None):
+    """Create a ListenBrainzAPI instance.
+
+    If user_settings is provided, use those values; otherwise fall back to global config.
+    """
     from apis.listenbrainz_api import ListenBrainzAPI
+
+    # Use user settings if available, otherwise global config
+    if user_settings and user_settings.get('listenbrainz_enabled'):
+        token = user_settings.get('listenbrainz_token') or TOKEN_LB
+        user = user_settings.get('listenbrainz_username') or USER_LB
+        enabled = True
+    else:
+        token = TOKEN_LB
+        user = USER_LB
+        enabled = LISTENBRAINZ_ENABLED
+
     return ListenBrainzAPI(
         root_lb=ROOT_LB,
-        token_lb=TOKEN_LB,
-        user_lb=USER_LB,
-        listenbrainz_enabled=LISTENBRAINZ_ENABLED,
+        token_lb=token,
+        user_lb=user,
+        listenbrainz_enabled=enabled,
     )
 
 
-def create_lastfm_api():
-    """Create a LastFmAPI instance."""
+def create_lastfm_api(user_settings=None):
+    """Create a LastFmAPI instance.
+
+    If user_settings is provided, use those values; otherwise fall back to global config.
+    """
     from apis.lastfm_api import LastFmAPI
+
+    # Use user settings if available, otherwise global config
+    if user_settings and user_settings.get('lastfm_enabled'):
+        api_key = user_settings.get('lastfm_api_key') or LASTFM_API_KEY
+        api_secret = user_settings.get('lastfm_api_secret') or LASTFM_API_SECRET
+        username = user_settings.get('lastfm_username') or LASTFM_USERNAME
+        session_key = user_settings.get('lastfm_session_key') or LASTFM_SESSION_KEY
+        enabled = True
+    else:
+        api_key = LASTFM_API_KEY
+        api_secret = LASTFM_API_SECRET
+        username = LASTFM_USERNAME
+        session_key = LASTFM_SESSION_KEY
+        enabled = LASTFM_ENABLED
+
     return LastFmAPI(
-        api_key=LASTFM_API_KEY,
-        api_secret=LASTFM_API_SECRET,
-        username=LASTFM_USERNAME,
-        password=LASTFM_PASSWORD,
-        session_key=LASTFM_SESSION_KEY,
-        lastfm_enabled=LASTFM_ENABLED,
+        api_key=api_key,
+        api_secret=api_secret,
+        username=username,
+        password=LASTFM_PASSWORD,  # Not used, kept for compatibility
+        session_key=session_key,
+        lastfm_enabled=enabled,
     )
 
 
@@ -74,9 +126,14 @@ async def process_cleanup(username=None):
     print(f"Running cleanup for user: {cleanup_user}")
     print(f"History file: {history_path}")
 
+    # Load user-specific settings
+    user_settings = load_user_settings(cleanup_user) if username else {}
+    lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
+    lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
+
     navidrome_api = create_navidrome_api()
-    listenbrainz_api = create_listenbrainz_api() if LISTENBRAINZ_ENABLED else None
-    lastfm_api = create_lastfm_api() if LASTFM_ENABLED else None
+    listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
+    lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
 
     await navidrome_api.process_api_cleanup(
         history_path=history_path,
@@ -100,11 +157,19 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     print(f"User: {rec_user}")
     print(f"History file: {history_path}")
 
+    # Load user-specific settings
+    user_settings = load_user_settings(rec_user) if username else {}
+    lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
+    lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
+
+    if user_settings:
+        print(f"Using user-specific settings (LB: {lb_enabled}, LF: {lf_enabled})")
+
     # Initialize APIs
     tagger = Tagger()
     navidrome_api = create_navidrome_api()
-    listenbrainz_api = create_listenbrainz_api() if LISTENBRAINZ_ENABLED else None
-    lastfm_api = create_lastfm_api() if LASTFM_ENABLED else None
+    listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
+    lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
 
     from downloaders.track_downloader import TrackDownloader
     track_downloader = TrackDownloader(tagger)
@@ -112,7 +177,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     all_recommendations = []
 
     # ListenBrainz recommendations
-    if source in ["all", "listenbrainz"] and LISTENBRAINZ_ENABLED:
+    if source in ["all", "listenbrainz"] and lb_enabled:
         print("\n--- ListenBrainz Recommendations ---")
         try:
             if bypass_playlist_check or await listenbrainz_api.has_playlist_changed():
@@ -128,11 +193,11 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 print("Playlist unchanged, skipping (use --bypass-playlist-check to force)")
         except Exception as e:
             print(f"Error fetching ListenBrainz recommendations: {e}")
-    elif source == "listenbrainz" and not LISTENBRAINZ_ENABLED:
+    elif source == "listenbrainz" and not lb_enabled:
         print("ListenBrainz is not enabled")
 
     # Last.fm recommendations
-    if source in ["all", "lastfm"] and LASTFM_ENABLED:
+    if source in ["all", "lastfm"] and lf_enabled:
         print("\n--- Last.fm Recommendations ---")
         try:
             lf_recs = await lastfm_api.get_lastfm_recommendations()
@@ -145,7 +210,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 print("No Last.fm recommendations found")
         except Exception as e:
             print(f"Error fetching Last.fm recommendations: {e}")
-    elif source == "lastfm" and not LASTFM_ENABLED:
+    elif source == "lastfm" and not lf_enabled:
         print("Last.fm is not enabled")
 
     # LLM recommendations
