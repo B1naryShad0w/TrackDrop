@@ -2540,13 +2540,8 @@ function showCleanupResults(data) {
             const hasAnyConfig = hasNavidrome || hasListenBrainz || hasLastFm || (config.DEEZER_ARL && config.DEEZER_ARL !== '');
             const llmSection = document.getElementById('llmSection');
 
-            // Show welcome message only if no API keys are configured
-            const welcomeMessage = document.getElementById('welcomeMessage');
-            if (!hasAnyConfig) {
-                welcomeMessage.style.display = 'block';
-            } else {
-                welcomeMessage.style.display = 'none';
-            }
+            // Welcome message is hidden by default - user can click ? button to show it
+            // We don't auto-show it since logged-in users already have a working Navidrome setup
 
             // Show/hide sections based on enabled services and hide options
             const freshReleasesSection = document.getElementById('freshReleasesSection');
@@ -3022,8 +3017,6 @@ function showCleanupResults(data) {
                 {% endif %}
             } catch (error) {
                 console.error('Error loading initial configuration:', error);
-                // Show welcome message on error (likely no config)
-                document.getElementById('welcomeMessage').style.display = 'block';
             }
 
             // PWA share target: auto-submit shared URL
