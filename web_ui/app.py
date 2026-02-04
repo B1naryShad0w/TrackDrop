@@ -1522,7 +1522,7 @@ def trigger_fresh_release_download():
         from downloaders.album_downloader import AlbumDownloader
         from utils import Tagger
 
-        tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
+        tagger = Tagger()
         # Initialize AlbumDownloader with the album recommendation comment
         album_downloader = AlbumDownloader(tagger, ALBUM_RECOMMENDATION_COMMENT)
 
@@ -1628,7 +1628,7 @@ def trigger_track_download():
             return jsonify({"status": "error", "message": "Artist and title are required"}), 400
 
         # Use TrackDownloader
-        tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
+        tagger = Tagger()
         track_downloader = TrackDownloader(tagger)
 
         download_id = str(uuid.uuid4())
@@ -1944,7 +1944,7 @@ def handle_exception(e):
 
 async def download_llm_recommendations_background(recommendations, download_id):
     """Helper function to download tracks from LLM recommendations in the background."""
-    tagger = Tagger(album_recommendation_comment=ALBUM_RECOMMENDATION_COMMENT)
+    tagger = Tagger()
     track_downloader = TrackDownloader(tagger)
 
     total_tracks = len(recommendations)

@@ -72,6 +72,7 @@ echo "" >> config.py
 
 # Album Recommendation Settings
 echo "ALBUM_RECOMMENDATION_ENABLED = os.getenv(\"ALBUM_RECOMMENDATION_ENABLED\", \"${TRACKDROP_ALBUM_RECOMMENDATION_ENABLED:-false}\").lower() == \"true\"" >> config.py
+echo "ALBUM_RECOMMENDATION_COMMENT = os.getenv(\"ALBUM_RECOMMENDATION_COMMENT\", \"${TRACKDROP_ALBUM_RECOMMENDATION_COMMENT:-}\")" >> config.py
 echo "" >> config.py
 
 # UI Visibility Settings

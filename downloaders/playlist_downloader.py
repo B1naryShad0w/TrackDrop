@@ -436,8 +436,7 @@ async def download_playlist(
     history["created_at"] = history.get("created_at") or datetime.now().isoformat()
 
     # Set up downloaders
-    from config import ALBUM_RECOMMENDATION_COMMENT
-    tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
+    tagger = Tagger()
     track_downloader = TrackDownloader(tagger)
     salt, token = navidrome_api._get_navidrome_auth_params()
 
