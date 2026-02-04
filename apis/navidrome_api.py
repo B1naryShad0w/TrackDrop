@@ -1106,27 +1106,30 @@ class NavidromeAPI:
 
         return summary
 
-    def _get_user_id_by_username(self, username):
-        """Look up a Navidrome user ID by username."""
+    def _update_playlist_owner_in_db(self, playlist_id, owner_id):
+        """Update playlist ownership directly in the Navidrome database.
+
+        This is needed because Navidrome's REST API doesn't support setting ownerId.
+        """
         if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
-            print(f"Navidrome DB path not configured or doesn't exist: {self.navidrome_db_path}")
-            return None
+            print(f"[DEBUG] Cannot update playlist owner: DB path not configured")
+            return False
         try:
-            conn = sqlite3.connect(f"file:{self.navidrome_db_path}?mode=ro", uri=True)
+            conn = sqlite3.connect(self.navidrome_db_path)
             cursor = conn.cursor()
-            # Try 'name' column first (standard Navidrome), fall back to 'user_name'
-            cursor.execute("SELECT id, name FROM user WHERE name = ? OR user_name = ?", (username, username))
-            row = cursor.fetchone()
-            if not row:
-                # Debug: list all users to help troubleshoot
-                cursor.execute("SELECT id, name FROM user LIMIT 10")
-                all_users = cursor.fetchall()
-                print(f"Available users in Navidrome: {[u[1] for u in all_users]}")
+            cursor.execute("UPDATE playlist SET owner_id = ? WHERE id = ?", (owner_id, playlist_id))
+            conn.commit()
+            rows_affected = cursor.rowcount
             conn.close()
-            return row[0] if row else None
+            if rows_affected > 0:
+                print(f"[DEBUG] Updated playlist {playlist_id} owner to {owner_id} in database")
+                return True
+            else:
+                print(f"[DEBUG] No playlist found with id {playlist_id}")
+                return False
         except Exception as e:
-            print(f"Error looking up user ID: {e}")
-            return None
+            print(f"Error updating playlist owner in DB: {e}")
+            return False
 
     def star_song_for_user(self, song_id, username):
         """Add a song to a user's favorites by writing to Navidrome DB.
@@ -1270,17 +1273,12 @@ class NavidromeAPI:
                 playlist_id = playlist.get('id')
                 print(f"[DEBUG] Created playlist id={playlist_id}, now updating owner to '{owner_username}' (id={owner_id})")
 
-                # Update the playlist ownership to the target user
-                update_response = requests.put(
-                    f"{self.root_nd}/api/playlist/{playlist_id}",
-                    headers=headers,
-                    json={"ownerId": owner_id},
-                    timeout=30
-                )
-                if update_response.status_code in (200, 201):
+                # Update the playlist ownership directly in the database
+                # (REST API doesn't support setting ownerId on creation or update)
+                if self._update_playlist_owner_in_db(playlist_id, owner_id):
                     print(f"Created playlist '{name}' for user '{owner_username}'")
                 else:
-                    print(f"  Warning: Failed to update playlist owner: {update_response.status_code} - {update_response.text}")
+                    print(f"  Warning: Failed to update playlist owner in database")
 
                 # Add songs to the playlist
                 if song_ids and playlist_id:
