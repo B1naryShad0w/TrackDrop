@@ -1285,27 +1285,33 @@ class NavidromeAPI:
             }
 
             # Get existing tracks from the playlist
+            print(f"[DEBUG] Getting tracks from playlist {playlist_id}", flush=True)
             tracks_response = requests.get(
                 f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
                 headers=headers,
                 timeout=30
             )
+            print(f"[DEBUG] GET tracks response: {tracks_response.status_code}", flush=True)
 
             if tracks_response.status_code == 200:
                 existing_tracks = tracks_response.json()
-                if existing_tracks:
+                print(f"[DEBUG] Existing tracks type: {type(existing_tracks)}, len: {len(existing_tracks) if isinstance(existing_tracks, list) else 'N/A'}", flush=True)
+                if existing_tracks and isinstance(existing_tracks, list) and len(existing_tracks) > 0:
+                    print(f"[DEBUG] First track keys: {existing_tracks[0].keys() if isinstance(existing_tracks[0], dict) else existing_tracks[0]}", flush=True)
                     # Get the IDs of existing tracks to delete them
                     existing_ids = [t.get('id') for t in existing_tracks if t.get('id')]
+                    print(f"[DEBUG] Found {len(existing_ids)} track IDs to delete", flush=True)
                     if existing_ids:
-                        # Delete existing tracks by their IDs
+                        # Try deleting with indices instead of IDs
+                        indices = list(range(len(existing_tracks)))
+                        print(f"[DEBUG] Trying DELETE with indices: {indices}", flush=True)
                         delete_response = requests.delete(
                             f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
                             headers=headers,
-                            json={"ids": existing_ids},
+                            json=indices,
                             timeout=30
                         )
-                        if delete_response.status_code not in (200, 204):
-                            print(f"  Warning: Failed to clear existing tracks: {delete_response.status_code}")
+                        print(f"[DEBUG] DELETE response: {delete_response.status_code} - {delete_response.text[:500] if delete_response.text else 'empty'}", flush=True)
 
             # Add new tracks
             if song_ids:
