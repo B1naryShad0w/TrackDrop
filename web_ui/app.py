@@ -1523,8 +1523,7 @@ def trigger_fresh_release_download():
         from utils import Tagger
 
         tagger = Tagger()
-        # Initialize AlbumDownloader with the album recommendation comment
-        album_downloader = AlbumDownloader(tagger, ALBUM_RECOMMENDATION_COMMENT)
+        album_downloader = AlbumDownloader(tagger)
 
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {

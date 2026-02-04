@@ -46,7 +46,6 @@ DOWNLOAD_METHOD = "streamrip"
 
 # Album Recommendation Settings
 ALBUM_RECOMMENDATION_ENABLED = os.getenv('ALBUM_RECOMMENDATION_ENABLED', 'false').lower() == 'true'
-ALBUM_RECOMMENDATION_COMMENT = os.getenv('ALBUM_RECOMMENDATION_COMMENT', '')
 
 # UI Visibility Settings
 HIDE_DOWNLOAD_FROM_LINK = os.getenv('HIDE_DOWNLOAD_FROM_LINK', 'false').lower() == 'true'
