@@ -2547,11 +2547,11 @@ function showCleanupResults(data) {
             const hasAnyConfig = hasNavidrome || hasListenBrainz || hasLastFm || (config.DEEZER_ARL && config.DEEZER_ARL !== '');
             const llmSection = document.getElementById('llmSection');
 
-            // Show welcome message if no configuration is set
+            // Show welcome message if no configuration is set (and not dismissed)
             const welcomeMessage = document.getElementById('welcomeMessage');
-            if (!hasAnyConfig) {
+            if (!hasAnyConfig && !localStorage.getItem('welcomeDismissed')) {
                 welcomeMessage.style.display = 'block';
-            } else {
+            } else if (hasAnyConfig) {
                 welcomeMessage.style.display = 'none';
             }
 
@@ -3036,7 +3036,9 @@ function showCleanupResults(data) {
                 {% endif %}
             } catch (error) {
                 console.error('Error loading initial configuration:', error);
-                document.getElementById('welcomeMessage').style.display = 'block';
+                if (!localStorage.getItem('welcomeDismissed')) {
+                    document.getElementById('welcomeMessage').style.display = 'block';
+                }
             }
 
             // PWA share target: auto-submit shared URL
