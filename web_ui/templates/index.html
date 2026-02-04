@@ -1327,10 +1327,15 @@
             }
         }
 
-        function dismissWelcomeMessage() {
+        async function dismissWelcomeMessage() {
             document.getElementById('welcomeMessage').style.display = 'none';
-            // Mark as dismissed permanently
+            // Mark as dismissed permanently (both locally and on server)
             localStorage.setItem('welcomeDismissed', 'true');
+            try {
+                await fetch('/api/user/setup_done', { method: 'POST' });
+            } catch (e) {
+                console.error('Failed to mark setup done:', e);
+            }
         }
 
         function openSettingsModal() {
