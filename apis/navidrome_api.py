@@ -1284,28 +1284,28 @@ class NavidromeAPI:
                 "Content-Type": "application/json"
             }
 
-            # First, get the playlist to find existing track count
-            get_response = requests.get(
-                f"{self.root_nd}/api/playlist/{playlist_id}",
+            # Get existing tracks from the playlist
+            tracks_response = requests.get(
+                f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
                 headers=headers,
                 timeout=30
             )
 
-            if get_response.status_code == 200:
-                playlist_data = get_response.json()
-                track_count = playlist_data.get('songCount', 0)
-
-                # Delete all existing tracks by index (0 to track_count-1)
-                if track_count > 0:
-                    indices_to_delete = list(range(track_count))
-                    delete_response = requests.delete(
-                        f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
-                        headers=headers,
-                        json={"indices": indices_to_delete},
-                        timeout=30
-                    )
-                    if delete_response.status_code not in (200, 204):
-                        print(f"  Warning: Failed to clear existing tracks: {delete_response.status_code}")
+            if tracks_response.status_code == 200:
+                existing_tracks = tracks_response.json()
+                if existing_tracks:
+                    # Get the IDs of existing tracks to delete them
+                    existing_ids = [t.get('id') for t in existing_tracks if t.get('id')]
+                    if existing_ids:
+                        # Delete existing tracks by their IDs
+                        delete_response = requests.delete(
+                            f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
+                            headers=headers,
+                            json={"ids": existing_ids},
+                            timeout=30
+                        )
+                        if delete_response.status_code not in (200, 204):
+                            print(f"  Warning: Failed to clear existing tracks: {delete_response.status_code}")
 
             # Add new tracks
             if song_ids:
