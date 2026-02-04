@@ -408,6 +408,7 @@ def api_login():
     if success:
         session.permanent = True  # Use configured PERMANENT_SESSION_LIFETIME
         session['username'] = username
+        session['password'] = password  # Store for API calls (session is encrypted)
         return jsonify({"status": "success", "message": "Login successful"})
     if error_reason == "offline":
         return jsonify({"status": "error", "message": "Could not connect to Navidrome. Check that the server is running and accessible."}), 503
@@ -1036,13 +1037,18 @@ def trigger_listenbrainz_download():
         }
 
         # Execute trackdrop.py in a separate process for non-blocking download, bypassing playlist check
+        username = get_current_user()
+        password = session.get('password', '')
+        env = os.environ.copy()
+        env['TRACKDROP_USER'] = username
+        env['TRACKDROP_USER_PASSWORD'] = password
         subprocess.Popen([
             sys.executable, '/app/trackdrop.py',
             '--source', 'listenbrainz',
             '--bypass-playlist-check',
             '--download-id', download_id,
-            '--user', get_current_user()
-        ])
+            '--user', username
+        ], env=env)
         return jsonify({"status": "info", "message": "ListenBrainz download initiated in the background."})
     except Exception as e:
         print(f"Error triggering ListenBrainz download: {e}")
@@ -1099,12 +1105,17 @@ def trigger_lastfm_download():
         }
 
         # Execute trackdrop.py in a separate process for non-blocking download
+        username = get_current_user()
+        password = session.get('password', '')
+        env = os.environ.copy()
+        env['TRACKDROP_USER'] = username
+        env['TRACKDROP_USER_PASSWORD'] = password
         subprocess.Popen([
             sys.executable, '/app/trackdrop.py',
             '--source', 'lastfm',
             '--download-id', download_id,
-            '--user', get_current_user()
-        ])
+            '--user', username
+        ], env=env)
         return jsonify({"status": "info", "message": "Last.fm download initiated in the background."})
     except Exception as e:
         print(f"Error triggering Last.fm download: {e}")
@@ -1295,6 +1306,7 @@ def run_now():
     """Run the full recommendation pipeline immediately (same as cron)."""
     try:
         username = get_current_user()
+        password = session.get('password', '')
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
@@ -1307,13 +1319,17 @@ def run_now():
             'current_track_count': 0,
             'total_track_count': None,
         }
+        # Pass user credentials via environment for playlist creation
+        env = os.environ.copy()
+        env['TRACKDROP_USER'] = username
+        env['TRACKDROP_USER_PASSWORD'] = password
         subprocess.Popen([
             sys.executable, '/app/trackdrop.py',
             '--source', 'all',
             '--bypass-playlist-check',
             '--download-id', download_id,
             '--user', username,
-        ])
+        ], env=env)
         return jsonify({"status": "success", "message": "Fetching recommendations from all enabled sources in the background."})
     except Exception as e:
         print(f"Error running now: {e}")
@@ -1326,6 +1342,7 @@ def fetch_listenbrainz_recommendations():
     """Fetch and download ListenBrainz recommendations only."""
     try:
         username = get_current_user()
+        password = session.get('password', '')
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
@@ -1338,13 +1355,17 @@ def fetch_listenbrainz_recommendations():
             'current_track_count': 0,
             'total_track_count': None,
         }
+        # Pass user credentials via environment for playlist creation
+        env = os.environ.copy()
+        env['TRACKDROP_USER'] = username
+        env['TRACKDROP_USER_PASSWORD'] = password
         subprocess.Popen([
             sys.executable, '/app/trackdrop.py',
             '--source', 'listenbrainz',
             '--bypass-playlist-check',
             '--download-id', download_id,
             '--user', username,
-        ])
+        ], env=env)
         return jsonify({"status": "success", "message": "Fetching ListenBrainz recommendations in the background."})
     except Exception as e:
         print(f"Error fetching ListenBrainz recommendations: {e}")
@@ -1357,6 +1378,7 @@ def fetch_lastfm_recommendations():
     """Fetch and download Last.fm recommendations only."""
     try:
         username = get_current_user()
+        password = session.get('password', '')
         download_id = str(uuid.uuid4())
         downloads_queue[download_id] = {
             'id': download_id,
@@ -1369,13 +1391,17 @@ def fetch_lastfm_recommendations():
             'current_track_count': 0,
             'total_track_count': None,
         }
+        # Pass user credentials via environment for playlist creation
+        env = os.environ.copy()
+        env['TRACKDROP_USER'] = username
+        env['TRACKDROP_USER_PASSWORD'] = password
         subprocess.Popen([
             sys.executable, '/app/trackdrop.py',
             '--source', 'lastfm',
             '--bypass-playlist-check',
             '--download-id', download_id,
             '--user', username,
-        ])
+        ], env=env)
         return jsonify({"status": "success", "message": "Fetching Last.fm recommendations in the background."})
     except Exception as e:
         print(f"Error fetching Last.fm recommendations: {e}")
