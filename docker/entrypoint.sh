@@ -15,7 +15,10 @@ echo "" >> config.py
 echo "ROOT_ND = os.getenv(\"ROOT_ND\", \"${TRACKDROP_ROOT_ND:-}\")" >> config.py
 echo "USER_ND = os.getenv(\"USER_ND\", \"${TRACKDROP_USER_ND:-}\")" >> config.py
 echo "PASSWORD_ND = os.getenv(\"PASSWORD_ND\", \"${TRACKDROP_PASSWORD_ND:-}\")" >> config.py
-echo "MUSIC_LIBRARY_PATH = os.getenv(\"MUSIC_LIBRARY_PATH\", \"/app/music\")" >> config.py
+echo "MUSIC_LIBRARY_PATH = os.getenv(\"MUSIC_LIBRARY_PATH\", \"${TRACKDROP_MUSIC_LIBRARY_PATH:-/app/music}\")" >> config.py
+echo "# MUSIC_DOWNLOAD_PATH: where to organize downloads (defaults to MUSIC_LIBRARY_PATH)" >> config.py
+echo "MUSIC_DOWNLOAD_PATH = os.getenv(\"MUSIC_DOWNLOAD_PATH\", \"${TRACKDROP_MUSIC_DOWNLOAD_PATH:-}\")" >> config.py
+echo "if not MUSIC_DOWNLOAD_PATH: MUSIC_DOWNLOAD_PATH = MUSIC_LIBRARY_PATH" >> config.py
 echo "TEMP_DOWNLOAD_FOLDER = os.getenv(\"TEMP_DOWNLOAD_FOLDER\", \"/app/temp_downloads\")" >> config.py
 echo "" >> config.py
 
@@ -42,11 +45,9 @@ echo "LLM_PROVIDER = os.getenv(\"LLM_PROVIDER\", \"${TRACKDROP_LLM_PROVIDER:-gem
 echo "LLM_API_KEY = os.getenv(\"LLM_API_KEY\", \"${TRACKDROP_LLM_API_KEY:-}\")" >> config.py
 echo "LLM_MODEL_NAME = os.getenv(\"LLM_MODEL_NAME\", \"${TRACKDROP_LLM_MODEL_NAME:-}\")" >> config.py
 echo "LLM_BASE_URL = os.getenv(\"LLM_BASE_URL\", \"${TRACKDROP_LLM_BASE_URL:-}\")" >> config.py
-echo "LLM_TARGET_COMMENT = os.getenv(\"LLM_TARGET_COMMENT\", \"${TRACKDROP_LLM_TARGET_COMMENT:-llm_recommendation}\")" >> config.py
 echo "" >> config.py
 
-# Playlist Mode
-echo "PLAYLIST_MODE = os.getenv(\"PLAYLIST_MODE\", \"${TRACKDROP_PLAYLIST_MODE:-tags}\")" >> config.py
+# Download History Path (for API playlist mode tracking)
 echo "DOWNLOAD_HISTORY_PATH = os.getenv(\"DOWNLOAD_HISTORY_PATH\", \"${TRACKDROP_DOWNLOAD_HISTORY_PATH:-/app/data/download_history.json}\")" >> config.py
 echo "" >> config.py
 
@@ -76,16 +77,6 @@ echo "" >> config.py
 # UI Visibility Settings
 echo "HIDE_DOWNLOAD_FROM_LINK = os.getenv(\"HIDE_DOWNLOAD_FROM_LINK\", \"${TRACKDROP_HIDE_DOWNLOAD_FROM_LINK:-false}\").lower() == \"true\"" >> config.py
 echo "HIDE_FRESH_RELEASES = os.getenv(\"HIDE_FRESH_RELEASES\", \"${TRACKDROP_HIDE_FRESH_RELEASES:-false}\").lower() == \"true\"" >> config.py
-echo "" >> config.py
-
-# Comment Tags for Playlist Creation
-echo "TARGET_COMMENT = os.getenv(\"TARGET_COMMENT\", \"${TRACKDROP_TARGET_COMMENT:-lb_recommendation}\")" >> config.py
-echo "LASTFM_TARGET_COMMENT = os.getenv(\"LASTFM_TARGET_COMMENT\", \"${TRACKDROP_LASTFM_TARGET_COMMENT:-lastfm_recommendation}\")" >> config.py
-echo "ALBUM_RECOMMENDATION_COMMENT = os.getenv(\"ALBUM_RECOMMENDATION_COMMENT\", \"${TRACKDROP_ALBUM_RECOMMENDATION_COMMENT:-album_recommendation}\")" >> config.py
-echo "" >> config.py
-
-# History Tracking
-echo "PLAYLIST_HISTORY_FILE = os.getenv(\"PLAYLIST_HISTORY_FILE\", \"/app/playlist_history.txt\")" >> config.py
 echo "" >> config.py
 
 # Caching for fresh releases (in seconds)

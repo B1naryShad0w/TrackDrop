@@ -1,13 +1,9 @@
 import requests
 import time
-import os
 import asyncio
-import concurrent.futures
 import sys
-from streamrip.client import DeezerClient
-from mutagen.id3 import ID3, COMM
-from apis.deezer_api import DeezerAPI
-from config import PLAYLIST_HISTORY_FILE, FRESH_RELEASES_CACHE_DURATION
+from config import FRESH_RELEASES_CACHE_DURATION
+
 
 class ListenBrainzAPI:
     def __init__(self, root_lb, token_lb, user_lb, listenbrainz_enabled):
@@ -15,7 +11,6 @@ class ListenBrainzAPI:
         self._token_lb = token_lb
         self._user_lb = user_lb
         self._listenbrainz_enabled = listenbrainz_enabled
-        self.playlist_history_file = PLAYLIST_HISTORY_FILE
         self._fresh_releases_cache = None
         self._fresh_releases_cache_timestamp = 0
 
@@ -35,39 +30,23 @@ class ListenBrainzAPI:
     def auth_header_lb(self):
         return {"Authorization": f"Token {self.token_lb}"}
 
-    def _get_last_playlist_name(self):
-        """Retrieves the last playlist name from the history file."""
-        try:
-            with open(self.playlist_history_file, "r") as f:
-                return f.readline().strip()
-        except FileNotFoundError:
-            return None
-
-    def _save_playlist_name(self, playlist_name):
-        """Saves the playlist name to the history file."""
-        try:
-            with open(self.playlist_history_file, "w") as f:
-                f.write(playlist_name)
-        except OSError as e:
-            print(f"Error saving playlist name to file: {e}")
-
-    async def has_playlist_changed(self):
-        """Checks if the playlist has changed since the last run asynchronously."""
-        current_playlist_name = await self.get_latest_playlist_name()
-        last_playlist_name = self._get_last_playlist_name()
-
-        if current_playlist_name == last_playlist_name:
-            return False
-
-        self._save_playlist_name(current_playlist_name)
-        return True
-
     async def get_latest_playlist_name(self):
         """Retrieves the name of the latest *recommendation* playlist from ListenBrainz asynchronously."""
         playlist_json = await self._get_recommendation_playlist(self.user_lb)
 
+
         for playlist in playlist_json["playlists"]:
-            if playlist["playlist"]["title"].startswith(f"Weekly Exploration for {self.user_lb}"):
+            title = playlist["playlist"]["title"]
+            if title.startswith(f"Weekly Exploration for {self.user_lb}"):
+                latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
+                latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
+                return latest_playlist['playlist']['title']
+
+        # Try case-insensitive match as fallback
+        search_prefix = f"Weekly Exploration for {self.user_lb}".lower()
+        for playlist in playlist_json["playlists"]:
+            title = playlist["playlist"]["title"]
+            if title.lower().startswith(search_prefix):
                 latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
                 latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
                 return latest_playlist['playlist']['title']
@@ -112,13 +91,15 @@ class ListenBrainzAPI:
 
     async def _get_recommendation_playlist(self, username, **params):
         """Fetches the recommendation playlist from ListenBrainz asynchronously."""
+        url = f"{self.root_lb}/1/user/{username}/playlists/recommendations"
         response = await self._make_request_with_retries(
             method="GET",
-            url=f"{self.root_lb}/1/user/{username}/playlists/recommendations",
+            url=url,
             params=params,
             headers=self.auth_header_lb,
         )
-        return response.json()
+        data = response.json()
+        return data
 
     async def _get_playlist_by_mbid(self, playlist_mbid, **params):
         """Fetches a playlist by its MBID from ListenBrainz asynchronously."""

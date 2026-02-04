@@ -21,7 +21,6 @@ DEFAULT_SETTINGS = {
     "listenbrainz_token": "",
     "lastfm_enabled": False,
     "lastfm_username": "",
-    "lastfm_password": "",
     "lastfm_api_key": "",
     "lastfm_api_secret": "",
     "lastfm_session_key": "",
@@ -33,6 +32,7 @@ DEFAULT_SETTINGS = {
     "playlist_sources": ["listenbrainz", "lastfm"],
     "first_time_setup_done": False,
     "api_key": "",  # For iOS Shortcuts / external API access
+    "display_name": "",  # Custom display name for greetings
 }
 
 

@@ -18,7 +18,7 @@ from typing import List, Optional, Dict
 
 import requests
 
-from config import TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH
+from config import TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH
 from downloaders.track_downloader import TrackDownloader
 from apis.navidrome_api import NavidromeAPI
 from utils import Tagger, update_status_file
@@ -436,8 +436,7 @@ async def download_playlist(
     history["created_at"] = history.get("created_at") or datetime.now().isoformat()
 
     # Set up downloaders
-    from config import ALBUM_RECOMMENDATION_COMMENT
-    tagger = Tagger(ALBUM_RECOMMENDATION_COMMENT)
+    tagger = Tagger()
     track_downloader = TrackDownloader(tagger)
     salt, token = navidrome_api._get_navidrome_auth_params()
 
@@ -570,7 +569,7 @@ async def download_playlist(
     if newly_downloaded:
         _update("in_progress", "Organizing downloaded files...",
                 title=playlist_name, current=downloaded_count, total=total)
-        file_path_map = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_LIBRARY_PATH)
+        file_path_map = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
         _update("in_progress", "Scanning library for new files...",
                 title=playlist_name, current=downloaded_count, total=total)
@@ -608,15 +607,16 @@ async def download_playlist(
                 print(f"  Could not find in Navidrome after scan: {entry['artist']} - {entry['title']} "
                       f"(dl_path={dl_path}, organized={organized_path})")
 
-    # Create/update Navidrome playlist
+    # Create/update Navidrome playlist for the specific user
     if all_navidrome_ids:
-        _update("in_progress", f"Creating Navidrome playlist '{playlist_name}'...",
+        _update("in_progress", f"Creating Navidrome playlist '{playlist_name}' for user '{username}'...",
                 title=playlist_name, current=downloaded_count, total=total)
-        existing_pl = navidrome_api._find_playlist_by_name(playlist_name, salt, token)
+        # Use user-specific playlist functions to ensure correct ownership
+        existing_pl = navidrome_api._find_playlist_by_name_for_user(playlist_name, username)
         if existing_pl:
-            navidrome_api._update_playlist(existing_pl["id"], all_navidrome_ids, salt, token)
+            navidrome_api._update_playlist_for_user(existing_pl["id"], all_navidrome_ids)
         else:
-            navidrome_api._create_playlist(playlist_name, all_navidrome_ids, salt, token)
+            navidrome_api._create_playlist_for_user(playlist_name, all_navidrome_ids, username)
 
     # Save download history (only newly downloaded tracks)
     if newly_downloaded:

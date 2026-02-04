@@ -13,9 +13,8 @@ import re
 from apis.deezer_api import DeezerAPI
 
 class AlbumDownloader:
-    def __init__(self, tagger, album_recommendation_comment=None):
+    def __init__(self, tagger):
         self.tagger = tagger
-        self.album_recommendation_comment = album_recommendation_comment
         # Initial load, will be reloaded dynamically
         self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         self.deezer_arl = config.DEEZER_ARL
