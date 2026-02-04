@@ -28,8 +28,14 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     python -c "import certifi; import shutil; shutil.copyfile(certifi.where(), '/usr/local/share/ca-certificates/certifi.crt')" && \
     update-ca-certificates
 
+# Cache-buster argument - pass --build-arg CACHEBUST=$(date +%s) to force rebuild
+ARG CACHEBUST=1
+
 # Copy the rest of the application code
 COPY . .
+
+# Verify critical files exist (helps catch copy issues)
+RUN ls -la /app/utils/ && ls -la /app/persistence/
 
 # Copy the web UI
 COPY web_ui /app/web_ui
