@@ -1063,7 +1063,8 @@ class NavidromeAPI:
             if os.path.exists(db_file):
                 try:
                     os.remove(db_file)
-                except OSError as e:
+                except OSError:
+                    pass
 
         # Remove empty folders
         from utils import remove_empty_folders
@@ -1245,9 +1246,7 @@ class NavidromeAPI:
                     updated_playlist = put_response.json()
                     actual_owner = updated_playlist.get('ownerId')
                     if actual_owner == owner_id:
-                        print(f"Created playlist '{name}' for user '{owner_username}'", flush=True)
-                    else:
-                else:
+                        print(f"Created playlist '{name}' for user '{owner_username}'")
 
                 # Add songs to the playlist
                 if song_ids and playlist_id:
@@ -1327,14 +1326,10 @@ class NavidromeAPI:
 
             if response.status_code == 200:
                 playlists = response.json()
-                for pl in playlists:
-
                 owner_id = self._get_user_id_by_username(owner_username)
-
                 for pl in playlists:
                     if pl.get('name') == name and pl.get('ownerId') == owner_id:
                         return pl
-            else:
             return None
         except Exception as e:
             print(f"Error finding playlist: {e}")

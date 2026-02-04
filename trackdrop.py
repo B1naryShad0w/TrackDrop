@@ -37,7 +37,6 @@ def load_user_settings(username):
         with open(settings_file, 'r') as f:
             all_settings = json.load(f)
         user_data = all_settings.get(username, {})
-        if not user_data:
         return user_data
     except (json.JSONDecodeError, IOError) as e:
         print(f"Warning: Could not load user settings: {e}")
@@ -168,12 +167,8 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     # Load user-specific settings
     user_settings = load_user_settings(rec_user) if username else {}
 
-    # Debug: print loaded settings
-    if user_settings:
-
     lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
     lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
-
 
     if user_settings:
         print(f"Using user-specific settings (LB: {lb_enabled}, LF: {lf_enabled})")
