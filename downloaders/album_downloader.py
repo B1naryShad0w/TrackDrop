@@ -5,12 +5,12 @@ from streamrip.client import DeezerClient
 from streamrip.media import Album, PendingAlbum
 from streamrip.config import Config
 from streamrip.db import Database, Downloads, Failed, Dummy
-from tqdm import tqdm
 import sys
 import importlib
 import config
 import re
 from apis.deezer_api import DeezerAPI
+from utils.text import sanitize_for_matching, sanitize_filename
 
 class AlbumDownloader:
     def __init__(self, tagger):
@@ -154,14 +154,8 @@ class AlbumDownloader:
         return link, deezer_album_data
 
     def _sanitize_for_matching(self, s):
-        """Sanitizes strings for comparison: lowercase, remove non-alphanumeric, etc."""
-        s = s.lower()
-        s = s.replace('’', "'")
-        s = s.replace('ø', 'o')
-        s = s.replace('é', 'e')
-        s = re.sub(r'[^\w\s]', '', s)
-        s = re.sub(r'\s+', ' ', s)
-        return s.strip()
+        """Sanitizes strings for comparison using shared utility."""
+        return sanitize_for_matching(s)
 
     def _download_album_deemix(self, deezer_link, album_info, temp_download_folder, deezer_arl):
         """Downloads an album using deemix."""
@@ -214,7 +208,6 @@ class AlbumDownloader:
                 print(f"Deemix: Full stderr: {result.stderr}")
                 print(f"Deemix: Could not determine downloaded album path from deemix output for {album_info['artist']} - {album_info['album']}.")
                 # Fallback w/ directories with artist and album names
-                from utils import sanitize_filename
                 sanitized_artist = sanitize_filename(album_info['artist']).lower()
                 sanitized_album = sanitize_filename(album_info['album']).lower()
                 print(f"Deemix: Fallback search - looking for directories containing '{sanitized_artist}' and '{sanitized_album}' in {output_dir}")

@@ -1,10 +1,10 @@
 import requests
-import time
 import re
-import sys
 import asyncio
-import os
 import datetime
+from utils.http import async_make_request_with_retries
+from utils.text import normalize_string, clean_title
+
 
 class DeezerAPI:
     def __init__(self):
@@ -19,55 +19,40 @@ class DeezerAPI:
         with open(self.log_file_path, "a", encoding="utf-8") as f:
             f.write(f"[{timestamp}] {message}\n")
 
+    # Use shared text utilities for string normalization
     def _normalize_string(self, s):
-        """Normalizes strings for comparison by replacing special characters."""
-        s = s.lower()
-        s = s.replace('’', "'") 
-        s = s.replace('ø', 'o')
-        s = s.replace('é', 'e')
-        s = re.sub(r'\W+', ' ', s)
-        return s.strip()
+        """Normalizes strings for comparison using shared utility."""
+        return normalize_string(s)
 
     def _clean_title(self, title):
-        """Removes common suffixes from track titles to improve search accuracy."""
-        # Remove content in parentheses or brackets that often indicates remix, live, etc.
-        title = re.sub(r'\s*\(feat\..*?\)', '', title, flags=re.IGNORECASE)
-        title = re.sub(r'\s*\[feat\..*?\]', '', title, flags=re.IGNORECASE)
-        title = re.sub(r'\s*\([^)]*\)', '', title)
-        title = re.sub(r'\s*\[[^\]]*\]', '', title)
-        # Remove common suffixes
-        suffixes = [
-            " (Official Music Video)", " (Official Video)", " (Live)", " (Remix)",
-            " (Extended Mix)", " (Radio Edit)", " (Acoustic)", " (Instrumental)",
-            " (Lyric Video)", " (Visualizer)", " (Audio)", " (Album Version)",
-            " (Single Version)", " (Original Mix)"
-        ]
-        for suffix in suffixes:
-            if title.lower().endswith(suffix.lower()):
-                title = title[:-len(suffix)]
-        return title.strip()
+        """Cleans track titles using shared utility."""
+        return clean_title(title)
 
-    async def _make_request_with_retries(self, url, params=None, max_retries=3, initial_delay=1):
+    async def _make_request(self, url, params=None, max_retries=3, initial_delay=1):
         """Makes an HTTP GET request with retry logic and exponential backoff."""
-        for attempt in range(max_retries):
-            try:
-                # Log the full URL being requested
-                full_url = requests.Request('GET', url, params=params).prepare().url
-                self._log_to_file(f"Deezer API: Attempt {attempt + 1}/{max_retries} - Requesting URL: {full_url}")
+        # Log the full URL being requested
+        full_url = requests.Request('GET', url, params=params).prepare().url
+        self._log_to_file(f"Deezer API: Requesting URL: {full_url}")
 
-                response = await asyncio.to_thread(requests.get, url, params=params)
-                response.raise_for_status()
-
-                # Log the raw response content
-                self._log_to_file(f"Deezer API: Response (status {response.status_code}): {response.text}")
-                return response
-            except requests.exceptions.RequestException as e:
-                self._log_to_file(f"Deezer API: Request error on attempt {attempt + 1}/{max_retries} to {full_url}: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(initial_delay * (2 ** attempt))
-                else:
-                    raise
-        return None
+        try:
+            response = await async_make_request_with_retries(
+                method="GET",
+                url=url,
+                params=params,
+                max_retries=max_retries,
+                exponential_backoff=True,
+                initial_delay=initial_delay,
+                service_name="Deezer API",
+            )
+            if response:
+                # Log response (truncated for large responses)
+                text = response.text
+                log_text = text[:500] + "..." if len(text) > 500 else text
+                self._log_to_file(f"Deezer API: Response (status {response.status_code}): {log_text}")
+            return response
+        except Exception as e:
+            self._log_to_file(f"Deezer API: Request error to {full_url}: {e}")
+            raise
 
     async def get_deezer_track_link(self, artist, title, album=None):
         """
@@ -103,7 +88,7 @@ class DeezerAPI:
         for query in search_queries:
             params = {"q": query}
             try:
-                response = await self._make_request_with_retries(self.search_url, params=params)
+                response = await self._make_request(self.search_url, params=params)
                 if response:
                     data = response.json()
                     results = data.get('data', [])
@@ -135,7 +120,7 @@ class DeezerAPI:
         """
         track_url = f"{self.track_url_base}{track_id}"
         try:
-            response = await self._make_request_with_retries(track_url)
+            response = await self._make_request(track_url)
             if response:
                 data = response.json()
 
@@ -192,7 +177,7 @@ class DeezerAPI:
         for query in search_queries:
             params = {"q": query}
             try:
-                response = await self._make_request_with_retries(self.search_url + "/album", params=params)
+                response = await self._make_request(self.search_url + "/album", params=params)
                 if response:
                     data = response.json()
                     if data.get('data') and len(data['data']) > 0:
@@ -260,7 +245,7 @@ class DeezerAPI:
         for query in search_queries:
             params = {"q": query}
             try:
-                response = await self._make_request_with_retries(self.search_url, params=params)
+                response = await self._make_request(self.search_url, params=params)
                 if response:
                     data = response.json()
                     if data.get('data') and len(data['data']) > 0:
@@ -348,7 +333,7 @@ class DeezerAPI:
             params = {"q": query}
             self._log_to_file(f"Deezer API: Searching for album with query: '{query}'")
             try:
-                response = await self._make_request_with_retries(self.search_url + "/album", params=params)
+                response = await self._make_request(self.search_url + "/album", params=params)
                 if response:
                     data = response.json()
                     self._log_to_file(f"Deezer API: Response for album query '{query}': {data}")
@@ -393,7 +378,7 @@ class DeezerAPI:
         
         while next_page_url:
             try:
-                response = await self._make_request_with_retries(next_page_url)
+                response = await self._make_request(next_page_url)
                 if response:
                     data = response.json()
                     if data.get('data'):
@@ -439,7 +424,7 @@ class DeezerAPI:
             
             while next_page_url:
                 try:
-                    response = await self._make_request_with_retries(next_page_url, params=params if next_page_url == self.search_url + "/track" else None)
+                    response = await self._make_request(next_page_url, params=params if next_page_url == self.search_url + "/track" else None)
                     if response:
                         data = response.json()
                         if data.get('data'):

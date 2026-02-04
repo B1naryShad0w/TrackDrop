@@ -1,39 +1,22 @@
-"""User authentication, settings persistence, and session management."""
+"""User authentication, settings persistence, and session management.
+
+This module now delegates to the unified DataStore for persistence
+while maintaining backward compatibility with existing code.
+"""
 
 import hashlib
-import json
-import os
 import random
 import string
-import threading
 from functools import wraps
 
 import requests
 from flask import redirect, session, url_for
 
 import config
+from data.data_store import get_data_store, DEFAULT_USER_SETTINGS
 
-SETTINGS_FILE = os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json")
-
-DEFAULT_SETTINGS = {
-    "listenbrainz_enabled": False,
-    "listenbrainz_username": "",
-    "listenbrainz_token": "",
-    "lastfm_enabled": False,
-    "lastfm_username": "",
-    "lastfm_api_key": "",
-    "lastfm_api_secret": "",
-    "lastfm_session_key": "",
-    "cron_minute": 0,
-    "cron_hour": 0,
-    "cron_day": 1,
-    "cron_timezone": "US/Eastern",
-    "cron_enabled": True,
-    "playlist_sources": ["listenbrainz", "lastfm"],
-    "first_time_setup_done": False,
-    "api_key": "",  # For iOS Shortcuts / external API access
-    "display_name": "",  # Custom display name for greetings
-}
+# Re-export DEFAULT_SETTINGS for backward compatibility
+DEFAULT_SETTINGS = DEFAULT_USER_SETTINGS
 
 
 def authenticate_navidrome(username, password):
@@ -69,22 +52,15 @@ def authenticate_navidrome(username, password):
 
 
 class UserManager:
-    """Thread-safe per-user settings stored in a JSON file."""
+    """Thread-safe per-user settings management.
 
-    def __init__(self, settings_file=SETTINGS_FILE):
-        self._file = settings_file
-        self._lock = threading.Lock()
+    This class now delegates to the unified DataStore for persistence
+    while maintaining the same API for backward compatibility.
+    """
 
-    def _load(self):
-        if not os.path.exists(self._file):
-            return {}
-        with open(self._file, "r") as f:
-            return json.load(f)
-
-    def _save(self, data):
-        os.makedirs(os.path.dirname(self._file), exist_ok=True)
-        with open(self._file, "w") as f:
-            json.dump(data, f, indent=2)
+    def __init__(self, settings_file=None):
+        # The settings_file parameter is kept for backward compatibility but ignored
+        self._data_store = get_data_store()
 
     def authenticate(self, username, password):
         """Validate credentials against Navidrome.
@@ -96,53 +72,31 @@ class UserManager:
 
     def get_user_settings(self, username):
         """Return settings for a user, filling in defaults for missing keys."""
-        with self._lock:
-            data = self._load()
-        user = data.get(username, {})
-        merged = dict(DEFAULT_SETTINGS)
-        merged.update(user)
-        return merged
+        return self._data_store.get_user_settings(username)
 
     def update_user_settings(self, username, settings_dict):
         """Merge updates into a user's settings. Returns True on success."""
-        with self._lock:
-            data = self._load()
-            current = data.get(username, {})
-            current.update(settings_dict)
-            data[username] = current
-            self._save(data)
-        return True
+        return self._data_store.update_user_settings(username, settings_dict)
 
     def is_first_time(self, username):
         """Check whether the user has completed first-time setup."""
-        return not self.get_user_settings(username).get("first_time_setup_done", False)
+        return self._data_store.is_first_time(username)
 
     def mark_setup_done(self, username):
         """Mark first-time setup as complete for a user."""
-        self.update_user_settings(username, {"first_time_setup_done": True})
+        self._data_store.mark_setup_done(username)
 
     def get_all_users(self):
         """Return a list of all usernames with stored settings."""
-        with self._lock:
-            data = self._load()
-        return list(data.keys())
+        return self._data_store.get_all_users()
 
     def generate_api_key(self, username):
         """Generate a new API key for the user and save it."""
-        api_key = "".join(random.choices(string.ascii_letters + string.digits, k=32))
-        self.update_user_settings(username, {"api_key": api_key})
-        return api_key
+        return self._data_store.generate_api_key(username)
 
     def get_user_by_api_key(self, api_key):
         """Look up username by API key. Returns None if not found."""
-        if not api_key:
-            return None
-        with self._lock:
-            data = self._load()
-        for username, settings in data.items():
-            if settings.get("api_key") == api_key:
-                return username
-        return None
+        return self._data_store.get_user_by_api_key(api_key)
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,9 @@
-import requests
 import time
 import asyncio
 import sys
+import requests
 from config import FRESH_RELEASES_CACHE_DURATION
+from utils.http import async_make_request_with_retries
 
 
 class ListenBrainzAPI:
@@ -30,10 +31,22 @@ class ListenBrainzAPI:
     def auth_header_lb(self):
         return {"Authorization": f"Token {self.token_lb}"}
 
+    async def _make_request(self, method, url, headers=None, params=None, json=None, max_retries=5, retry_delay=5):
+        """Make an HTTP request using the shared retry utility."""
+        return await async_make_request_with_retries(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            json=json,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            service_name="ListenBrainz API",
+        )
+
     async def get_latest_playlist_name(self):
         """Retrieves the name of the latest *recommendation* playlist from ListenBrainz asynchronously."""
         playlist_json = await self._get_recommendation_playlist(self.user_lb)
-
 
         for playlist in playlist_json["playlists"]:
             title = playlist["playlist"]["title"]
@@ -54,45 +67,10 @@ class ListenBrainzAPI:
         print("Error: 'Weekly Exploration' playlist not found.")
         return None
 
-    async def _make_request_with_retries(self, method, url, headers, params=None, json=None, max_retries=5, retry_delay=5):
-        """
-        Makes an HTTP request with retry logic for connection errors, asynchronously.
-        """
-        loop = asyncio.get_event_loop()
-        for attempt in range(max_retries):
-            try:
-                if method == "GET":
-                    response = await loop.run_in_executor(None, lambda: requests.get(url, headers=headers, params=params))
-                elif method == "POST":
-                    response = await loop.run_in_executor(None, lambda: requests.post(url, headers=headers, json=json))
-                elif method == "HEAD":
-                    response = await loop.run_in_executor(None, lambda: requests.head(url, headers=headers, params=params))
-                response.raise_for_status()
-                return response
-            except requests.exceptions.ConnectionError as e:
-                print(f"ListenBrainz API: Connection error on attempt {attempt + 1}/{max_retries} to {url}: {e}", file=sys.stderr)
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-                else:
-                    raise
-            except requests.exceptions.Timeout as e:
-                print(f"ListenBrainz API: Timeout error on attempt {attempt + 1}/{max_retries} to {url}: {e}", file=sys.stderr)
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-                else:
-                    raise
-            except requests.exceptions.HTTPError as e:
-                print(f"ListenBrainz API: HTTP error on attempt {attempt + 1}/{max_retries} to {url}: {e.response.status_code} - {e.response.text}", file=sys.stderr)
-                raise
-            except requests.exceptions.RequestException as e:
-                print(f"ListenBrainz API: General request error on attempt {attempt + 1}/{max_retries} to {url}: {e}", file=sys.stderr)
-                raise
-        return None
-
     async def _get_recommendation_playlist(self, username, **params):
         """Fetches the recommendation playlist from ListenBrainz asynchronously."""
         url = f"{self.root_lb}/1/user/{username}/playlists/recommendations"
-        response = await self._make_request_with_retries(
+        response = await self._make_request(
             method="GET",
             url=url,
             params=params,
@@ -103,7 +81,7 @@ class ListenBrainzAPI:
 
     async def _get_playlist_by_mbid(self, playlist_mbid, **params):
         """Fetches a playlist by its MBID from ListenBrainz asynchronously."""
-        response = await self._make_request_with_retries(
+        response = await self._make_request(
             method="GET",
             url=f"{self.root_lb}/1/playlist/{playlist_mbid}",
             params=params,
@@ -118,7 +96,7 @@ class ListenBrainzAPI:
         }
         url = f"https://musicbrainz.org/ws/2/recording/?query=artist:\"{artist}\" AND recording:\"{title}\"&fmt=json"
         try:
-            response = await self._make_request_with_retries(
+            response = await self._make_request(
                 method="GET",
                 url=url,
                 headers=headers,
@@ -139,7 +117,7 @@ class ListenBrainzAPI:
         }
         url = f"https://musicbrainz.org/ws/2/recording/{recording_mbid}?fmt=json&inc=artist-credits"
         try:
-            response = await self._make_request_with_retries(
+            response = await self._make_request(
                 method="GET",
                 url=url,
                 headers=headers,
@@ -180,7 +158,7 @@ class ListenBrainzAPI:
         url = f"https://musicbrainz.org/ws/2/recording/{recording_mbid}?fmt=json&inc=artist-credits+releases"
 
         try:
-            response = await self._make_request_with_retries(
+            response = await self._make_request(
                 method="GET",
                 url=url,
                 headers=headers,
@@ -329,7 +307,7 @@ class ListenBrainzAPI:
             return self._fresh_releases_cache
 
         print("Fetching fresh releases from ListenBrainz API...")
-        response = await self._make_request_with_retries(
+        response = await self._make_request(
             method="GET",
             url=f"{self.root_lb}/1/user/{self.user_lb}/fresh_releases",
             headers=self.auth_header_lb,
@@ -369,7 +347,7 @@ class ListenBrainzAPI:
         url = f"{self.root_lb}/1/user/{self.user_lb}/listens"
         
         try:
-            response = await self._make_request_with_retries("GET", url, headers=self.auth_header_lb, params=params)
+            response = await self._make_request("GET", url, headers=self.auth_header_lb, params=params)
             data = response.json()
             listens = data.get('payload', {}).get('listens', [])
             scrobbles = [{'artist': listen['track_metadata']['artist_name'], 'track': listen['track_metadata']['track_name']} for listen in listens]
@@ -390,7 +368,7 @@ class ListenBrainzAPI:
         print(f"Headers: {self.auth_header_lb}")
 
         try:
-            response = await self._make_request_with_retries(
+            response = await self._make_request(
                 method="POST",
                 url=url,
                 headers=self.auth_header_lb,

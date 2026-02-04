@@ -2,12 +2,12 @@ import pylast
 import time
 import os
 import requests
-import webbrowser
 import asyncio
-import concurrent.futures
 import hashlib
 from apis.deezer_api import DeezerAPI
 from config import LASTFM_ENABLED as GLOBAL_LASTFM_ENABLED
+from utils.http import make_request_with_retries
+
 
 class LastFmAPI:
     def __init__(self, api_key, api_secret, username, password, session_key, lastfm_enabled):
@@ -19,35 +19,19 @@ class LastFmAPI:
         self._lastfm_enabled = lastfm_enabled
         self.network = None
 
-    def _make_request_with_retries(self, method, url, headers=None, params=None, json=None, data=None, max_retries=5, retry_delay=5):
-        """
-        Makes an HTTP request with retry logic for connection errors.
-        """
-        for attempt in range(max_retries):
-            try:
-                if method == "GET":
-                    response = requests.get(url, headers=headers, params=params)
-                elif method == "POST":
-                    if json:
-                        response = requests.post(url, headers=headers, json=json)
-                    elif data:
-                        response = requests.post(url, headers=headers, data=data)
-                    else:
-                        response = requests.post(url, headers=headers)
-                elif method == "HEAD":
-                    response = requests.head(url, headers=headers, params=params)
-                response.raise_for_status()
-                return response
-            except requests.exceptions.ConnectionError as e:
-                print(f"Connection error on attempt {attempt + 1}/{max_retries}: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                else:
-                    raise
-            except requests.exceptions.RequestException as e:
-                print(f"Request error on attempt {attempt + 1}/{max_retries}: {e}")
-                raise
-        return None
+    def _make_request(self, method, url, headers=None, params=None, json=None, data=None, max_retries=5, retry_delay=5):
+        """Make an HTTP request using the shared retry utility."""
+        return make_request_with_retries(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            json=json,
+            data=data,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            service_name="Last.fm API",
+        )
 
     def _authenticate_mobile(self):
         """Authenticates using mobile authentication (username/password)."""
@@ -76,7 +60,7 @@ class LastFmAPI:
         url = "https://ws.audioscrobbler.com/2.0/"
 
         try:
-            response = self._make_request_with_retries(
+            response = self._make_request(
                 method="POST",
                 url=url,
                 headers={'Content-Type': 'application/x-www-form-urlencoded'},
@@ -183,7 +167,7 @@ class LastFmAPI:
         }
 
         try:
-            response = self._make_request_with_retries(
+            response = self._make_request(
                 method="GET",
                 url=url,
                 headers=headers
@@ -300,7 +284,7 @@ class LastFmAPI:
         url = "https://ws.audioscrobbler.com/2.0/"
 
         try:
-            response = self._make_request_with_retries(
+            response = self._make_request(
                 method="POST",
                 url=url,
                 headers={'Content-Type': 'application/x-www-form-urlencoded'},

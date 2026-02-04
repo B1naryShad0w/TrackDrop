@@ -2,10 +2,10 @@
 
 Manages a list of monitored playlists that are periodically checked
 for new tracks and automatically synced to Navidrome.
+
+Now delegates to the unified DataStore for persistence.
 """
 
-import json
-import os
 import sys
 import threading
 import time
@@ -14,37 +14,15 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-MONITORED_PLAYLISTS_PATH = os.getenv(
-    "TRACKDROP_MONITORED_PLAYLISTS_PATH",
-    "/app/data/monitored_playlists.json",
-)
+from data.data_store import get_data_store
 
-_lock = threading.Lock()
 _scheduler_thread: Optional[threading.Thread] = None
 _scheduler_running = False
 
 
-def _load_playlists() -> list:
-    with _lock:
-        if os.path.exists(MONITORED_PLAYLISTS_PATH):
-            try:
-                with open(MONITORED_PLAYLISTS_PATH, "r") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-        return []
-
-
-def _save_playlists(playlists: list):
-    with _lock:
-        os.makedirs(os.path.dirname(MONITORED_PLAYLISTS_PATH), exist_ok=True)
-        with open(MONITORED_PLAYLISTS_PATH, "w") as f:
-            json.dump(playlists, f, indent=2)
-
-
-def get_monitored_playlists() -> list:
-    """Return all monitored playlists."""
-    return _load_playlists()
+def get_monitored_playlists(username: str = None) -> list:
+    """Return all monitored playlists, optionally filtered by username."""
+    return get_data_store().get_monitored_playlists(username)
 
 
 def add_monitored_playlist(
@@ -55,64 +33,54 @@ def add_monitored_playlist(
     poll_interval_hours: int = 24,
 ) -> dict:
     """Add a playlist to be monitored. Returns the new entry."""
-    playlists = _load_playlists()
-
-    # Don't add duplicates
-    for p in playlists:
-        if p["url"] == url and p["username"] == username:
-            return p
-
-    entry = {
-        "id": str(uuid.uuid4()),
-        "url": url,
-        "name": name,
-        "platform": platform,
-        "username": username,
-        "poll_interval_hours": poll_interval_hours,
-        "enabled": True,
-        "added_at": datetime.now().isoformat(),
-        "last_synced": None,
-        "last_track_count": 0,
-    }
-    playlists.append(entry)
-    _save_playlists(playlists)
-    return entry
+    return get_data_store().add_monitored_playlist(
+        username=username,
+        url=url,
+        name=name,
+        platform=platform,
+        poll_interval_hours=poll_interval_hours,
+    )
 
 
-def update_monitored_playlist(playlist_id: str, updates: dict) -> Optional[dict]:
+def update_monitored_playlist(playlist_id: str, updates: dict, username: str = None) -> Optional[dict]:
     """Update a monitored playlist's settings. Returns updated entry or None."""
-    playlists = _load_playlists()
-    for p in playlists:
-        if p["id"] == playlist_id:
-            for key in ("poll_interval_hours", "enabled", "name"):
-                if key in updates:
-                    p[key] = updates[key]
-            _save_playlists(playlists)
-            return p
+    # If username not provided, search all users
+    if username:
+        return get_data_store().update_monitored_playlist(username, playlist_id, updates)
+
+    # Search all users to find the playlist
+    for user in get_data_store().get_all_users():
+        result = get_data_store().update_monitored_playlist(user, playlist_id, updates)
+        if result:
+            return result
     return None
 
 
-def remove_monitored_playlist(playlist_id: str) -> bool:
+def remove_monitored_playlist(playlist_id: str, username: str = None) -> bool:
     """Remove a playlist from monitoring. Returns True if found and removed."""
-    playlists = _load_playlists()
-    original_len = len(playlists)
-    playlists = [p for p in playlists if p["id"] != playlist_id]
-    if len(playlists) < original_len:
-        _save_playlists(playlists)
-        return True
+    if username:
+        return get_data_store().remove_monitored_playlist(username, playlist_id)
+
+    # Search all users to find and remove the playlist
+    for user in get_data_store().get_all_users():
+        if get_data_store().remove_monitored_playlist(user, playlist_id):
+            return True
     return False
 
 
-def mark_synced(playlist_id: str, track_count: int = None):
+def mark_synced(playlist_id: str, track_count: int = None, username: str = None):
     """Update last_synced (and optionally last_track_count) for a monitored playlist."""
-    playlists = _load_playlists()
-    for p in playlists:
-        if p["id"] == playlist_id:
-            p["last_synced"] = datetime.now().isoformat()
-            if track_count is not None:
-                p["last_track_count"] = track_count
-            break
-    _save_playlists(playlists)
+    if username:
+        get_data_store().mark_playlist_synced(username, playlist_id, track_count)
+        return
+
+    # Search all users to find the playlist
+    for user in get_data_store().get_all_users():
+        playlists = get_data_store().get_monitored_playlists(user)
+        for p in playlists:
+            if p["id"] == playlist_id:
+                get_data_store().mark_playlist_synced(user, playlist_id, track_count)
+                return
 
 
 def _sync_playlist(entry: dict, navidrome_api, update_status_fn):
@@ -141,7 +109,7 @@ def _sync_playlist(entry: dict, navidrome_api, update_status_fn):
     except Exception as e:
         print(f"[PlaylistMonitor] Error syncing {entry['name']}: {e}", file=sys.stderr)
 
-    mark_synced(entry["id"], track_count)
+    mark_synced(entry["id"], track_count, username=entry.get("username"))
 
 
 def _scheduler_loop(navidrome_api, update_status_fn, downloads_queue):
@@ -151,7 +119,7 @@ def _scheduler_loop(navidrome_api, update_status_fn, downloads_queue):
 
     while _scheduler_running:
         try:
-            playlists = _load_playlists()
+            playlists = get_monitored_playlists()
             now = datetime.now()
 
             for entry in playlists:
