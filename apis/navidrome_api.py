@@ -1270,7 +1270,10 @@ class NavidromeAPI:
             return False
 
     def _update_playlist_for_user(self, playlist_id, song_ids):
-        """Update a playlist's tracks using the Navidrome REST API."""
+        """Update a playlist's tracks using the Navidrome REST API.
+
+        Clears existing tracks first, then adds the new ones.
+        """
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
@@ -1281,13 +1284,28 @@ class NavidromeAPI:
                 "Content-Type": "application/json"
             }
 
-            # Clear existing tracks and add new ones
-            # First, get current tracks to remove them
-            response = requests.delete(
-                f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
+            # First, get the playlist to find existing track count
+            get_response = requests.get(
+                f"{self.root_nd}/api/playlist/{playlist_id}",
                 headers=headers,
                 timeout=30
             )
+
+            if get_response.status_code == 200:
+                playlist_data = get_response.json()
+                track_count = playlist_data.get('songCount', 0)
+
+                # Delete all existing tracks by index (0 to track_count-1)
+                if track_count > 0:
+                    indices_to_delete = list(range(track_count))
+                    delete_response = requests.delete(
+                        f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
+                        headers=headers,
+                        json={"indices": indices_to_delete},
+                        timeout=30
+                    )
+                    if delete_response.status_code not in (200, 204):
+                        print(f"  Warning: Failed to clear existing tracks: {delete_response.status_code}")
 
             # Add new tracks
             if song_ids:
