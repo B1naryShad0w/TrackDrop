@@ -1278,9 +1278,11 @@ class NavidromeAPI:
         try:
             # Use admin credentials for Subsonic API
             admin_user, salt, token = self._get_admin_auth_params()
+            print(f"[DEBUG] _update_playlist_for_user: using admin_user='{admin_user}'", flush=True)
 
             # Get current songs in the playlist
             current_songs = self._get_playlist_songs(playlist_id, salt, token)
+            print(f"[DEBUG] Current songs in playlist: {len(current_songs) if current_songs else 0}", flush=True)
 
             # Remove all existing songs using songIndexToRemove
             if current_songs:
@@ -1292,11 +1294,13 @@ class NavidromeAPI:
                 param_list = [(k, v) for k, v in params.items()]
                 for i in range(len(current_songs)):
                     param_list.append(('songIndexToRemove', i))
+                print(f"[DEBUG] Removing {len(current_songs)} songs from playlist", flush=True)
                 try:
                     response = requests.get(url, params=param_list, timeout=60)
+                    print(f"[DEBUG] Remove response: {response.status_code} - {response.text[:300]}", flush=True)
                     response.raise_for_status()
                 except Exception as e:
-                    print(f"Error removing songs from playlist: {e}")
+                    print(f"Error removing songs from playlist: {e}", flush=True)
                     return False
 
             # Add new songs
@@ -1309,11 +1313,13 @@ class NavidromeAPI:
                 param_list = [(k, v) for k, v in params.items()]
                 for sid in song_ids:
                     param_list.append(('songId', sid))
+                print(f"[DEBUG] Adding {len(song_ids)} songs to playlist", flush=True)
                 try:
                     response = requests.get(url, params=param_list, timeout=60)
+                    print(f"[DEBUG] Add response: {response.status_code} - {response.text[:300]}", flush=True)
                     response.raise_for_status()
                 except Exception as e:
-                    print(f"Error adding songs to playlist: {e}")
+                    print(f"Error adding songs to playlist: {e}", flush=True)
                     return False
 
             print(f"  Updated playlist with {len(song_ids)} tracks")
