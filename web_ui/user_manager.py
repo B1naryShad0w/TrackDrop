@@ -13,7 +13,7 @@ import requests
 from flask import redirect, session, url_for
 
 import config
-from data.data_store import get_data_store, DEFAULT_USER_SETTINGS
+from persistence.data_store import get_data_store, DEFAULT_USER_SETTINGS
 
 # Re-export DEFAULT_SETTINGS for backward compatibility
 DEFAULT_SETTINGS = DEFAULT_USER_SETTINGS

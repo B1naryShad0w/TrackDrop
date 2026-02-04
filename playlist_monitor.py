@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from data.data_store import get_data_store
+from persistence.data_store import get_data_store
 
 _scheduler_thread: Optional[threading.Thread] = None
 _scheduler_running = False
