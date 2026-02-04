@@ -1137,11 +1137,9 @@ def trigger_debug_cleanup():
     """Debug: clear playlists and remove all songs not rated 4-5 stars."""
     import sys
     username = get_current_user()
-    print(f"[DEBUG CLEANUP] Triggered by user: {username}", flush=True)
     sys.stdout.flush()
     try:
         download_history_path = get_user_history_path(username)
-        print(f"[DEBUG CLEANUP] Using history path: {download_history_path}", flush=True)
         sys.stdout.flush()
         summary = asyncio.run(navidrome_api_global.process_debug_cleanup(
             history_path=download_history_path
@@ -1788,7 +1786,6 @@ def download_from_link():
         if is_playlist_url(link):
             download_id = str(uuid.uuid4())
             username = get_current_user()
-            print(f"[DEBUG] app.py download_from_link: playlist download for username='{username}'", flush=True)
             monitor = data.get('monitor', False)
             poll_interval_hours = data.get('poll_interval_hours', 24)
             playlist_name_override = data.get('playlist_name', None)

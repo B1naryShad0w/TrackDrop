@@ -31,17 +31,13 @@ def load_user_settings(username):
     Returns a dict with user settings, or empty dict if not found.
     """
     settings_file = os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json")
-    print(f"[DEBUG] load_user_settings: looking for user '{username}' in {settings_file}")
     if not os.path.exists(settings_file):
-        print(f"[DEBUG] load_user_settings: file does not exist")
         return {}
     try:
         with open(settings_file, 'r') as f:
             all_settings = json.load(f)
-        print(f"[DEBUG] load_user_settings: found users in file: {list(all_settings.keys())}")
         user_data = all_settings.get(username, {})
         if not user_data:
-            print(f"[DEBUG] load_user_settings: user '{username}' not found in settings")
         return user_data
     except (json.JSONDecodeError, IOError) as e:
         print(f"Warning: Could not load user settings: {e}")
@@ -81,14 +77,11 @@ def create_listenbrainz_api(user_settings=None):
         token = user_settings.get('listenbrainz_token') or TOKEN_LB
         user = user_settings.get('listenbrainz_username') or USER_LB
         enabled = True
-        print(f"[DEBUG] create_listenbrainz_api: using user settings")
     else:
         token = TOKEN_LB
         user = USER_LB
         enabled = LISTENBRAINZ_ENABLED
-        print(f"[DEBUG] create_listenbrainz_api: using global config")
 
-    print(f"[DEBUG] ListenBrainz API - user: {user}, token set: {bool(token)}, enabled: {enabled}")
 
     return ListenBrainzAPI(
         root_lb=ROOT_LB,
@@ -112,16 +105,13 @@ def create_lastfm_api(user_settings=None):
         username = user_settings.get('lastfm_username') or LASTFM_USERNAME
         session_key = user_settings.get('lastfm_session_key') or LASTFM_SESSION_KEY
         enabled = True
-        print(f"[DEBUG] create_lastfm_api: using user settings")
     else:
         api_key = LASTFM_API_KEY
         api_secret = LASTFM_API_SECRET
         username = LASTFM_USERNAME
         session_key = LASTFM_SESSION_KEY
         enabled = LASTFM_ENABLED
-        print(f"[DEBUG] create_lastfm_api: using global config")
 
-    print(f"[DEBUG] Last.fm API - username: {username}, api_key set: {bool(api_key)}, enabled: {enabled}")
 
     return LastFmAPI(
         api_key=api_key,
@@ -179,23 +169,11 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     user_settings = load_user_settings(rec_user) if username else {}
 
     # Debug: print loaded settings
-    print(f"\n[DEBUG] username param: {username}")
-    print(f"[DEBUG] user_settings loaded: {bool(user_settings)}")
     if user_settings:
-        print(f"[DEBUG] user_settings keys: {list(user_settings.keys())}")
-        print(f"[DEBUG] listenbrainz_enabled in settings: {user_settings.get('listenbrainz_enabled')}")
-        print(f"[DEBUG] listenbrainz_token in settings: {'set' if user_settings.get('listenbrainz_token') else 'empty'}")
-        print(f"[DEBUG] listenbrainz_username in settings: {user_settings.get('listenbrainz_username')}")
-        print(f"[DEBUG] lastfm_enabled in settings: {user_settings.get('lastfm_enabled')}")
-        print(f"[DEBUG] lastfm_api_key in settings: {'set' if user_settings.get('lastfm_api_key') else 'empty'}")
-    print(f"[DEBUG] Global LISTENBRAINZ_ENABLED: {LISTENBRAINZ_ENABLED}")
-    print(f"[DEBUG] Global LASTFM_ENABLED: {LASTFM_ENABLED}")
 
     lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
     lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
 
-    print(f"[DEBUG] Final lb_enabled: {lb_enabled}")
-    print(f"[DEBUG] Final lf_enabled: {lf_enabled}")
 
     if user_settings:
         print(f"Using user-specific settings (LB: {lb_enabled}, LF: {lf_enabled})")
@@ -366,7 +344,6 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         moved_files = navidrome_api.organize_music_files(TEMP_DOWNLOAD_FOLDER, MUSIC_DOWNLOAD_PATH)
 
     print("\n--- Updating Playlists ---")
-    print(f"[DEBUG] Calling update_api_playlists with target_user='{username}'")
     navidrome_api.update_api_playlists(
         unique_recommendations, history_path, downloaded_songs,
         file_path_map=moved_files, target_user=username

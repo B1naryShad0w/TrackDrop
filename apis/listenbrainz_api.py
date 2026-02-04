@@ -34,12 +34,9 @@ class ListenBrainzAPI:
         """Retrieves the name of the latest *recommendation* playlist from ListenBrainz asynchronously."""
         playlist_json = await self._get_recommendation_playlist(self.user_lb)
 
-        print(f"[DEBUG] Looking for playlist starting with: 'Weekly Exploration for {self.user_lb}'")
-        print(f"[DEBUG] Found {len(playlist_json.get('playlists', []))} playlists")
 
         for playlist in playlist_json["playlists"]:
             title = playlist["playlist"]["title"]
-            print(f"[DEBUG] Playlist: {title}")
             if title.startswith(f"Weekly Exploration for {self.user_lb}"):
                 latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
                 latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
@@ -50,7 +47,6 @@ class ListenBrainzAPI:
         for playlist in playlist_json["playlists"]:
             title = playlist["playlist"]["title"]
             if title.lower().startswith(search_prefix):
-                print(f"[DEBUG] Found with case-insensitive match: {title}")
                 latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
                 latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
                 return latest_playlist['playlist']['title']
@@ -96,7 +92,6 @@ class ListenBrainzAPI:
     async def _get_recommendation_playlist(self, username, **params):
         """Fetches the recommendation playlist from ListenBrainz asynchronously."""
         url = f"{self.root_lb}/1/user/{username}/playlists/recommendations"
-        print(f"[DEBUG] Fetching recommendations from: {url}")
         response = await self._make_request_with_retries(
             method="GET",
             url=url,
@@ -104,8 +99,6 @@ class ListenBrainzAPI:
             headers=self.auth_header_lb,
         )
         data = response.json()
-        print(f"[DEBUG] API response keys: {list(data.keys()) if data else 'None'}")
-        print(f"[DEBUG] Playlists count: {len(data.get('playlists', []))}")
         return data
 
     async def _get_playlist_by_mbid(self, playlist_mbid, **params):
