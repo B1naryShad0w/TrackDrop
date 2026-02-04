@@ -31,6 +31,9 @@ class NavidromeAPI:
         self.admin_user = admin_user or ''
         self.admin_password = admin_password or ''
         self.navidrome_db_path = navidrome_db_path or ''
+        # Cache for JWT token to avoid rate limiting
+        self._jwt_token_cache = None
+        self._jwt_token_time = 0
 
     # ---- Authentication ----
 
@@ -1181,7 +1184,16 @@ class NavidromeAPI:
             return False
 
     def _get_navidrome_jwt_token(self):
-        """Authenticate with Navidrome's native REST API and get a JWT token."""
+        """Authenticate with Navidrome's native REST API and get a JWT token.
+
+        Caches the token for 5 minutes to avoid rate limiting.
+        """
+        import time
+        # Check if we have a cached token that's less than 5 minutes old
+        if self._jwt_token_cache and (time.time() - self._jwt_token_time) < 300:
+            print(f"[DEBUG] _get_navidrome_jwt_token: using cached token", flush=True)
+            return self._jwt_token_cache
+
         try:
             # Use admin credentials for REST API auth
             admin_user = self.admin_user or self.user_nd
@@ -1195,8 +1207,10 @@ class NavidromeAPI:
             )
             if response.status_code == 200:
                 data = response.json()
+                self._jwt_token_cache = data.get('token')
+                self._jwt_token_time = time.time()
                 print(f"[DEBUG] _get_navidrome_jwt_token: successfully authenticated as '{admin_user}'", flush=True)
-                return data.get('token')
+                return self._jwt_token_cache
             else:
                 print(f"Failed to get Navidrome JWT token: {response.status_code}")
                 return None
