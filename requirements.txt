@@ -61,7 +61,6 @@ pycryptodomex==3.23.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
-pylast==7.0.0
 pyparsing==3.2.5
 pytest==9.0.2
 pytest-asyncio==0.21.2

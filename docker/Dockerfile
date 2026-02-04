@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     librsvg2-bin \
     imagemagick \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir yt-dlp
 
 # Directories for music library, temporary downloads, and streamrip/deemix config
 RUN mkdir -p /app/music /app/temp_downloads /root/.config/streamrip /root/.config/deemix
@@ -28,8 +29,14 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     python -c "import certifi; import shutil; shutil.copyfile(certifi.where(), '/usr/local/share/ca-certificates/certifi.crt')" && \
     update-ca-certificates
 
+# Cache-buster argument - pass --build-arg CACHEBUST=$(date +%s) to force rebuild
+ARG CACHEBUST=1
+
 # Copy the rest of the application code
 COPY . .
+
+# Verify critical files exist (helps catch copy issues)
+RUN ls -la /app/utils/ && ls -la /app/persistence/
 
 # Copy the web UI
 COPY web_ui /app/web_ui
@@ -54,8 +61,5 @@ EXPOSE 5000
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Set the entrypoint
+# Set the entrypoint (gunicorn is now the main process for proper SIGTERM handling)
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
-# Default command to run
-CMD ["tail", "-f", "/dev/null"]

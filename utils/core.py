@@ -1,4 +1,7 @@
-"""Utility functions for TrackDrop."""
+"""Core utility functions for TrackDrop.
+
+This module contains the original utils.py content, now part of the utils package.
+"""
 
 import json
 import os
@@ -41,11 +44,6 @@ def initialize_streamrip_db():
     except Exception as e:
         print(f"Error initializing streamrip database: {e}")
         raise
-
-
-def sanitize_filename(filename):
-    """Replace problematic characters in filenames with underscores."""
-    return re.sub(r'[\\/:*?"<>|]', '_', filename)
 
 
 def remove_empty_folders(path):

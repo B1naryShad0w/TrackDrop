@@ -380,6 +380,8 @@ async def download_playlist(
     download_id: str,
     update_status_fn=None,
     playlist_name_override: str = None,
+    playlist_id: str = None,
+    navidrome_playlist_id: str = None,
 ):
     """Download all tracks from a playlist URL, create a Navidrome playlist.
 
@@ -389,6 +391,14 @@ async def download_playlist(
         navidrome_api: NavidromeAPI instance.
         download_id: UUID for progress tracking.
         update_status_fn: Callback(download_id, status, message, title, current, total).
+        playlist_name_override: Override the detected playlist name.
+        playlist_id: If provided, downloads are tracked in user's download history
+                    under key 'playlist_{playlist_id}' for auto-cleanup support.
+        navidrome_playlist_id: If provided, use this Navidrome playlist ID for updates
+                              instead of looking up by name. Returned in the result.
+
+    Returns:
+        dict with 'navidrome_playlist_id' and 'source_name' keys.
     """
     # Per-track status list for UI
     track_statuses = []  # [{artist, title, status, message}, ...]
@@ -608,15 +618,31 @@ async def download_playlist(
                       f"(dl_path={dl_path}, organized={organized_path})")
 
     # Create/update Navidrome playlist for the specific user
+    result_navidrome_playlist_id = navidrome_playlist_id
     if all_navidrome_ids:
         _update("in_progress", f"Creating Navidrome playlist '{playlist_name}' for user '{username}'...",
                 title=playlist_name, current=downloaded_count, total=total)
-        # Use user-specific playlist functions to ensure correct ownership
-        existing_pl = navidrome_api._find_playlist_by_name_for_user(playlist_name, username)
+
+        # Try to find existing playlist: by ID first, then by name
+        existing_pl = None
+        if navidrome_playlist_id:
+            existing_pl = navidrome_api._get_playlist_by_id(navidrome_playlist_id)
+            if existing_pl:
+                print(f"  Found Navidrome playlist by ID: {navidrome_playlist_id}")
+
+        if not existing_pl:
+            existing_pl = navidrome_api._find_playlist_by_name_for_user(playlist_name, username)
+            if existing_pl:
+                print(f"  Found Navidrome playlist by name: {playlist_name}")
+                result_navidrome_playlist_id = existing_pl.get("id")
+
         if existing_pl:
             navidrome_api._update_playlist_for_user(existing_pl["id"], all_navidrome_ids)
         else:
-            navidrome_api._create_playlist_for_user(playlist_name, all_navidrome_ids, username)
+            created_id = navidrome_api._create_playlist_for_user(playlist_name, all_navidrome_ids, username)
+            if created_id:
+                result_navidrome_playlist_id = created_id
+                print(f"  Created new Navidrome playlist with ID: {created_id}")
 
     # Save download history (only newly downloaded tracks)
     if newly_downloaded:
@@ -632,8 +658,28 @@ async def download_playlist(
         _save_playlist_history(history_path, history)
         print(f"Saved playlist download history to {history_path}")
 
+        # Also save to user's DataStore if playlist_id provided (for auto-cleanup)
+        if playlist_id and username:
+            from persistence.data_store import get_data_store
+            source_key = f"playlist_{playlist_id}"
+            data_store = get_data_store()
+            for entry in newly_downloaded:
+                if entry.get("navidrome_id"):
+                    data_store.add_to_download_history(username, source_key, {
+                        "artist": entry["artist"],
+                        "title": entry["title"],
+                        "album": entry.get("album", ""),
+                        "file_path": entry.get("file_path", ""),
+                        "navidrome_id": entry["navidrome_id"],
+                    })
+
     msg = (f"{downloaded_count} downloaded, "
            f"{skipped_count} already in library, {failed_count} failed. "
            f"Playlist created with {len(all_navidrome_ids)} tracks.")
     _update("completed", msg, title=playlist_name, current=downloaded_count, total=total)
     print(msg)
+
+    return {
+        "navidrome_playlist_id": result_navidrome_playlist_id,
+        "source_name": playlist_name,
+    }

@@ -28,12 +28,8 @@ services:
       - TRACKDROP_TOKEN_LB=${TRACKDROP_TOKEN_LB:-}
       - TRACKDROP_USER_LB=${TRACKDROP_USER_LB:-}
 
-      # Last.fm Configuration (disabled by default)
+      # Last.fm Configuration (username is per-user setting)
       - TRACKDROP_LASTFM_ENABLED=${TRACKDROP_LASTFM_ENABLED:-False}
-      - TRACKDROP_LASTFM_API_KEY=${TRACKDROP_LASTFM_API_KEY:-}
-      - TRACKDROP_LASTFM_API_SECRET=${TRACKDROP_LASTFM_API_SECRET:-}
-      - TRACKDROP_LASTFM_USERNAME=${TRACKDROP_LASTFM_USERNAME:-}
-      - TRACKDROP_LASTFM_SESSION_KEY=${TRACKDROP_LASTFM_SESSION_KEY:-}
 
       # LLM Configuration (disabled by default)
       - TRACKDROP_LLM_ENABLED=${TRACKDROP_LLM_ENABLED:-False}

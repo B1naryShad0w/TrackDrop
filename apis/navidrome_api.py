@@ -89,29 +89,35 @@ class NavidromeAPI:
             print(f"Error fetching song details: {e}")
         return None
 
-    def _check_song_protection(self, song_id):
+    def _check_song_protection(self, song_id, exclude_playlist=None):
         """Check if a song is protected from deletion by any user interaction.
-        Returns a dict with:
-          'protected': bool - whether the song should be kept (legacy, computed based on old rules)
-          'reasons': list of strings explaining why it's protected
-          'max_rating': int - highest rating across all users (0-5)
-          'has_one_star': bool - whether any user explicitly gave 1 star
-          'in_user_playlist': bool - whether song is in any non-recommendation playlist
-          'has_interaction': bool - whether anyone has interacted (rated or starred)
-          'is_starred': bool - whether anyone has starred/favorited
+
+        A song is protected if ANY user has:
+        - Starred/favorited the song
+        - Rated > 1 star (i.e., 2+ stars)
+        - Added to any playlist (except recommendation playlists and exclude_playlist)
+
+        Args:
+            song_id: Navidrome song ID to check
+            exclude_playlist: Optional playlist name to exclude from protection check
+                             (used when cleaning up a monitored playlist's own tracks)
+
+        Returns:
+            dict with:
+            - protected: bool - whether the song should be kept
+            - reasons: list of strings explaining why it's protected
         """
         result = {
             'protected': False,
             'reasons': [],
-            'max_rating': 0,
-            'has_one_star': False,
-            'in_user_playlist': False,
-            'has_interaction': False,
-            'is_starred': False,
         }
-        recommendation_playlist_names = {
+        # Playlists that don't count as user protection
+        excluded_playlist_names = {
             'listenbrainz weekly', 'last.fm weekly', 'llm weekly'
         }
+        # Also exclude the playlist we're cleaning up (if provided)
+        if exclude_playlist:
+            excluded_playlist_names.add(exclude_playlist.lower())
 
         # Try SQLite direct query first (checks all users)
         if self.navidrome_db_path and os.path.exists(self.navidrome_db_path):
@@ -127,27 +133,20 @@ class NavidromeAPI:
                 )
                 for row in cursor.fetchall():
                     user_id, db_rating, starred, starred_at = row
-                    db_rating = db_rating or 0
-                    # Navidrome stores ratings on 0-10 scale (each increment = half star)
-                    # Convert to 0-5 scale: 2=1star, 4=2stars, 6=3stars, 8=4stars, 10=5stars
-                    rating = db_rating / 2 if db_rating > 0 else 0
+                    rating = db_rating or 0
+                    # Navidrome stores ratings directly as 1-5 scale (matching Subsonic API)
 
-                    if rating > 0 or starred or starred_at:
-                        result['has_interaction'] = True
+                    # Protected if currently starred by any user
+                    # Note: only check 'starred' boolean, not 'starred_at' timestamp
+                    # (starred_at may persist after unstarring)
+                    if starred:
+                        result['protected'] = True
+                        result['reasons'].append("favorited by another user")
 
-                    if 0 < rating <= 1:
-                        result['has_one_star'] = True
-                        result['reasons'].append(f"rated {rating}/5 (low) by user {user_id[:8]}...")
-
-                    if rating > 2:
-                        result['reasons'].append(f"rated {rating}/5 by user {user_id[:8]}...")
-
-                    result['max_rating'] = max(result['max_rating'], rating)
-
-                    if starred or starred_at:
-                        result['is_starred'] = True
-                        result['reasons'].append(f"starred by user {user_id[:8]}...")
-                        result['max_rating'] = max(result['max_rating'], 5)
+                    # Protected if rated > 1 star (2+ stars) by any user
+                    if rating > 1:
+                        result['protected'] = True
+                        result['reasons'].append(f"rated {rating}/5 by another user")
 
                 # Check if song is in any non-recommendation playlist
                 cursor.execute(
@@ -158,14 +157,11 @@ class NavidromeAPI:
                 )
                 for row in cursor.fetchall():
                     playlist_name, owner_id = row
-                    if playlist_name.lower() not in recommendation_playlist_names:
-                        result['in_user_playlist'] = True
+                    if playlist_name.lower() not in excluded_playlist_names:
+                        result['protected'] = True
                         result['reasons'].append(f"in playlist '{playlist_name}'")
 
                 conn.close()
-
-                # Compute legacy 'protected' field for backwards compatibility
-                result['protected'] = result['max_rating'] > 2 or result['is_starred'] or result['in_user_playlist']
                 return result
             except Exception as e:
                 print(f"Warning: Could not query Navidrome DB: {e}. Falling back to API.")
@@ -177,22 +173,13 @@ class NavidromeAPI:
             starred = details.get("starred")
             user_rating = details.get('userRating', 0)
 
-            if user_rating > 0 or starred:
-                result['has_interaction'] = True
-
-            if 0 < user_rating <= 1:
-                result['has_one_star'] = True
-                result['reasons'].append(f"rated {user_rating}/5 (low) by {self.user_nd}")
-
             if starred:
-                result['is_starred'] = True
+                result['protected'] = True
                 result['reasons'].append(f"starred by {self.user_nd}")
-                result['max_rating'] = max(result['max_rating'], 5)
 
-            if user_rating > 2:
+            if user_rating > 1:
+                result['protected'] = True
                 result['reasons'].append(f"rated {user_rating}/5 by {self.user_nd}")
-
-            result['max_rating'] = max(result['max_rating'], user_rating)
 
         # Also check admin user if different
         if self.admin_user and self.admin_user != self.user_nd:
@@ -202,25 +189,14 @@ class NavidromeAPI:
                 starred = admin_details.get("starred")
                 admin_rating = admin_details.get('userRating', 0)
 
-                if admin_rating > 0 or starred:
-                    result['has_interaction'] = True
-
-                if 0 < admin_rating <= 1:
-                    result['has_one_star'] = True
-                    result['reasons'].append(f"rated {admin_rating}/5 (low) by {self.admin_user}")
-
                 if starred:
-                    result['is_starred'] = True
+                    result['protected'] = True
                     result['reasons'].append(f"starred by {self.admin_user}")
-                    result['max_rating'] = max(result['max_rating'], 5)
 
-                if admin_rating > 2:
+                if admin_rating > 1:
+                    result['protected'] = True
                     result['reasons'].append(f"rated {admin_rating}/5 by {self.admin_user}")
 
-                result['max_rating'] = max(result['max_rating'], admin_rating)
-
-        # Compute legacy 'protected' field
-        result['protected'] = result['max_rating'] > 2 or result['is_starred'] or result['in_user_playlist']
         return result
 
     def _delete_song(self, song_path):
@@ -775,359 +751,203 @@ class NavidromeAPI:
 
     # ---- Cleanup ----
 
-    def _should_delete_song(self, protection, is_discover_weekly):
-        """Determine if a song should be deleted based on protection info and source type.
+    def cleanup_source(self, source_name, history_path, exclude_playlist=None, username=None, current_tracks=None):
+        """Clean up auto-downloaded songs for a source before refetch.
 
-        Discover Weekly rules (ListenBrainz/Last.fm/LLM Weekly):
-          - Delete if no interaction at all (nobody added to library)
-          - OR delete if max_rating <= 2 AND not in any user playlist
+        This is called automatically before fetching new recommendations or syncing playlists.
+        For each song in the source's history:
+        - If still in current_tracks: skip (song is still in playlist)
+        - If protected: remove from history (song is now permanent in library)
+        - If not protected: delete file and remove from history
 
-        Other songs rules:
-          - Delete ONLY if user gave 1-star AND no other user has:
-            - favorited (starred)
-            - added to a playlist
-            - given > 2 stars
+        Args:
+            source_name: 'ListenBrainz', 'Last.fm', 'LLM', or 'playlist_{id}'
+            history_path: Path to user's download history file (used for non-playlist sources)
+            exclude_playlist: Optional playlist name to exclude from protection check
+                             (the monitored playlist's own Navidrome playlist)
+            username: Username for DataStore access (required for playlist sources)
+            current_tracks: Optional list of track dicts with 'artist' and 'title' keys.
+                           If provided, only songs NOT in this list will be considered for deletion.
+                           Songs still in current_tracks are kept in history and library.
 
-        Returns: (should_delete: bool, reason: str)
+        Returns:
+            dict with 'deleted' and 'kept' counts and lists
         """
-        if is_discover_weekly:
-            # Rule 1: No interaction at all = delete
-            if not protection['has_interaction']:
-                return True, "no user interaction"
+        from utils import remove_empty_folders
+        from utils.text import normalize_string
 
-            # Rule 2: Low rating (<=2) and not in any user playlist = delete
-            if protection['max_rating'] <= 2 and not protection['in_user_playlist']:
-                return True, f"low rating ({protection['max_rating']}) and not in any playlist"
+        result = {
+            'deleted': 0,
+            'kept': 0,
+            'deleted_songs': [],
+            'kept_songs': [],
+        }
 
-            # Otherwise keep it
-            return False, None
+        # Use DataStore for playlist sources, file-based for recommendation sources
+        is_playlist_source = source_name.startswith('playlist_')
+        if is_playlist_source and username:
+            from persistence.data_store import get_data_store
+            data_store = get_data_store()
+            history = data_store.get_download_history(username)
+            tracks = history.get(source_name, [])
         else:
-            # Non-discover-weekly: only delete if 1-star AND no protection from others
-            if not protection['has_one_star']:
-                return False, None  # No explicit dislike, keep it
+            history = self._load_download_history(history_path)
+            tracks = history.get(source_name, [])
 
-            # User gave 1-star, check if any other user protects it
-            other_user_protection = (
-                protection['is_starred'] or
-                protection['in_user_playlist'] or
-                protection['max_rating'] > 2
-            )
+        if not tracks:
+            print(f"  No tracks in history for {source_name}")
+            return result
 
-            if other_user_protection:
-                return False, None  # Another user protects it
+        print(f"  Processing {len(tracks)} tracks from {source_name} history")
 
-            return True, "1-star with no other user protection"
+        # Build a set of normalized (artist, title) pairs for quick lookup
+        current_track_set = set()
+        if current_tracks:
+            for ct in current_tracks:
+                artist_norm = normalize_string(ct.get('artist', ''))
+                title_norm = normalize_string(ct.get('title', ''))
+                current_track_set.add((artist_norm, title_norm))
+            print(f"  Current playlist has {len(current_track_set)} tracks")
 
-    async def process_api_cleanup(self, history_path, listenbrainz_api=None, lastfm_api=None):
-        """Cleanup routine: check ratings and delete songs based on user interactions.
-
-        Discover Weekly playlists (ListenBrainz/Last.fm/LLM Weekly):
-          - Auto-remove if nobody added to library
-          - OR if nobody gave > 2 stars AND not in anyone's playlist
-
-        Other songs:
-          - Remove only if user gave 1-star AND no other user has favorited,
-            added to playlist, or given > 2 stars
-        """
         salt, token = self._get_navidrome_auth_params()
-        history = self._load_download_history(history_path)
+        deleted_song_ids = []
+        remaining_tracks = []  # Tracks to keep in history
 
-        if not history:
-            print("No download history found. Nothing to clean up.")
-            return
+        for track in tracks:
+            artist = track.get('artist', '')
+            title = track.get('title', '')
+            nd_id = track.get('navidrome_id', '')
+            file_rel_path = track.get('file_path', '')
+            label = f"{artist} - {title}"
 
-        deleted_songs = []
-        deleted_song_ids = []  # Track IDs of successfully deleted songs for API cleanup
-        kept_songs = []
+            # Check if track is still in current playlist
+            if current_tracks:
+                artist_norm = normalize_string(artist)
+                title_norm = normalize_string(title)
+                if (artist_norm, title_norm) in current_track_set:
+                    # Track still in playlist - keep it in history and library
+                    print(f"    STILL IN PLAYLIST: {label}")
+                    remaining_tracks.append(track)
+                    result['kept'] += 1
+                    result['kept_songs'].append(f"{label} (still in playlist)")
+                    continue
 
+            # Track is no longer in playlist - check if it should be deleted
+            # Get song details to find the file path
+            song_details = self._get_song_details(nd_id, salt, token) if nd_id else None
+
+            if song_details is None:
+                # Song already removed from Navidrome
+                print(f"    {label}: already removed from library")
+                result['deleted'] += 1
+                result['deleted_songs'].append(label)
+                continue
+
+            # Check protection status (exclude the playlist we're cleaning up)
+            protection = self._check_song_protection(nd_id, exclude_playlist=exclude_playlist)
+
+            if protection['protected']:
+                # Song is protected - keep it (now permanent in library, but remove from history)
+                reasons = '; '.join(protection['reasons']) if protection['reasons'] else 'user protection'
+                print(f"    KEEP (protected): {label} ({reasons})")
+                result['kept'] += 1
+                result['kept_songs'].append(f"{label} ({reasons})")
+            else:
+                # Song is not protected - delete it
+                file_path = self._find_actual_song_path(file_rel_path, song_details)
+                if file_path and os.path.exists(file_path):
+                    if self._delete_song(file_path):
+                        if nd_id:
+                            deleted_song_ids.append(nd_id)
+                        result['deleted'] += 1
+                        result['deleted_songs'].append(label)
+                        print(f"    DELETE: {label}")
+                    else:
+                        print(f"    DELETE FAILED: {label}")
+                        result['deleted'] += 1
+                        result['deleted_songs'].append(f"{label} (delete failed)")
+                else:
+                    # File not on disk but still in Navidrome - add to deleted_song_ids
+                    if nd_id:
+                        deleted_song_ids.append(nd_id)
+                    print(f"    DELETE: {label} (file not found on disk)")
+                    result['deleted'] += 1
+                    result['deleted_songs'].append(label)
+
+        # Update history - keep remaining tracks (those still in playlist)
+        if is_playlist_source and username:
+            # For playlist sources, update the history with only remaining tracks
+            # Get the full history, update this source, and save it back
+            full_history = data_store.get_download_history(username)
+            if remaining_tracks:
+                full_history[source_name] = remaining_tracks
+            else:
+                full_history.pop(source_name, None)
+            data_store.set_download_history(username, full_history)
+        else:
+            history[source_name] = remaining_tracks if remaining_tracks else []
+            self._save_download_history(history_path, history)
+
+        # Clear the recommendation playlist for this source
         playlist_name_map = {
             'ListenBrainz': 'ListenBrainz Weekly',
             'Last.fm': 'Last.fm Weekly',
             'LLM': 'LLM Weekly',
         }
-
-        # Sources that use "discover weekly" deletion rules
-        discover_weekly_sources = {'ListenBrainz', 'Last.fm', 'LLM'}
-
-        for source_name in list(history.keys()):
-            tracks = history.get(source_name, [])
-            if not tracks:
-                continue
-
-            is_discover_weekly = source_name in discover_weekly_sources
-            rule_type = "discover-weekly" if is_discover_weekly else "standard"
-            print(f"\n=== Cleanup for {source_name} ({len(tracks)} tracks, {rule_type} rules) ===")
-
-            playlist_name = playlist_name_map.get(source_name, f"{source_name} Weekly")
+        playlist_name = playlist_name_map.get(source_name)
+        if playlist_name:
             existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
-            playlist_songs = self._get_playlist_songs(existing_playlist['id'], salt, token) if existing_playlist else []
+            if existing_playlist:
+                self._update_playlist(existing_playlist['id'], [], salt, token)
+                print(f"  Cleared playlist: {playlist_name}")
 
-            tracks_to_remove = []
-            tracks_to_keep_ids = []
-
-            for track in tracks:
-                artist = track.get('artist', '')
-                title = track.get('title', '')
-                nd_id = track.get('navidrome_id', '')
-                file_rel_path = track.get('file_path', '')
-                label = f"{artist} - {title}"
-
-                song_details = self._get_song_details(nd_id, salt, token) if nd_id else None
-
-                if song_details is None:
-                    print(f"  Not found in Navidrome: {label}")
-                    tracks_to_remove.append(track)
-                    continue
-
-                protection = self._check_song_protection(nd_id)
-                should_delete, delete_reason = self._should_delete_song(protection, is_discover_weekly)
-
-                if not should_delete:
-                    # Keep the song
-                    reasons = '; '.join(protection['reasons']) if protection['reasons'] else 'user interaction'
-                    print(f"  KEEP: {label} ({reasons})")
-                    kept_songs.append(f"{label} (rating={protection['max_rating']})")
-                    tracks_to_remove.append(track)  # Remove from history (now permanent)
-
-                    # Submit positive feedback for high-rated tracks
-                    if protection['max_rating'] == 5:
-                        if source_name == 'ListenBrainz' and self.listenbrainz_enabled:
-                            mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
-                            if mbid and listenbrainz_api:
-                                await listenbrainz_api.submit_feedback(mbid, 1)
-                        elif source_name == 'Last.fm' and self.lastfm_enabled:
-                            if lastfm_api:
-                                try:
-                                    await asyncio.to_thread(lastfm_api.love_track, title, artist)
-                                except Exception as e:
-                                    print(f"  Error submitting Last.fm love: {e}")
-
-                    if nd_id:
-                        tracks_to_keep_ids.append(nd_id)
-                else:
-                    # Delete the song
-                    print(f"  DELETE: {label} ({delete_reason})")
-                    file_path = self._find_actual_song_path(file_rel_path, song_details)
-                    if file_path and os.path.exists(file_path):
-                        if self._delete_song(file_path):
-                            if nd_id:
-                                deleted_song_ids.append(nd_id)
-                            deleted_songs.append(f"{label} ({delete_reason})")
-                    else:
-                        print(f"    File not found on disk")
-                        deleted_songs.append(f"{label} (file not found)")
-                    tracks_to_remove.append(track)
-
-                    # Submit negative feedback for 1-star
-                    if protection['has_one_star']:
-                        if source_name == 'ListenBrainz' and self.listenbrainz_enabled:
-                            mbid = track.get('recording_mbid', '') or song_details.get('musicBrainzId', '')
-                            if mbid and listenbrainz_api:
-                                await listenbrainz_api.submit_feedback(mbid, -1)
-
-            # Remove processed tracks from history
-            for track in tracks_to_remove:
-                self.remove_from_download_history(history_path, source_name, track.get('artist', ''), track.get('title', ''))
-
-            # Update playlist to remove deleted songs
-            if existing_playlist and playlist_songs:
-                processed_ids = {t.get('navidrome_id', '') for t in tracks}
-                new_song_ids = []
-                for ps in playlist_songs:
-                    ps_id = ps.get('id', '')
-                    if ps_id not in processed_ids or ps_id in tracks_to_keep_ids:
-                        new_song_ids.append(ps_id)
-                self._update_playlist(existing_playlist['id'], new_song_ids, salt, token)
-
-        # Summary
-        print(f"\n{'='*50}")
-        print("CLEANUP SUMMARY")
-        print(f"{'='*50}")
-        if deleted_songs:
-            print(f"\nDeleted {len(deleted_songs)} songs:")
-            for s in deleted_songs:
-                print(f"  - {s}")
-        if kept_songs:
-            print(f"\nKept {len(kept_songs)} songs (now permanent in library):")
-            for s in kept_songs:
-                print(f"  - {s}")
-        if not deleted_songs and not kept_songs:
-            print("\nNo songs processed.")
-
-        print("\nRemoving empty folders...")
-        from utils import remove_empty_folders
-        remove_empty_folders(self.music_library_path)
-
-        if deleted_songs:
-            print("Triggering full library scan to detect deleted entries...")
+        # Clean up empty folders and trigger scan if we deleted files
+        if result['deleted'] > 0:
+            remove_empty_folders(self.music_library_path)
             self._start_scan(full_scan=True)
-            await self._wait_for_scan_async(timeout=60)
-            # Use Navidrome's native API to purge ONLY the specific songs we deleted
+            self._wait_for_scan(timeout=120)
+            # Use Navidrome's native API to purge only the specific songs we deleted
             if deleted_song_ids:
-                print(f"Purging {len(deleted_song_ids)} deleted songs from Navidrome...")
                 self.delete_missing_files_from_navidrome(song_ids=deleted_song_ids)
 
-    async def process_debug_cleanup(self, history_path):
-        """Debug cleanup with detailed logging. Returns summary dict."""
-        import sys
-
-        print(f"\n{'='*60}")
-        print(f"{'='*60}")
-        sys.stdout.flush()
-
-        salt, token = self._get_navidrome_auth_params()
-        history = self._load_download_history(history_path)
-
-        if not history:
-            sys.stdout.flush()
-
-        summary = {'deleted': [], 'kept': [], 'failed': [], 'playlists_cleared': []}
-        deleted_song_ids = []  # Track IDs of successfully deleted songs for API cleanup
-
-        playlist_name_map = {
-            'ListenBrainz': 'ListenBrainz Weekly',
-            'Last.fm': 'Last.fm Weekly',
-            'LLM': 'LLM Weekly',
-        }
-
-        remaining_history = {}
-
-        # Process download history
-        if history:
-            total_tracks = sum(len(v) for v in history.values())
-            sys.stdout.flush()
-
-            for source_name in list(history.keys()):
-                tracks = history.get(source_name, [])
-                if not tracks:
-                    continue
-
-                remaining_tracks = []
-
-                for track in tracks:
-                    artist = track.get('artist', '')
-                    title = track.get('title', '')
-                    nd_id = track.get('navidrome_id', '')
-                    file_rel_path = track.get('file_path', '')
-                    label = f"{artist} - {title}"
-
-
-                    if not nd_id:
-                        summary['failed'].append(f"{label} (no navidrome_id)")
-                        remaining_tracks.append(track)
-                        continue
-
-                    song_details = self._get_song_details(nd_id, salt, token)
-                    if song_details is None:
-                        summary['deleted'].append(f"{label} (already gone)")
-                        continue
-
-                    protection = self._check_song_protection(nd_id)
-                    if protection['protected']:
-                        reasons = '; '.join(protection['reasons'])
-                        summary['kept'].append(f"{label} ({reasons})")
-                        continue
-
-
-                    file_path = self._find_actual_song_path(file_rel_path, song_details)
-                    if file_path and os.path.exists(file_path):
-                        if self._delete_song(file_path):
-                            deleted_song_ids.append(nd_id)
-                            summary['deleted'].append(f"{label}")
-                        else:
-                            summary['failed'].append(f"{label} (delete failed)")
-                            remaining_tracks.append(track)
-                    else:
-                        summary['failed'].append(f"{label} (file not found)")
-
-                    sys.stdout.flush()
-
-                if remaining_tracks:
-                    remaining_history[source_name] = remaining_tracks
-
-        # Clear recommendation playlists
-        for source_name, playlist_name in playlist_name_map.items():
-            existing_playlist = self._find_playlist_by_name(playlist_name, salt, token)
-            if not existing_playlist:
-                continue
-            song_count = existing_playlist.get('songCount', 0)
-            self._update_playlist(existing_playlist['id'], [], salt, token)
-            summary['playlists_cleared'].append(f"{playlist_name} ({song_count} songs)")
-            sys.stdout.flush()
-
-        # Save remaining history
-        self._save_download_history(history_path, remaining_history)
-
-        # Clear streamrip databases
-        for db_file in ['/app/temp_downloads/downloads.db', '/app/temp_downloads/failed_downloads.db']:
-            if os.path.exists(db_file):
-                try:
-                    os.remove(db_file)
-                except OSError:
-                    pass
-
-        # Remove empty folders
-        from utils import remove_empty_folders
-        remove_empty_folders(self.music_library_path)
-
-        # Trigger full scan to detect deleted entries
-        self._start_scan(full_scan=True)
-        await self._wait_for_scan_async(timeout=60)
-        # Use Navidrome's native API to purge ONLY the specific songs we deleted
-        if deleted_song_ids:
-            self.delete_missing_files_from_navidrome(song_ids=deleted_song_ids)
-
-        print(f"\n{'='*60}")
-        print(f"{'='*60}")
-        sys.stdout.flush()
-
-        return summary
+        print(f"  Cleanup complete: {result['deleted']} deleted, {result['kept']} kept")
+        return result
 
     def star_song_for_user(self, song_id, username):
-        """Add a song to a user's favorites by writing to Navidrome DB.
+        """Add a song to a user's favorites using the Subsonic API.
 
         Args:
             song_id: The Navidrome song ID
-            username: The username to add the favorite for
+            username: The username to add the favorite for (used for context, API uses authenticated user)
 
         Returns:
             True if successful, False otherwise
         """
-        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
-            return False
-
-        user_id = self._get_user_id_by_username(username)
-        if not user_id:
-            return False
-
         try:
-            conn = sqlite3.connect(self.navidrome_db_path)
-            cursor = conn.cursor()
-
-            cursor.execute(
-                "SELECT starred FROM annotation WHERE item_id = ? AND item_type = 'media_file' AND user_id = ?",
-                (song_id, user_id)
-            )
-            row = cursor.fetchone()
-
-            from datetime import datetime
-            now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-
-            if row:
-                cursor.execute(
-                    "UPDATE annotation SET starred = 1, starred_at = ? WHERE item_id = ? AND item_type = 'media_file' AND user_id = ?",
-                    (now, song_id, user_id)
-                )
+            salt, token = self._get_navidrome_auth_params()
+            url = f"{self.root_nd}/rest/star.view"
+            params = {
+                'u': self.user_nd,
+                's': salt,
+                't': token,
+                'v': '1.16.0',
+                'c': 'trackdrop',
+                'f': 'json',
+                'id': song_id
+            }
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                status = data.get('subsonic-response', {}).get('status')
+                if status == 'ok':
+                    return True
+                else:
+                    error = data.get('subsonic-response', {}).get('error', {})
+                    print(f"Error starring song via API: {error.get('message', 'Unknown error')}")
+                    return False
             else:
-                annotation_id = str(uuid.uuid4())
-                cursor.execute(
-                    "INSERT INTO annotation (ann_id, user_id, item_id, item_type, starred, starred_at) VALUES (?, ?, ?, 'media_file', 1, ?)",
-                    (annotation_id, user_id, song_id, now)
-                )
-
-            conn.commit()
-            conn.close()
-            return True
+                print(f"Error starring song: HTTP {response.status_code}")
+                return False
         except Exception as e:
             print(f"Error starring song: {e}")
             return False
@@ -1192,18 +1012,21 @@ class NavidromeAPI:
 
         Uses admin credentials to create a playlist, then updates ownership to the specified user.
         Note: Navidrome's POST /api/playlist ignores ownerId, so we must update it after creation.
+
+        Returns:
+            The created playlist ID (str) on success, or None on failure.
         """
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
                 print("Cannot create playlist: failed to authenticate with Navidrome")
-                return False
+                return None
 
             # Look up the user ID
             owner_id = self._get_user_id_by_username(owner_username)
             if not owner_id:
                 print(f"Cannot create playlist: user '{owner_username}' not found")
-                return False
+                return None
 
             headers = {
                 "x-nd-authorization": f"Bearer {token}",
@@ -1261,13 +1084,13 @@ class NavidromeAPI:
                     else:
                         print(f"  Warning: Failed to add tracks: {tracks_response.status_code}")
 
-                return True
+                return playlist_id
             else:
                 print(f"Error creating playlist: {response.status_code} - {response.text}")
-                return False
+                return None
         except Exception as e:
             print(f"Error creating playlist for user: {e}")
-            return False
+            return None
 
     def _update_playlist_for_user(self, playlist_id, song_ids):
         """Update a playlist's tracks using the Subsonic API.
@@ -1322,6 +1145,31 @@ class NavidromeAPI:
             print(f"Error updating playlist: {e}")
             return False
 
+    def _get_playlist_by_id(self, playlist_id):
+        """Get a playlist by its ID.
+
+        Returns:
+            The playlist dict if found, or None if not found or error.
+        """
+        try:
+            token = self._get_navidrome_jwt_token()
+            if not token:
+                return None
+
+            headers = {"x-nd-authorization": f"Bearer {token}"}
+            response = requests.get(
+                f"{self.root_nd}/api/playlist/{playlist_id}",
+                headers=headers,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"Error getting playlist by ID: {e}")
+            return None
+
     def _find_playlist_by_name_for_user(self, name, owner_username):
         """Find a playlist by name owned by a specific user."""
         try:
@@ -1366,24 +1214,42 @@ class NavidromeAPI:
                 print("Cannot delete missing files: failed to authenticate with Navidrome")
                 return False
 
-            headers = {"x-nd-authorization": f"Bearer {token}"}
+            headers = {
+                "x-nd-authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
 
             if song_ids:
-                # Delete specific IDs
-                params = {"id": song_ids}
+                # Delete specific IDs - pass as JSON array in body
                 response = requests.delete(
                     f"{self.root_nd}/api/missing",
                     headers=headers,
-                    params=params,
+                    json=song_ids,
                     timeout=30
                 )
             else:
-                # Delete all missing files
-                response = requests.delete(
+                # Delete all missing files - first get all IDs, then delete
+                get_response = requests.get(
                     f"{self.root_nd}/api/missing",
-                    headers=headers,
+                    headers={"x-nd-authorization": f"Bearer {token}"},
+                    params={"_end": 10000, "_order": "ASC", "_sort": "title", "_start": 0},
                     timeout=30
                 )
+                if get_response.status_code == 200:
+                    missing = get_response.json()
+                    if not missing:
+                        print("No missing files to delete")
+                        return True
+                    all_ids = [m.get('id') for m in missing if m.get('id')]
+                    response = requests.delete(
+                        f"{self.root_nd}/api/missing",
+                        headers=headers,
+                        json=all_ids,
+                        timeout=30
+                    )
+                else:
+                    print(f"Failed to get missing files: {get_response.status_code}")
+                    return False
 
             if response.status_code in (200, 204):
                 print(f"Successfully deleted missing files from Navidrome")
@@ -1443,14 +1309,6 @@ class NavidromeAPI:
             for song_id, title, artist, album, db_path in low_rated_songs:
                 protection = self._check_song_protection(song_id)
 
-                # Can delete if no OTHER user has protected it
-                # (we ignore the current user's 1-star since that's what triggered this)
-                other_user_protection = (
-                    protection['is_starred'] or
-                    protection['in_user_playlist'] or
-                    protection['max_rating'] > 2
-                )
-
                 song_info = {
                     'navidrome_id': song_id,
                     'artist': artist,
@@ -1459,18 +1317,11 @@ class NavidromeAPI:
                     'path': db_path
                 }
 
-                if not other_user_protection:
+                if not protection['protected']:
                     song_info['reason'] = 'No other user protection'
                     results['to_delete'].append(song_info)
                 else:
-                    keep_reasons = []
-                    if protection['is_starred']:
-                        keep_reasons.append("favorited by another user")
-                    if protection['in_user_playlist']:
-                        keep_reasons.append("in a user playlist")
-                    if protection['max_rating'] > 2:
-                        keep_reasons.append(f"rated {protection['max_rating']}/5 by another user")
-                    song_info['reason'] = '; '.join(keep_reasons)
+                    song_info['reason'] = '; '.join(protection['reasons'])
                     results['to_keep'].append(song_info)
 
         except Exception as e:
@@ -1545,7 +1396,7 @@ class NavidromeAPI:
             remove_empty_folders(self.music_library_path)
             self._start_scan(full_scan=True)
             await self._wait_for_scan_async(timeout=60)
-            # Use Navidrome's native API to purge ONLY the specific songs we deleted
+            # Purge only the specific songs we deleted
             if deleted_song_ids:
                 self.delete_missing_files_from_navidrome(song_ids=deleted_song_ids)
 

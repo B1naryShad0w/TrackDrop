@@ -18,14 +18,8 @@ ROOT_LB = "https://api.listenbrainz.org"
 TOKEN_LB = ""
 USER_LB = ""
 
-# Last.fm API Configuration
+# Last.fm API Configuration (only username needed for recommendations - per-user setting)
 LASTFM_ENABLED = False
-LASTFM_API_KEY = ""
-LASTFM_API_SECRET = ""
-LASTFM_USERNAME = ""
-LASTFM_PASSWORD = ""
-LASTFM_PASSWORD_HASH = ""
-LASTFM_SESSION_KEY = ""
 
 # LLM Suggestions Settings
 LLM_ENABLED = False

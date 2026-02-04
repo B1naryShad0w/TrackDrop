@@ -909,15 +909,15 @@
         }
         .pl-popup h3 { margin: 0 0 12px; }
         .pl-popup p { color: #b0b0b0; font-size: 0.9em; margin: 0 0 16px; }
-        .pl-popup-btns { display: flex; flex-direction: column; gap: 10px; }
-        .pl-popup-btns button {
+        .pl-popup button.btn-once {
             padding: 12px 16px; border: none; border-radius: 8px; cursor: pointer;
-            font-size: 0.95em; transition: background 0.2s;
+            font-size: 0.95em; transition: background 0.2s, opacity 0.2s;
+            background: var(--accent-color); color: #000; font-weight: 500;
         }
-        .pl-popup-btns .btn-monitor { background: var(--accent-color); color: #000; }
-        .pl-popup-btns .btn-monitor:hover { filter: brightness(1.15); }
-        .pl-popup-btns .btn-once { background: #3a3a5a; color: var(--text-color); }
-        .pl-popup-btns .btn-once:hover { background: #4a4a6a; }
+        .pl-popup button.btn-once:hover:not(:disabled) { filter: brightness(1.15); }
+        .pl-popup button.btn-once:disabled {
+            background: #3a3a5a; color: #888; cursor: not-allowed; opacity: 0.7;
+        }
         .pl-popup-interval {
             display: none; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.04);
             border-radius: 8px;
@@ -1084,20 +1084,6 @@
                                 <label for="lastfmUsername">Username:</label>
                                 <input type="text" id="lastfmUsername" placeholder="Your Last.fm username">
                             </div>
-                            <div class="form-group">
-                                <label for="lastfmApiKey">
-                                    API Key:
-                                    <span class="help-icon" title="Get your API key from https://www.last.fm/api/account/create → Create API account → Copy API key">ℹ️</span>
-                                </label>
-                                <input type="text" id="lastfmApiKey" placeholder="Your Last.fm API key">
-                            </div>
-                            <div class="form-group">
-                                <label for="lastfmApiSecret">
-                                    API Secret:
-                                    <span class="help-icon" title="Get your API secret from https://www.last.fm/api/account/create → Create API account → Copy Shared secret">ℹ️</span>
-                                </label>
-                                <input type="text" id="lastfmApiSecret" placeholder="Your Last.fm API secret">
-                            </div>
                         </div>
 
                         <button onclick="saveUserSettings()">Save Settings</button>
@@ -1167,7 +1153,7 @@
                             <button onclick="fetchLastFmNow()" style="background-color: #d51007;">
                                 Fetch Last.fm Recommendations
                             </button>
-                            <button onclick="runNow()" style="background-color: #3a3a5a; border: 1px solid var(--border-color);">
+                            <button id="runNowBtn" onclick="runNow()" style="background-color: #3a3a5a; border: 1px solid var(--border-color);">
                                 Fetch All Recommendations
                             </button>
                         </div>
@@ -1244,35 +1230,33 @@
     <div id="playlistModeOverlay" class="pl-popup-overlay">
         <div class="pl-popup">
             <h3>Download Playlist</h3>
-            <p id="playlistModeName" style="font-weight: 500; margin-bottom: 4px;"></p>
-            <p id="playlistModeUrl" style="font-size: 0.8em; color: #888; word-break: break-all;"></p>
+
+            <!-- Playlist name input -->
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 0.85em; color: #b0b0b0; display: block; margin-bottom: 4px;">Playlist name</label>
+                <input type="text" id="playlistNameInput" style="width: 100%; padding: 10px; border-radius: 6px; background: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color); box-sizing: border-box; font-size: 1em;" placeholder="Playlist name">
+            </div>
+
+            <!-- URL and track count -->
+            <p id="playlistModeUrl" style="font-size: 0.8em; color: #888; word-break: break-all; margin-bottom: 4px;"></p>
             <p id="playlistModeTrackCount" style="font-size: 0.85em; color: #b0b0b0; margin-bottom: 12px;"></p>
 
-            <!-- Duplicate name warning -->
-            <div id="playlistDuplicateSection" style="display: none; margin-bottom: 14px; padding: 10px; background: rgba(255,170,0,0.1); border-radius: 8px; border: 1px solid rgba(255,170,0,0.3);">
-                <p style="color: #ffa600; font-size: 0.9em; margin: 0 0 8px;">A playlist with this name already exists in Navidrome.</p>
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                    <label style="font-size: 0.85em; cursor: pointer;">
-                        <input type="radio" name="playlistDuplicateAction" value="overwrite" checked> Overwrite existing
-                    </label>
-                    <label style="font-size: 0.85em; cursor: pointer;">
-                        <input type="radio" name="playlistDuplicateAction" value="rename"> Use different name
-                    </label>
-                </div>
-                <input type="text" id="playlistRenameInput" style="display: none; width: 100%; padding: 8px; border-radius: 4px; background: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color); box-sizing: border-box;" placeholder="Enter new playlist name">
+            <!-- Status message for name conflicts / monitoring -->
+            <div id="playlistStatusMessage" style="display: none; margin-bottom: 14px; padding: 10px; border-radius: 8px; font-size: 0.9em;"></div>
+
+            <!-- Monitoring toggle -->
+            <div style="margin-bottom: 14px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95em;">
+                    <input type="checkbox" id="playlistMonitorToggle" style="width: 18px; height: 18px;">
+                    Monitor for new tracks
+                </label>
             </div>
 
-            <div class="pl-popup-btns">
-                <button class="btn-monitor" onclick="submitPlaylistDownload(true)">
-                    Download &amp; Monitor for new tracks
-                </button>
-                <button class="btn-once" onclick="submitPlaylistDownload(false)">
-                    Download once
-                </button>
-            </div>
-            <div id="playlistIntervalSection" class="pl-popup-interval">
-                <label>Check for new tracks every:
-                    <select id="playlistPollInterval">
+            <!-- Monitoring options (shown when toggle is checked) -->
+            <div id="playlistMonitorOptions" style="display: none; margin-bottom: 14px; padding: 12px; background: rgba(100,100,150,0.1); border-radius: 8px; border: 1px solid rgba(100,100,150,0.2);">
+                <label style="font-size: 0.85em; display: flex; align-items: center; gap: 8px;">
+                    Check for new tracks every:
+                    <select id="playlistPollInterval" style="padding: 4px 8px; border-radius: 4px; background: #3a3a5a; color: var(--text-color); border: 1px solid var(--border-color);">
                         <option value="6">6 hours</option>
                         <option value="12">12 hours</option>
                         <option value="24" selected>24 hours</option>
@@ -1280,7 +1264,17 @@
                         <option value="168">Weekly</option>
                     </select>
                 </label>
+                <label style="display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 0.85em; cursor: pointer;">
+                    <input type="checkbox" id="playlistAutoCleanup">
+                    Auto-cleanup old tracks on sync
+                    <span title="When enabled, tracks removed from the playlist will be deleted from your library (unless starred, rated, or in other playlists)" style="cursor: help; opacity: 0.6;">?</span>
+                </label>
             </div>
+
+            <!-- Download button -->
+            <button id="playlistDownloadBtn" class="btn-once" style="width: 100%; padding: 12px; font-size: 1em;">
+                Download
+            </button>
         </div>
     </div>
 
@@ -1395,25 +1389,6 @@
             }
         }
 
-
-async function triggerNavidromeCleanup() {
-    const response = await fetch('/api/trigger_navidrome_cleanup', {
-        method: 'POST'
-    });
-    const data = await response.json();
-    showMessage(data.status, data.message);
-
-    // Log debug information to console
-    if (data.debug_info) {
-        console.groupCollapsed('Deezer API Debug Info (Fresh Release Download)');
-        console.log('Album Info Sent:', data.debug_info.album_info_sent);
-        console.log('Download Result:', data.debug_info.download_result);
-        if (data.debug_info.error_traceback) {
-            console.error('Error Traceback:', data.debug_info.error_traceback);
-        }
-        console.groupEnd();
-    }
-}
 
 // Store pending deletions for confirmation
 let pendingCleanupSongIds = [];
@@ -1642,6 +1617,7 @@ function showCleanupResults(data) {
             const dl = item.downloaded_count || 0;
             const skip = item.skipped_count || 0;
             const fail = item.failed_count || 0;
+            const cleanupDeleted = item.cleanup_deleted || 0;
             const processed = dl + skip + fail;
             const pending = Math.max(0, total - processed);
             const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
@@ -1689,6 +1665,7 @@ function showCleanupResults(data) {
                             ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
                             ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
                             ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
+                            ${cleanupDeleted > 0 ? `<span class="dq-stat"><span class="dq-stat-dot" style="background-color: #ff9800;"></span>${cleanupDeleted} removed</span>` : ''}
                             ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
                         </div>
                     ` : ''}
@@ -2099,11 +2076,6 @@ function showCleanupResults(data) {
                                     <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
                                         <path d="M17 17H17.01M17.4 14H18C18.9319 14 19.3978 14 19.7654 14.1522C20.2554 14.3552 20.6448 14.7446 20.8478 15.2346C21 15.6022 21 16.0681 21 17C21 17.9319 21 18.3978 20.8478 19.8478C20.6448 19.2554 20.2554 19.6448 19.7654 19.8478C19.3978 20 18.9319 20 18 20H6C5.06812 20 4.60218 20 4.23463 19.8478C3.74458 19.6448 3.35523 19.2554 3.15224 19.2346C3 18.6022 3 18.0681 3 17C3 16.0681 3 15.6022 3.15224 15.2346C3.35523 14.7446 3.74458 14.3552 4.23463 14.1522C4.60218 14 5.06812 14 6 14H6.6M12 15V4M12 15L9 12M12 15L15 12" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>                                    </svg>
                                 </button>
-                                <button class="feedback-btn like-btn" onclick="submitLastFmFeedback(this, '${song.title.replace(/'/g, "\\'")}', '${song.artist.replace(/'/g, "\\'")}')" title="Love this track">
-                                    <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="feedback-icon">
-                                        <path fill-rule="evenodd" clip-rule="evenodd" d="M12 6.00019C10.2006 3.90317 7.19377 3.2551 4.93923 5.17534C2.68468 7.09558 2.36727 10.3061 4.13778 12.5772C5.60984 14.4654 10.0648 18.4479 11.5249 19.7369C11.6882 19.8811 11.7699 19.9532 11.8652 19.9815C11.9483 20.0062 12.0393 20.0062 12.1225 19.9815C12.2178 19.9532 12.2994 19.8811 12.4628 19.7369C13.9229 18.4479 18.3778 14.4654 19.8499 12.5772C21.6204 10.3061 21.3417 7.07538 19.0484 5.17534C16.7551 3.2753 13.7994 3.90317 12 6.00019Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                </button>
                             </div>
                         </div>`;
                     }).join('');
@@ -2179,23 +2151,6 @@ function showCleanupResults(data) {
                 console.error('Error submitting feedback:', error);
                 showMessage('error', 'Failed to submit feedback');
                 applyTemporaryFeedbackStyle(buttonElement, 'error'); // Apply error style on network error
-            }
-        }
-
-        async function submitLastFmFeedback(buttonElement, track, artist) {
-            try {
-                const response = await fetch('/api/submit_lastfm_feedback', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ track: track, artist: artist })
-                });
-                const data = await response.json();
-                showMessage(data.status, data.message);
-                applyTemporaryFeedbackStyle(buttonElement, data.status);
-            } catch (error) {
-                console.error('Error submitting Last.fm feedback:', error);
-                showMessage('error', 'Failed to submit feedback');
-                applyTemporaryFeedbackStyle(buttonElement, 'error');
             }
         }
 
@@ -2536,7 +2491,7 @@ function showCleanupResults(data) {
             // Check if configuration is empty (no services configured)
             const hasNavidrome = (config.ROOT_ND && config.ROOT_ND !== '') || (config.USER_ND && config.USER_ND !== '') || (config.PASSWORD_ND && config.PASSWORD_ND !== '');
             const hasListenBrainz = config.LISTENBRAINZ_ENABLED && ((config.TOKEN_LB && config.TOKEN_LB !== '') || (config.USER_LB && config.USER_LB !== ''));
-            const hasLastFm = config.LASTFM_ENABLED && ((config.LASTFM_API_KEY && config.LASTFM_API_KEY !== '') || (config.LASTFM_API_SECRET && config.LASTFM_API_SECRET !== '') || (config.LASTFM_USERNAME && config.LASTFM_USERNAME !== ''));
+            const hasLastFm = config.LASTFM_ENABLED;
             const hasAnyConfig = hasNavidrome || hasListenBrainz || hasLastFm || (config.DEEZER_ARL && config.DEEZER_ARL !== '');
             const llmSection = document.getElementById('llmSection');
 
@@ -2672,19 +2627,39 @@ function showCleanupResults(data) {
 
         // --- Playlist mode popup state ---
         let _pendingPlaylistLink = '';
+        let _playlistPopupState = {
+            originalName: '',
+            trackCount: 0,
+            nameExists: false,
+            nameIsMonitored: false,
+            urlIsMonitored: false,
+            monitoredId: null,
+        };
+        let _nameCheckTimeout = null;
 
         async function _showPlaylistPopup(url) {
             _pendingPlaylistLink = url;
-            document.getElementById('playlistModeUrl').textContent = url;
 
-            // Reset duplicate section
-            const dupSection = document.getElementById('playlistDuplicateSection');
-            dupSection.style.display = 'none';
-            document.getElementById('playlistRenameInput').style.display = 'none';
-            document.getElementById('playlistRenameInput').value = '';
-            document.querySelectorAll('input[name="playlistDuplicateAction"]').forEach(r => { if (r.value === 'overwrite') r.checked = true; });
+            // Reset UI state
+            const nameInput = document.getElementById('playlistNameInput');
+            const urlEl = document.getElementById('playlistModeUrl');
+            const trackCountEl = document.getElementById('playlistModeTrackCount');
+            const statusMsg = document.getElementById('playlistStatusMessage');
+            const monitorToggle = document.getElementById('playlistMonitorToggle');
+            const monitorOptions = document.getElementById('playlistMonitorOptions');
+            const downloadBtn = document.getElementById('playlistDownloadBtn');
 
-            // Call preflight to check for duplicates
+            nameInput.value = '';
+            urlEl.textContent = url;
+            trackCountEl.textContent = '';
+            statusMsg.style.display = 'none';
+            monitorToggle.checked = false;
+            monitorToggle.disabled = false;
+            monitorOptions.style.display = 'none';
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = 'Download';
+
+            // Call preflight to get playlist info
             try {
                 const resp = await fetch('/api/playlist_preflight', {
                     method: 'POST',
@@ -2693,20 +2668,122 @@ function showCleanupResults(data) {
                 });
                 const result = await resp.json();
                 if (result.status === 'success') {
-                    document.getElementById('playlistModeUrl').textContent = `${result.name} (${result.track_count} tracks) — ${url}`;
-                    if (result.exists) {
-                        dupSection.style.display = 'block';
-                        document.getElementById('playlistRenameInput').value = result.name + ' (2)';
+                    _playlistPopupState = {
+                        originalName: result.name,
+                        trackCount: result.track_count,
+                        nameExists: result.exists,
+                        nameIsMonitored: false, // Will check via name check
+                        urlIsMonitored: result.is_monitored,
+                        monitoredId: result.monitored_id,
+                    };
+
+                    nameInput.value = result.name;
+                    trackCountEl.textContent = `${result.track_count} tracks`;
+
+                    // If URL is already monitored, show special message
+                    if (result.is_monitored) {
+                        statusMsg.textContent = `This playlist is already being monitored as "${result.monitored_name}". Downloading will sync new tracks.`;
+                        statusMsg.style.display = 'block';
+                        statusMsg.style.background = 'rgba(100,170,255,0.1)';
+                        statusMsg.style.border = '1px solid rgba(100,170,255,0.3)';
+                        statusMsg.style.color = '#8ac4ff';
+                        monitorToggle.checked = true;
+                        monitorToggle.disabled = true; // Can't unmonitor from here
+                        monitorOptions.style.display = 'block';
+                        downloadBtn.textContent = 'Sync Playlist';
+                    } else {
+                        // Check name status
+                        await _checkPlaylistName(result.name);
                     }
-                    // Store the original name for later use
-                    dupSection.dataset.originalName = result.name;
+                } else {
+                    statusMsg.textContent = result.message || 'Error loading playlist info';
+                    statusMsg.style.display = 'block';
+                    statusMsg.style.background = 'rgba(255,100,100,0.1)';
+                    statusMsg.style.border = '1px solid rgba(255,100,100,0.3)';
+                    statusMsg.style.color = '#ff8080';
                 }
             } catch (e) {
                 console.error('Preflight error:', e);
             }
 
-            document.getElementById('playlistIntervalSection').classList.add('open');
             document.getElementById('playlistModeOverlay').classList.add('open');
+        }
+
+        async function _checkPlaylistName(name) {
+            const statusMsg = document.getElementById('playlistStatusMessage');
+            const downloadBtn = document.getElementById('playlistDownloadBtn');
+            const monitorToggle = document.getElementById('playlistMonitorToggle');
+
+            if (!name || !name.trim()) {
+                statusMsg.style.display = 'none';
+                downloadBtn.disabled = true;
+                downloadBtn.textContent = 'Download';
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/playlist_check_name', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim() })
+                });
+                const result = await resp.json();
+
+                _playlistPopupState.nameExists = result.exists;
+                _playlistPopupState.nameIsMonitored = result.is_monitored;
+
+                if (result.exists) {
+                    if (result.is_monitored) {
+                        // Name exists and is monitored - can't overwrite
+                        statusMsg.textContent = 'This playlist name is already being monitored. Choose a different name.';
+                        statusMsg.style.display = 'block';
+                        statusMsg.style.background = 'rgba(255,100,100,0.1)';
+                        statusMsg.style.border = '1px solid rgba(255,100,100,0.3)';
+                        statusMsg.style.color = '#ff8080';
+                        downloadBtn.disabled = true;
+                        downloadBtn.textContent = 'Cannot Overwrite Monitored Playlist';
+                    } else {
+                        // Name exists but not monitored - can overwrite
+                        statusMsg.textContent = 'A playlist with this name exists. It will be overwritten.';
+                        statusMsg.style.display = 'block';
+                        statusMsg.style.background = 'rgba(255,170,0,0.1)';
+                        statusMsg.style.border = '1px solid rgba(255,170,0,0.3)';
+                        statusMsg.style.color = '#ffa600';
+                        downloadBtn.disabled = false;
+                        downloadBtn.textContent = monitorToggle.checked ? 'Overwrite & Monitor' : 'Overwrite Playlist';
+                    }
+                } else {
+                    // Name doesn't exist - create new
+                    statusMsg.style.display = 'none';
+                    downloadBtn.disabled = false;
+                    downloadBtn.textContent = monitorToggle.checked ? 'Download & Monitor' : 'Download';
+                }
+            } catch (e) {
+                console.error('Name check error:', e);
+            }
+        }
+
+        function _updatePlaylistButtonText() {
+            const downloadBtn = document.getElementById('playlistDownloadBtn');
+            const monitorToggle = document.getElementById('playlistMonitorToggle');
+
+            if (_playlistPopupState.urlIsMonitored) {
+                downloadBtn.textContent = 'Sync Playlist';
+                return;
+            }
+
+            if (_playlistPopupState.nameIsMonitored) {
+                downloadBtn.disabled = true;
+                downloadBtn.textContent = 'Cannot Overwrite Monitored Playlist';
+                return;
+            }
+
+            downloadBtn.disabled = false;
+            if (_playlistPopupState.nameExists) {
+                downloadBtn.textContent = monitorToggle.checked ? 'Overwrite & Monitor' : 'Overwrite Playlist';
+            } else {
+                downloadBtn.textContent = monitorToggle.checked ? 'Download & Monitor' : 'Download';
+            }
         }
 
         function _hidePlaylistPopup() {
@@ -2723,45 +2800,52 @@ function showCleanupResults(data) {
             if (e.target === this) _hidePlaylistPopup();
         });
 
-        // Toggle rename input visibility based on radio selection
-        document.querySelectorAll('input[name="playlistDuplicateAction"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                document.getElementById('playlistRenameInput').style.display =
-                    this.value === 'rename' ? 'block' : 'none';
-            });
+        // Monitor toggle shows/hides options and updates button text
+        document.getElementById('playlistMonitorToggle').addEventListener('change', function() {
+            document.getElementById('playlistMonitorOptions').style.display = this.checked ? 'block' : 'none';
+            _updatePlaylistButtonText();
         });
 
-        async function submitPlaylistDownload(monitor) {
+        // Debounced name check as user types
+        document.getElementById('playlistNameInput').addEventListener('input', function() {
+            clearTimeout(_nameCheckTimeout);
+            _nameCheckTimeout = setTimeout(() => {
+                if (!_playlistPopupState.urlIsMonitored) {
+                    _checkPlaylistName(this.value);
+                }
+            }, 300);
+        });
+
+        // Download button click handler
+        document.getElementById('playlistDownloadBtn').addEventListener('click', async function() {
             const musicLink = _pendingPlaylistLink;
             if (!musicLink) return;
 
+            const playlistName = document.getElementById('playlistNameInput').value.trim();
+            if (!playlistName) {
+                showMessage('error', 'Please enter a name for the playlist.');
+                return;
+            }
+
+            const monitor = document.getElementById('playlistMonitorToggle').checked;
             const pollInterval = parseInt(document.getElementById('playlistPollInterval').value) || 24;
+            const autoCleanup = document.getElementById('playlistAutoCleanup').checked;
 
             showMessage('info', monitor
                 ? 'Playlist download started. It will be monitored for new tracks.'
                 : 'Playlist download started. Check the download queue for progress.');
             openDownloadQueueModal();
 
-            // Determine playlist name override
-            let playlistName = null;
-            const dupSection = document.getElementById('playlistDuplicateSection');
-            if (dupSection.style.display !== 'none') {
-                const action = document.querySelector('input[name="playlistDuplicateAction"]:checked').value;
-                if (action === 'rename') {
-                    playlistName = document.getElementById('playlistRenameInput').value.trim();
-                    if (!playlistName) {
-                        showMessage('error', 'Please enter a name for the playlist.');
-                        return;
-                    }
-                }
-                // overwrite: playlistName stays null, backend uses original name and overwrites
-            }
-
             _hidePlaylistPopup();
 
             try {
-                const body = { link: musicLink, monitor, poll_interval_hours: pollInterval };
-                if (playlistName) body.playlist_name = playlistName;
+                const body = {
+                    link: musicLink,
+                    monitor,
+                    poll_interval_hours: pollInterval,
+                    auto_cleanup: autoCleanup,
+                    playlist_name: playlistName !== _playlistPopupState.originalName ? playlistName : null
+                };
                 const response = await fetch('/api/download_from_link', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2782,7 +2866,7 @@ function showCleanupResults(data) {
                 downloadLinkBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
                 downloadLinkBtn.disabled = false;
             }, 500);
-        }
+        });
 
         async function downloadFromLink() {
             const musicLink = document.getElementById('musicLinkInput').value.trim();
@@ -2851,6 +2935,7 @@ function showCleanupResults(data) {
                     // Append 'Z' to indicate the timestamp is UTC (server stores in UTC without timezone marker)
                     const lastSync = p.last_synced ? new Date(p.last_synced + 'Z').toLocaleString(undefined, { timeZone: userTimezone }) : 'Never';
                     const platform = (p.platform || '').charAt(0).toUpperCase() + (p.platform || '').slice(1);
+                    const autoCleanupChecked = p.auto_cleanup ? 'checked' : '';
                     return `
                         <div class="mp-item" data-id="${p.id}">
                             <div class="mp-item-info">
@@ -2858,6 +2943,10 @@ function showCleanupResults(data) {
                                 <div class="mp-item-meta">${platform} &middot; ${p.last_track_count || '?'} tracks &middot; Last sync: ${lastSync}</div>
                             </div>
                             <div class="mp-item-actions">
+                                <label title="Auto-cleanup old tracks on sync" style="font-size: 0.75em; display: flex; align-items: center; gap: 3px; cursor: pointer;">
+                                    <input type="checkbox" ${autoCleanupChecked} onchange="updateMonitoredAutoCleanup('${p.id}', this.checked)">
+                                    Cleanup
+                                </label>
                                 <select onchange="updateMonitoredInterval('${p.id}', this.value)" title="Poll interval">
                                     ${[6,12,24,48,168].map(h =>
                                         `<option value="${h}" ${p.poll_interval_hours === h ? 'selected' : ''}>${h < 48 ? h + 'h' : h === 48 ? '2d' : '7d'}</option>`
@@ -2879,6 +2968,14 @@ function showCleanupResults(data) {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ poll_interval_hours: parseInt(hours) })
+            });
+        }
+
+        async function updateMonitoredAutoCleanup(id, enabled) {
+            await fetch(`/api/monitored_playlists/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auto_cleanup: enabled })
             });
         }
 
@@ -2905,8 +3002,6 @@ function showCleanupResults(data) {
                 listenbrainz_token: document.getElementById('listenbrainzToken').value.trim(),
                 lastfm_enabled: document.getElementById('lastfmEnabled').checked,
                 lastfm_username: document.getElementById('lastfmUsername').value.trim(),
-                lastfm_api_key: document.getElementById('lastfmApiKey').value.trim(),
-                lastfm_api_secret: document.getElementById('lastfmApiSecret').value.trim(),
             };
             try {
                 const response = await fetch('/api/user/settings', {
@@ -2980,8 +3075,6 @@ function showCleanupResults(data) {
                     document.getElementById('listenbrainzToken').value = s.listenbrainz_token || '';
                     document.getElementById('lastfmEnabled').checked = s.lastfm_enabled || false;
                     document.getElementById('lastfmUsername').value = s.lastfm_username || '';
-                    document.getElementById('lastfmApiKey').value = s.lastfm_api_key || '';
-                    document.getElementById('lastfmApiSecret').value = s.lastfm_api_secret || '';
                     document.getElementById('displayName').value = s.display_name || '';
                     updateListenBrainzVisibility();
                     updateLastFmVisibility();

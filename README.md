@@ -95,11 +95,8 @@ TRACKDROP_LISTENBRAINZ_ENABLED=true
 TRACKDROP_TOKEN_LB=your_listenbrainz_token
 TRACKDROP_USER_LB=your_listenbrainz_username
 
-# Optional: Last.fm
+# Optional: Last.fm (username is set per-user in the web UI)
 TRACKDROP_LASTFM_ENABLED=true
-TRACKDROP_LASTFM_USERNAME=your_lastfm_username
-TRACKDROP_LASTFM_API_KEY=your_api_key
-TRACKDROP_LASTFM_API_SECRET=your_api_secret
 
 # Optional: Spotify (for playlist extraction)
 TRACKDROP_SPOTIFY_CLIENT_ID=your_spotify_client_id
@@ -127,11 +124,7 @@ docker compose up -d
 | `TRACKDROP_LISTENBRAINZ_ENABLED` | Enable ListenBrainz recommendations |
 | `TRACKDROP_TOKEN_LB` | ListenBrainz API token |
 | `TRACKDROP_USER_LB` | ListenBrainz username |
-| `TRACKDROP_LASTFM_ENABLED` | Enable Last.fm recommendations |
-| `TRACKDROP_LASTFM_USERNAME` | Last.fm username |
-| `TRACKDROP_LASTFM_API_KEY` | Last.fm API key |
-| `TRACKDROP_LASTFM_API_SECRET` | Last.fm API secret |
-| `TRACKDROP_LASTFM_SESSION_KEY` | Last.fm session key |
+| `TRACKDROP_LASTFM_ENABLED` | Enable Last.fm recommendations (username set per-user in web UI) |
 | `TRACKDROP_LLM_ENABLED` | Enable LLM-powered recommendations |
 | `TRACKDROP_LLM_PROVIDER` | LLM provider: `gemini`, `openrouter`, or `llama` |
 | `TRACKDROP_LLM_API_KEY` | LLM API key |
