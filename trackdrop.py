@@ -42,19 +42,18 @@ def load_user_settings(username):
         return {}
 
 
-def create_navidrome_api(use_env_user=False):
+def create_navidrome_api(username=None, user_settings=None):
     """Create a NavidromeAPI instance with current configuration.
 
-    If use_env_user is True, use TRACKDROP_USER and TRACKDROP_USER_PASSWORD
-    environment variables for the user credentials. This allows playlists
-    to be created for the logged-in user instead of the global config user.
+    If username and user_settings are provided, use the user's stored password
+    for playlist creation under their account. Otherwise use global config.
     """
     from apis.navidrome_api import NavidromeAPI
 
-    # Use environment variables if available (set by web UI for per-user playlists)
-    if use_env_user:
-        user = os.getenv('TRACKDROP_USER') or USER_ND
-        password = os.getenv('TRACKDROP_USER_PASSWORD') or PASSWORD_ND
+    # Use user's stored password if available (for per-user playlists)
+    if username and user_settings and user_settings.get('navidrome_password'):
+        user = username.lower()
+        password = user_settings.get('navidrome_password')
     else:
         user = USER_ND
         password = PASSWORD_ND
@@ -145,8 +144,8 @@ async def process_cleanup(username=None):
     lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
     lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
 
-    # Use logged-in user's credentials when called from web UI
-    navidrome_api = create_navidrome_api(use_env_user=bool(username))
+    # Use user's stored credentials for playlist operations
+    navidrome_api = create_navidrome_api(username=cleanup_user if username else None, user_settings=user_settings)
     listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
     lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
 
@@ -182,8 +181,8 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
 
     # Initialize APIs
     tagger = Tagger()
-    # Use logged-in user's credentials for playlist creation when called from web UI
-    navidrome_api = create_navidrome_api(use_env_user=bool(username))
+    # Use user's stored credentials for playlist operations
+    navidrome_api = create_navidrome_api(username=rec_user if username else None, user_settings=user_settings)
     listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
     lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
 

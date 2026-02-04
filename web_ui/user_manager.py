@@ -16,6 +16,7 @@ import config
 SETTINGS_FILE = os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json")
 
 DEFAULT_SETTINGS = {
+    "navidrome_password": "",  # Stored for playlist creation under user's account
     "listenbrainz_enabled": False,
     "listenbrainz_username": "",
     "listenbrainz_token": "",
