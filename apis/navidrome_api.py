@@ -1299,16 +1299,16 @@ class NavidromeAPI:
                     print(f"Error removing songs from playlist: {e}")
                     return False
 
-            # Add new songs
+            # Add new songs using updatePlaylist with songIdToAdd
             if song_ids:
-                url = f"{self.root_nd}/rest/createPlaylist.view"
+                url = f"{self.root_nd}/rest/updatePlaylist.view"
                 params = {
                     'u': admin_user, 't': token, 's': salt,
                     'v': '1.16.1', 'c': 'trackdrop', 'f': 'json', 'playlistId': playlist_id
                 }
                 param_list = [(k, v) for k, v in params.items()]
                 for sid in song_ids:
-                    param_list.append(('songId', sid))
+                    param_list.append(('songIdToAdd', sid))
                 try:
                     response = requests.get(url, params=param_list, timeout=60)
                     response.raise_for_status()
