@@ -994,7 +994,7 @@
         <div id="downloadFromLinkSection" class="playlist-section" style="border-top: none; padding-top: 10px; margin-top: 10px;">
             <div class="form-group" style="margin-bottom: 10px;">
                 <div class="download-link-row">
-                    <input type="text" id="musicLinkInput" placeholder="Paste a song, album, or playlist link..." style="flex: 1; width: 100%;">
+                    <input type="text" id="musicLinkInput" placeholder="Paste a song, album, or playlist link..." style="flex: 1; width: 100%;" onkeypress="if(event.key==='Enter')downloadFromLink()">
                     <button id="downloadLinkBtn" onclick="downloadFromLink()" style="white-space: nowrap; margin: 0;">Download</button>
                 </div>
             </div>
