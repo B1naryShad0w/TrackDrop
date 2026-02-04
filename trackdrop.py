@@ -16,8 +16,7 @@ import os
 from config import (
     ROOT_ND, USER_ND, PASSWORD_ND, MUSIC_LIBRARY_PATH, MUSIC_DOWNLOAD_PATH, TEMP_DOWNLOAD_FOLDER,
     LISTENBRAINZ_ENABLED, ROOT_LB, TOKEN_LB, USER_LB,
-    LASTFM_ENABLED, LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME,
-    LASTFM_PASSWORD, LASTFM_SESSION_KEY,
+    LASTFM_ENABLED,
     LLM_ENABLED, LLM_PROVIDER, LLM_API_KEY, LLM_MODEL_NAME,
     ALBUM_RECOMMENDATION_ENABLED, DEEZER_ARL, DOWNLOAD_METHOD,
     ADMIN_USER, ADMIN_PASSWORD, NAVIDROME_DB_PATH,
@@ -26,19 +25,18 @@ from utils import initialize_streamrip_db, update_status_file, get_user_history_
 
 
 def load_user_settings(username):
-    """Load user-specific settings from the user settings file.
+    """Load user-specific settings using the DataStore class.
 
     Returns a dict with user settings, or empty dict if not found.
+    Uses the same data access layer as the web UI for consistency.
     """
-    settings_file = os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json")
-    if not os.path.exists(settings_file):
-        return {}
+    from persistence.data_store import DataStore
+
+    data_dir = os.path.dirname(os.getenv("TRACKDROP_USER_SETTINGS_PATH", "/app/data/user_settings.json"))
     try:
-        with open(settings_file, 'r') as f:
-            all_settings = json.load(f)
-        user_data = all_settings.get(username, {})
-        return user_data
-    except (json.JSONDecodeError, IOError) as e:
+        store = DataStore(data_dir)
+        return store.get_user_settings(username)
+    except Exception as e:
         print(f"Warning: Could not load user settings: {e}")
         return {}
 
@@ -94,63 +92,19 @@ def create_lastfm_api(user_settings=None):
     """Create a LastFmAPI instance.
 
     If user_settings is provided, use those values; otherwise fall back to global config.
+    Only username is needed for Last.fm recommendations (public endpoint).
     """
     from apis.lastfm_api import LastFmAPI
 
     # Use user settings if available, otherwise global config
     if user_settings and user_settings.get('lastfm_enabled'):
-        api_key = user_settings.get('lastfm_api_key') or LASTFM_API_KEY
-        api_secret = user_settings.get('lastfm_api_secret') or LASTFM_API_SECRET
-        username = user_settings.get('lastfm_username') or LASTFM_USERNAME
-        session_key = user_settings.get('lastfm_session_key') or LASTFM_SESSION_KEY
+        username = user_settings.get('lastfm_username', '')
         enabled = True
     else:
-        api_key = LASTFM_API_KEY
-        api_secret = LASTFM_API_SECRET
-        username = LASTFM_USERNAME
-        session_key = LASTFM_SESSION_KEY
+        username = ''
         enabled = LASTFM_ENABLED
 
-
-    return LastFmAPI(
-        api_key=api_key,
-        api_secret=api_secret,
-        username=username,
-        password=LASTFM_PASSWORD,  # Not used, kept for compatibility
-        session_key=session_key,
-        lastfm_enabled=enabled,
-    )
-
-
-async def process_cleanup(username=None):
-    """Run cleanup routine: check ratings and delete low-rated tracks."""
-    print("\n" + "=" * 60)
-    print("TrackDrop - Cleanup")
-    print("=" * 60)
-
-    cleanup_user = username or USER_ND
-    history_path = get_user_history_path(cleanup_user)
-    print(f"Running cleanup for user: {cleanup_user}")
-    print(f"History file: {history_path}")
-
-    # Load user-specific settings
-    user_settings = load_user_settings(cleanup_user) if username else {}
-    lb_enabled = user_settings.get('listenbrainz_enabled', LISTENBRAINZ_ENABLED)
-    lf_enabled = user_settings.get('lastfm_enabled', LASTFM_ENABLED)
-
-    navidrome_api = create_navidrome_api()
-    listenbrainz_api = create_listenbrainz_api(user_settings) if lb_enabled else None
-    lastfm_api = create_lastfm_api(user_settings) if lf_enabled else None
-
-    await navidrome_api.process_api_cleanup(
-        history_path=history_path,
-        listenbrainz_api=listenbrainz_api,
-        lastfm_api=lastfm_api,
-    )
-
-    print("\n" + "=" * 60)
-    print("Cleanup complete!")
-    print("=" * 60)
+    return LastFmAPI(username=username, lastfm_enabled=enabled)
 
 
 async def process_recommendations(source="all", bypass_playlist_check=False, download_id=None, username=None):
@@ -189,6 +143,11 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         print("\n--- ListenBrainz Recommendations ---")
         try:
             if bypass_playlist_check or await listenbrainz_api.has_playlist_changed():
+                # Clean up old recommendations before fetching new ones
+                print("Cleaning up old ListenBrainz recommendations...")
+                cleanup_result = navidrome_api.cleanup_source('ListenBrainz', history_path)
+                print(f"  Deleted: {cleanup_result['deleted']}, Kept (protected): {cleanup_result['kept']}")
+
                 lb_recs = await listenbrainz_api.get_listenbrainz_recommendations()
                 if lb_recs:
                     print(f"Found {len(lb_recs)} ListenBrainz recommendations")
@@ -208,6 +167,11 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     if source in ["all", "lastfm"] and lf_enabled:
         print("\n--- Last.fm Recommendations ---")
         try:
+            # Clean up old recommendations before fetching new ones
+            print("Cleaning up old Last.fm recommendations...")
+            cleanup_result = navidrome_api.cleanup_source('Last.fm', history_path)
+            print(f"  Deleted: {cleanup_result['deleted']}, Kept (protected): {cleanup_result['kept']}")
+
             lf_recs = await lastfm_api.get_lastfm_recommendations()
             if lf_recs:
                 print(f"Found {len(lf_recs)} Last.fm recommendations")
@@ -225,6 +189,11 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     if source in ["all", "llm"] and LLM_ENABLED and LLM_API_KEY:
         print("\n--- LLM Recommendations ---")
         try:
+            # Clean up old recommendations before fetching new ones
+            print("Cleaning up old LLM recommendations...")
+            cleanup_result = navidrome_api.cleanup_source('LLM', history_path)
+            print(f"  Deleted: {cleanup_result['deleted']}, Kept (protected): {cleanup_result['kept']}")
+
             from apis.llm_api import LlmAPI
             llm_api = LlmAPI(
                 provider=LLM_PROVIDER,
@@ -466,7 +435,8 @@ Examples:
   trackdrop.py --source lastfm         Download Last.fm recommendations
   trackdrop.py --source llm            Download LLM recommendations
   trackdrop.py --source fresh_releases Download fresh release albums
-  trackdrop.py --cleanup               Run cleanup routine
+
+Note: Cleanup runs automatically before fetching new recommendations for each source.
         """
     )
     parser.add_argument(
@@ -474,11 +444,6 @@ Examples:
         default='all',
         choices=['all', 'listenbrainz', 'lastfm', 'llm', 'fresh_releases'],
         help='Source for recommendations (default: all)'
-    )
-    parser.add_argument(
-        '--cleanup', '-c',
-        action='store_true',
-        help='Run cleanup routine (delete unrated tracks)'
     )
     parser.add_argument(
         '--user', '-u',
@@ -512,10 +477,7 @@ Examples:
     update_status_file(args.download_id, "in_progress", "Starting...")
 
     try:
-        if args.cleanup:
-            asyncio.run(process_cleanup(username=args.user))
-            update_status_file(args.download_id, "completed", "Cleanup finished", "Cleanup Complete")
-        elif args.source == 'fresh_releases':
+        if args.source == 'fresh_releases':
             asyncio.run(process_fresh_releases(download_id=args.download_id))
         else:
             asyncio.run(process_recommendations(

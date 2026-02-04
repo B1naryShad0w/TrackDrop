@@ -16,7 +16,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config import *
 from apis.lastfm_api import LastFmAPI
-from utils import initialize_streamrip_db, get_user_history_path
+from utils import initialize_streamrip_db, get_user_history_path, update_status_file
 from apis.listenbrainz_api import ListenBrainzAPI
 from apis.navidrome_api import NavidromeAPI
 from apis.deezer_api import DeezerAPI
@@ -425,7 +425,7 @@ def get_user_settings():
     settings = user_manager.get_user_settings(username)
     # Mask sensitive fields
     masked = dict(settings)
-    for key in ['listenbrainz_token', 'lastfm_password', 'lastfm_api_key', 'lastfm_api_secret', 'lastfm_session_key']:
+    for key in ['listenbrainz_token']:
         if masked.get(key):
             masked[key] = '••••••••'
     return jsonify({"status": "success", "settings": masked, "first_time": user_manager.is_first_time(username)})
@@ -437,7 +437,7 @@ def update_user_settings():
     data = request.get_json()
     current = user_manager.get_user_settings(username)
     # Don't overwrite sensitive fields if masked
-    for key in ['listenbrainz_token', 'lastfm_password', 'lastfm_api_key', 'lastfm_api_secret', 'lastfm_session_key']:
+    for key in ['listenbrainz_token']:
         if data.get(key) == '••••••••':
             data.pop(key, None)
     user_manager.update_user_settings(username, data)
@@ -813,10 +813,6 @@ def get_config():
         "TOKEN_LB": "••••••••" if TOKEN_LB else "",
         "USER_LB": USER_LB,
         "LASTFM_ENABLED": LASTFM_ENABLED,
-        "LASTFM_API_KEY": "••••••••" if LASTFM_API_KEY else "",
-        "LASTFM_API_SECRET": "••••••••" if LASTFM_API_SECRET else "",
-        "LASTFM_USERNAME": LASTFM_USERNAME,
-        "LASTFM_SESSION_KEY": "••••••••" if LASTFM_SESSION_KEY else "",
         "DEEZER_ARL": "••••••••" if DEEZER_ARL else "",
         "DOWNLOAD_METHOD": DOWNLOAD_METHOD,
         "ALBUM_RECOMMENDATION_ENABLED": ALBUM_RECOMMENDATION_ENABLED,
@@ -901,7 +897,7 @@ def update_config():
             current_config_content = f.read()
 
         # Define sensitive fields that should not be overwritten if masked
-        sensitive_fields = {'ROOT_ND', 'PASSWORD_ND', 'TOKEN_LB', 'LASTFM_API_KEY', 'LASTFM_API_SECRET', 'LASTFM_SESSION_KEY', 'DEEZER_ARL', 'LLM_API_KEY'}
+        sensitive_fields = {'ROOT_ND', 'PASSWORD_ND', 'TOKEN_LB', 'DEEZER_ARL', 'LLM_API_KEY'}
 
         # Prepare a list to hold the updated lines
         updated_lines = current_config_content.splitlines()
@@ -987,13 +983,20 @@ def update_config():
 def get_listenbrainz_playlist():
     print("Attempting to get ListenBrainz playlist...")
 
+    # Get user's ListenBrainz settings
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    lb_enabled = settings.get('listenbrainz_enabled', False)
+    lb_token = settings.get('listenbrainz_token', '')
+    lb_username = settings.get('listenbrainz_username', '')
+
     # Check if ListenBrainz credentials are configured
-    if not USER_LB or not TOKEN_LB:
-        return jsonify({"status": "error", "message": "ListenBrainz credentials not configured. Please set USER_LB and TOKEN_LB in the config menu."}), 400
+    if not lb_username or not lb_token:
+        return jsonify({"status": "error", "message": "ListenBrainz credentials not configured. Please set them in Settings."}), 400
 
     try:
-        print("Creating ListenBrainzAPI instance with current config...")
-        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+        print(f"Creating ListenBrainzAPI instance for user {username}...")
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, lb_token, lb_username, lb_enabled)
         print("Running async get_listenbrainz_recommendations...")
         lb_recs = asyncio.run(listenbrainz_api.get_listenbrainz_recommendations())
         print(f"ListenBrainz recommendations found: {len(lb_recs)}")
@@ -1012,8 +1015,15 @@ def get_listenbrainz_playlist():
 def trigger_listenbrainz_download():
     print("Attempting to trigger ListenBrainz download via background script...")
     try:
+        # Get user's ListenBrainz settings
+        username = get_current_user()
+        settings = user_manager.get_user_settings(username)
+        lb_enabled = settings.get('listenbrainz_enabled', False)
+        lb_token = settings.get('listenbrainz_token', '')
+        lb_username = settings.get('listenbrainz_username', '')
+
         # Check if there are recommendations first
-        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, lb_token, lb_username, lb_enabled)
         recs = asyncio.run(listenbrainz_api.get_listenbrainz_recommendations())
         if not recs:
             return jsonify({"status": "error", "message": "No ListenBrainz recommendations found. Please check your credentials and try again."}), 400
@@ -1053,12 +1063,18 @@ def trigger_listenbrainz_download():
 def get_lastfm_playlist():
     print("Attempting to get Last.fm playlist...")
 
-    # Check if Last.fm credentials are configured
-    if not LASTFM_USERNAME or not LASTFM_API_KEY or not LASTFM_API_SECRET:
-        return jsonify({"status": "error", "message": "Last.fm credentials not configured. Please set LASTFM_USERNAME, LASTFM_API_KEY, and LASTFM_API_SECRET in the config menu."}), 400
+    # Get user's Last.fm settings
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    lf_enabled = settings.get('lastfm_enabled', False)
+    lf_username = settings.get('lastfm_username', '')
+
+    # Check if Last.fm is configured (only username needed for recommendations)
+    if not lf_username:
+        return jsonify({"status": "error", "message": "Last.fm username not configured. Please set it in Settings."}), 400
 
     try:
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+        lastfm_api = LastFmAPI(lf_username, lf_enabled)
         lf_recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         print(f"Last.fm recommendations found: {len(lf_recs)}")
         if lf_recs:
@@ -1075,8 +1091,14 @@ def get_lastfm_playlist():
 def trigger_lastfm_download():
     print("Attempting to trigger Last.fm download via background script...")
     try:
+        # Get user's Last.fm settings
+        username = get_current_user()
+        settings = user_manager.get_user_settings(username)
+        lf_enabled = settings.get('lastfm_enabled', False)
+        lf_username = settings.get('lastfm_username', '')
+
         # Check if there are recommendations first
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
+        lastfm_api = LastFmAPI(lf_username, lf_enabled)
         recs = asyncio.run(lastfm_api.get_lastfm_recommendations())
         if not recs:
             return jsonify({"status": "error", "message": "No Last.fm recommendations found. Please check your credentials and try again."}), 400
@@ -1109,57 +1131,6 @@ def trigger_lastfm_download():
     except Exception as e:
         print(f"Error triggering Last.fm download: {e}")
         return jsonify({"status": "error", "message": f"Error triggering Last.fm download: {e}"}), 500
-
-@app.route('/api/trigger_navidrome_cleanup', methods=['POST'])
-@login_required
-def trigger_navidrome_cleanup():
-    print("Attempting to trigger Navidrome cleanup...")
-    try:
-        # Initialize API instances for cleanup
-        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
-
-        import asyncio
-        download_history_path = get_user_history_path(get_current_user())
-        asyncio.run(navidrome_api_global.process_api_cleanup(
-            history_path=download_history_path,
-            listenbrainz_api=listenbrainz_api,
-            lastfm_api=lastfm_api
-        ))
-        return jsonify({"status": "success", "message": "Navidrome cleanup completed successfully."})
-    except Exception as e:
-        print(f"Error triggering Navidrome cleanup: {e}")
-        return jsonify({"status": "error", "message": f"Error during Navidrome cleanup: {e}"}), 500
-
-@app.route('/api/trigger_debug_cleanup', methods=['POST'])
-@login_required
-def trigger_debug_cleanup():
-    """Debug: clear playlists and remove all songs not rated 4-5 stars."""
-    import sys
-    username = get_current_user()
-    sys.stdout.flush()
-    try:
-        download_history_path = get_user_history_path(username)
-        sys.stdout.flush()
-        summary = asyncio.run(navidrome_api_global.process_debug_cleanup(
-            history_path=download_history_path
-        ))
-        msg_parts = []
-        if summary['deleted']:
-            msg_parts.append(f"Deleted {len(summary['deleted'])} songs")
-        if summary['kept']:
-            msg_parts.append(f"Kept {len(summary['kept'])} songs (protected)")
-        if summary.get('failed'):
-            msg_parts.append(f"Failed/skipped {len(summary['failed'])} songs")
-        if summary['playlists_cleared']:
-            msg_parts.append(f"Cleared playlists: {', '.join(summary['playlists_cleared'])}")
-        message = '. '.join(msg_parts) if msg_parts else 'Nothing to clean up (empty history).'
-        return jsonify({"status": "success", "message": message, "summary": summary})
-    except Exception as e:
-        print(f"Error triggering debug cleanup: {e}")
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": f"Error during debug cleanup: {e}"}), 500
-
 
 @app.route('/api/manual_cleanup/preview', methods=['POST'])
 @login_required
@@ -1220,56 +1191,71 @@ def manual_cleanup():
 
 @app.route('/api/get_fresh_releases', methods=['GET'])
 @login_required
-async def get_fresh_releases():
+def get_fresh_releases():
     overall_start_time = time.perf_counter()
     print("Attempting to get ListenBrainz fresh releases...")
 
+    # Get user's ListenBrainz settings
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    lb_enabled = settings.get('listenbrainz_enabled', False)
+    lb_token = settings.get('listenbrainz_token', '')
+    lb_username = settings.get('listenbrainz_username', '')
+
     # Check if ListenBrainz credentials are configured
-    if not USER_LB or not TOKEN_LB:
+    if not lb_username or not lb_token:
         print("Error: ListenBrainz credentials not configured.", file=sys.stderr)
-        return jsonify({"status": "error", "message": "ListenBrainz credentials not configured. Please set USER_LB and TOKEN_LB in the config menu."}), 400
+        return jsonify({"status": "error", "message": "ListenBrainz credentials not configured. Please set them in Settings."}), 400
 
     server_timing_metrics = []
 
     try:
-        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
-        
-        lb_fetch_start_time = time.perf_counter()
-        data = await listenbrainz_api.get_fresh_releases()
-        lb_fetch_end_time = time.perf_counter()
-        lb_fetch_duration = (lb_fetch_end_time - lb_fetch_start_time) * 1000
-        server_timing_metrics.append(f"lb_fetch;dur={lb_fetch_duration:.2f};desc=\"ListenBrainz Fetch\"")
-        print(f"ListenBrainz API fetch time: {lb_fetch_duration:.2f}ms")
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, lb_token, lb_username, lb_enabled)
 
-        releases = data.get('payload', {}).get('releases', [])
+        async def fetch_releases_async():
+            lb_fetch_start_time = time.perf_counter()
+            data = await listenbrainz_api.get_fresh_releases()
+            lb_fetch_end_time = time.perf_counter()
+            lb_fetch_duration = (lb_fetch_end_time - lb_fetch_start_time) * 1000
+            server_timing_metrics.append(f"lb_fetch;dur={lb_fetch_duration:.2f};desc=\"ListenBrainz Fetch\"")
+            print(f"ListenBrainz API fetch time: {lb_fetch_duration:.2f}ms")
 
-        if not releases:
+            releases = data.get('payload', {}).get('releases', [])
+
+            if not releases:
+                return None, releases
+
+            # Parallelize Deezer availability checks
+            deezer_checks_start_time = time.perf_counter()
+            deezer_tasks = []
+            for release in releases:
+                artist = release['artist_credit_name']
+                album = release['release_name']
+                deezer_tasks.append(deezer_api_global.check_album_download_availability(artist, album))
+
+            is_available_on_deezer_results = await asyncio.gather(*deezer_tasks)
+            deezer_checks_end_time = time.perf_counter()
+            deezer_checks_duration = (deezer_checks_end_time - deezer_checks_start_time) * 1000
+            server_timing_metrics.append(f"deezer_checks;dur={deezer_checks_duration:.2f};desc=\"Deezer Availability Checks\"")
+            print(f"Deezer availability checks (parallelized) time: {deezer_checks_duration:.2f}ms for {len(releases)} releases")
+
+            processed_releases = []
+            for i, release in enumerate(releases):
+                release['is_available_on_deezer'] = is_available_on_deezer_results[i]
+                processed_releases.append(release)
+
+            return is_available_on_deezer_results, processed_releases
+
+        _, processed_releases = asyncio.run(fetch_releases_async())
+
+        if not processed_releases:
             print("No fresh ListenBrainz releases found.")
             response = jsonify({"status": "info", "message": "No fresh ListenBrainz releases found."})
             response.headers['Server-Timing'] = ", ".join(server_timing_metrics)
             return response
 
-        # Parallelize Deezer availability checks
-        deezer_checks_start_time = time.perf_counter()
-        deezer_tasks = []
-        for release in releases:
-            artist = release['artist_credit_name']
-            album = release['release_name']
-            deezer_tasks.append(deezer_api_global.check_album_download_availability(artist, album))
-        
-        is_available_on_deezer_results = await asyncio.gather(*deezer_tasks)
-        deezer_checks_end_time = time.perf_counter()
-        deezer_checks_duration = (deezer_checks_end_time - deezer_checks_start_time) * 1000
-        server_timing_metrics.append(f"deezer_checks;dur={deezer_checks_duration:.2f};desc=\"Deezer Availability Checks\"")
-        print(f"Deezer availability checks (parallelized) time: {deezer_checks_duration:.2f}ms for {len(releases)} releases")
-
-        processed_releases = []
-        for i, release in enumerate(releases):
-            release['is_available_on_deezer'] = is_available_on_deezer_results[i]
-            processed_releases.append(release)
-
         print(f"ListenBrainz fresh releases found: {len(processed_releases)}")
-        
+
         overall_end_time = time.perf_counter()
         overall_duration = (overall_end_time - overall_start_time) * 1000
         server_timing_metrics.append(f"total;dur={overall_duration:.2f};desc=\"Total API Latency\"")
@@ -1416,13 +1402,20 @@ def submit_listenbrainz_feedback():
             print(f"Invalid data: recording_mbid={recording_mbid}, score={score}")
             return jsonify({"status": "error", "message": "Valid recording_mbid and score (1 or -1) are required"}), 400
 
-        # Check if ListenBrainz is configured
-        if not TOKEN_LB or not USER_LB:
-            print(f"ListenBrainz not configured: TOKEN_LB={TOKEN_LB}, USER_LB={USER_LB}")
-            return jsonify({"status": "error", "message": "ListenBrainz credentials not configured"}), 400
+        # Get user settings for ListenBrainz credentials
+        username = get_current_user()
+        settings = user_manager.get_user_settings(username)
+        lb_enabled = settings.get('listenbrainz_enabled', False)
+        lb_token = settings.get('listenbrainz_token', '')
+        lb_username = settings.get('listenbrainz_username', '')
 
-        print(f"Creating ListenBrainzAPI with ROOT_LB={ROOT_LB}, TOKEN_LB={'*' * len(TOKEN_LB) if TOKEN_LB else None}, USER_LB={USER_LB}")
-        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+        # Check if ListenBrainz is configured
+        if not lb_token or not lb_username:
+            print(f"ListenBrainz not configured: lb_token={lb_token}, lb_username={lb_username}")
+            return jsonify({"status": "error", "message": "ListenBrainz credentials not configured in user settings"}), 400
+
+        print(f"Creating ListenBrainzAPI with ROOT_LB={ROOT_LB}, lb_token={'*' * len(lb_token) if lb_token else None}, lb_username={lb_username}")
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, lb_token, lb_username, lb_enabled)
         print("Calling submit_feedback...")
         asyncio.run(listenbrainz_api.submit_feedback(recording_mbid, score))
         print("Feedback submitted successfully")
@@ -1436,43 +1429,10 @@ def submit_listenbrainz_feedback():
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"Error submitting feedback: {e}"}), 500
 
-@app.route('/api/submit_lastfm_feedback', methods=['POST'])
-@login_required
-def submit_lastfm_feedback():
-    print("Attempting to submit Last.fm feedback...")
-    try:
-        data = request.get_json()
-        print(f"Received data: {data}")
-        track = data.get('track')
-        artist = data.get('artist')
-        print(f"track: {track}, artist: {artist}")
-
-        if not track or not artist:
-            print(f"Invalid data: track={track}, artist={artist}")
-            return jsonify({"status": "error", "message": "Track and artist are required"}), 400
-
-        # Check if Last.fm is configured
-        if not LASTFM_API_KEY or not LASTFM_API_SECRET or not LASTFM_SESSION_KEY:
-            print(f"Last.fm not configured: API_KEY={LASTFM_API_KEY}, API_SECRET={'*' * len(LASTFM_API_SECRET) if LASTFM_API_SECRET else None}, SESSION_KEY={'*' * len(LASTFM_SESSION_KEY) if LASTFM_SESSION_KEY else None}")
-            return jsonify({"status": "error", "message": "Last.fm credentials not configured"}), 400
-
-        print(f"Creating LastFmAPI with API_KEY={LASTFM_API_KEY}, API_SECRET={'*' * len(LASTFM_API_SECRET) if LASTFM_API_SECRET else None}, USERNAME={LASTFM_USERNAME}, SESSION_KEY={'*' * len(LASTFM_SESSION_KEY) if LASTFM_SESSION_KEY else None}")
-        lastfm_api = LastFmAPI(LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_USERNAME, LASTFM_PASSWORD, LASTFM_SESSION_KEY, LASTFM_ENABLED)
-        print("Calling love_track...")
-        lastfm_api.love_track(track, artist)
-        print("Feedback submitted successfully")
-
-        return jsonify({"status": "success", "message": "Track loved successfully."})
-
-    except Exception as e:
-        print(f"Error submitting Last.fm feedback: {e}")
-        print("Traceback:")
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": f"Error submitting feedback: {e}"}), 500
-
 @app.route('/api/get_llm_playlist', methods=['GET'])
 @login_required
-async def get_llm_playlist():
+def get_llm_playlist():
+    # LLM settings are still global (system-wide)
     if not LLM_ENABLED:
         return jsonify({"status": "error", "message": "LLM suggestions are not enabled in the configuration."}), 400
     if not LLM_API_KEY and LLM_PROVIDER != 'llama':
@@ -1481,8 +1441,15 @@ async def get_llm_playlist():
         return jsonify({"status": "error", "message": "Base URL is required for Llama.cpp."}), 400
 
     try:
-        listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
-        scrobbles = await listenbrainz_api.get_weekly_scrobbles()
+        # Get user settings for ListenBrainz credentials (needed for scrobbles)
+        username = get_current_user()
+        settings = user_manager.get_user_settings(username)
+        lb_enabled = settings.get('listenbrainz_enabled', False)
+        lb_token = settings.get('listenbrainz_token', '')
+        lb_username = settings.get('listenbrainz_username', '')
+
+        listenbrainz_api = ListenBrainzAPI(ROOT_LB, lb_token, lb_username, lb_enabled)
+        scrobbles = asyncio.run(listenbrainz_api.get_weekly_scrobbles())
 
         if not scrobbles:
             return jsonify({"status": "info", "message": "Could not fetch recent scrobbles from ListenBrainz to generate recommendations."})
@@ -1498,46 +1465,50 @@ async def get_llm_playlist():
         recommendations = llm_api.get_recommendations(scrobbles)
 
         if recommendations:
-            # Check Deezer availability for each recommendation and filter out unavailable tracks
-            available_recommendations = []
-            for rec in recommendations:
-                try:
-                    # Check if track is available on Deezer
-                    deezer_link = await deezer_api_global.get_deezer_track_link(rec['artist'], rec['title'])
-                    if deezer_link:
+            # Inner async function for processing recommendations
+            async def process_recommendations():
+                # Check Deezer availability for each recommendation and filter out unavailable tracks
+                available_recommendations = []
+                for rec in recommendations:
+                    try:
+                        # Check if track is available on Deezer
+                        deezer_link = await deezer_api_global.get_deezer_track_link(rec['artist'], rec['title'])
+                        if deezer_link:
+                            available_recommendations.append(rec)
+                        else:
+                            print(f"LLM recommendation not available on Deezer: {rec['artist']} - {rec['title']}")
+                    except Exception as e:
+                        print(f"Error checking Deezer availability for {rec['artist']} - {rec['title']}: {e}")
+                        # If checking availability is impossible, include it anyway to avoid losing recommendations due to API errors
                         available_recommendations.append(rec)
-                    else:
-                        print(f"LLM recommendation not available on Deezer: {rec['artist']} - {rec['title']}")
-                except Exception as e:
-                    print(f"Error checking Deezer availability for {rec['artist']} - {rec['title']}: {e}")
-                    # If checking availability is impossible, include it anyway to avoid losing recommendations due to API errors
-                    available_recommendations.append(rec)
 
-            print(f"LLM generated {len(recommendations)} recommendations, {len(available_recommendations)} available on Deezer")
+                print(f"LLM generated {len(recommendations)} recommendations, {len(available_recommendations)} available on Deezer")
 
-            # Fetch recording_mbid and release_mbid for each available recommendation to enable feedback and album art
-            processed_recommendations = []
-            for rec in available_recommendations:
-                # Respect MusicBrainz rate limit (1 req/sec)
-                await asyncio.sleep(1)
-                mbid = await listenbrainz_api.get_recording_mbid_from_track(rec['artist'], rec['title'])
-                
-                rec['recording_mbid'] = mbid
-                rec['caa_release_mbid'] = None
-                rec['caa_id'] = None # Not available through this flow, but good to have for consistency
+                # Fetch recording_mbid and release_mbid for each available recommendation to enable feedback and album art
+                processed_recommendations = []
+                for rec in available_recommendations:
+                    # Respect MusicBrainz rate limit (1 req/sec)
+                    await asyncio.sleep(1)
+                    mbid = await listenbrainz_api.get_recording_mbid_from_track(rec['artist'], rec['title'])
 
-                if mbid:
-                    await asyncio.sleep(1) # Another request, another sleep
-                    # get_track_info returns: artist, title, album, release_date, release_mbid
-                    _, _, fetched_album, _, release_mbid = await listenbrainz_api.get_track_info(mbid)
-                    if release_mbid:
-                        rec['caa_release_mbid'] = release_mbid
-                    # Use the more accurate album title from MusicBrainz
-                    if fetched_album and fetched_album != "Unknown Album":
-                        rec['album'] = fetched_album
-                
-                processed_recommendations.append(rec)
+                    rec['recording_mbid'] = mbid
+                    rec['caa_release_mbid'] = None
+                    rec['caa_id'] = None # Not available through this flow, but good to have for consistency
 
+                    if mbid:
+                        await asyncio.sleep(1) # Another request, another sleep
+                        # get_track_info returns: artist, title, album, release_date, release_mbid
+                        _, _, fetched_album, _, release_mbid = await listenbrainz_api.get_track_info(mbid)
+                        if release_mbid:
+                            rec['caa_release_mbid'] = release_mbid
+                        # Use the more accurate album title from MusicBrainz
+                        if fetched_album and fetched_album != "Unknown Album":
+                            rec['album'] = fetched_album
+
+                    processed_recommendations.append(rec)
+                return processed_recommendations
+
+            processed_recommendations = asyncio.run(process_recommendations())
             return jsonify({"status": "success", "recommendations": processed_recommendations})
         else:
             return jsonify({"status": "error", "message": "LLM failed to generate recommendations."})
@@ -1551,12 +1522,20 @@ async def get_llm_playlist():
 def trigger_llm_download():
     # This endpoint will fetch recommendations and then trigger downloads.
     # For simplicity, it wil be re-fetched. A better implementation might cache the result from get_llm_playlist.
+    # LLM settings are still global (system-wide)
     if not LLM_ENABLED or (not LLM_API_KEY and LLM_PROVIDER != 'llama'):
         return jsonify({"status": "error", "message": "LLM suggestions are not enabled or configured."}), 400
     if LLM_PROVIDER == 'llama' and not LLM_BASE_URL:
         return jsonify({"status": "error", "message": "Base URL is required for Llama.cpp."}), 400
 
-    listenbrainz_api = ListenBrainzAPI(ROOT_LB, TOKEN_LB, USER_LB, LISTENBRAINZ_ENABLED)
+    # Get user settings for ListenBrainz credentials (needed for scrobbles)
+    username = get_current_user()
+    settings = user_manager.get_user_settings(username)
+    lb_enabled = settings.get('listenbrainz_enabled', False)
+    lb_token = settings.get('listenbrainz_token', '')
+    lb_username = settings.get('listenbrainz_username', '')
+
+    listenbrainz_api = ListenBrainzAPI(ROOT_LB, lb_token, lb_username, lb_enabled)
     scrobbles = asyncio.run(listenbrainz_api.get_weekly_scrobbles())
     if not scrobbles:
         return jsonify({"status": "info", "message": "No scrobbles to generate recommendations from."})
@@ -1691,7 +1670,7 @@ def trigger_fresh_release_download():
 
 @app.route('/api/get_track_preview', methods=['GET'])
 @login_required
-async def get_track_preview():
+def get_track_preview():
     artist = request.args.get('artist')
     title = request.args.get('title')
     if not artist or not title:
@@ -1699,7 +1678,7 @@ async def get_track_preview():
 
     try:
         deezer_api = DeezerAPI()
-        preview_url = await deezer_api.get_deezer_track_preview(artist, title)
+        preview_url = asyncio.run(deezer_api.get_deezer_track_preview(artist, title))
         if preview_url:
             return jsonify({"status": "success", "preview_url": preview_url})
         else:
@@ -1788,6 +1767,7 @@ def download_from_link():
             username = get_current_user()
             monitor = data.get('monitor', False)
             poll_interval_hours = data.get('poll_interval_hours', 24)
+            auto_cleanup = data.get('auto_cleanup', False)
             playlist_name_override = data.get('playlist_name', None)
 
             downloads_queue[download_id] = {
@@ -1808,7 +1788,7 @@ def download_from_link():
             }
 
             def _run_playlist_download():
-                asyncio.run(
+                result = asyncio.run(
                     download_playlist(
                         url=link,
                         username=username,
@@ -1828,7 +1808,11 @@ def download_from_link():
                     entry = add_monitored_playlist(
                         url=link, name=name, platform=platform,
                         username=username, poll_interval_hours=poll_interval_hours,
+                        auto_cleanup=auto_cleanup,
                     )
+                    # Store the Navidrome playlist ID if we got one
+                    if result and result.get("navidrome_playlist_id"):
+                        update_monitored_playlist(entry["id"], {"navidrome_playlist_id": result["navidrome_playlist_id"]}, username=username)
                     # Update with track count and sync time from just-completed download
                     mark_synced(entry["id"], len(tracks) if tracks else None)
 
@@ -1886,15 +1870,51 @@ def playlist_preflight():
         username = get_current_user()
         existing = navidrome_api_global._find_playlist_by_name_for_user(name, username)
 
+        # Check if this URL is already being monitored
+        monitored_playlists = [p for p in get_monitored_playlists() if p.get("username") == username]
+        monitored_entry = next((p for p in monitored_playlists if p.get("url") == url), None)
+
         return jsonify({
             "status": "success",
             "name": name,
             "platform": platform,
             "track_count": len(tracks),
             "exists": existing is not None,
+            "is_monitored": monitored_entry is not None,
+            "monitored_id": monitored_entry.get("id") if monitored_entry else None,
+            "monitored_name": monitored_entry.get("name") if monitored_entry else None,
         })
     except Exception as e:
         print(f"Error in playlist preflight: {e}", file=sys.stderr)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/playlist_check_name', methods=['POST'])
+@login_required
+def playlist_check_name():
+    """Check if a playlist name already exists in Navidrome and if it's monitored."""
+    try:
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        if not name:
+            return jsonify({"status": "error", "message": "Name required"}), 400
+
+        username = get_current_user()
+
+        # Check if name exists in Navidrome
+        existing = navidrome_api_global._find_playlist_by_name_for_user(name, username)
+
+        # Check if any monitored playlist has this name
+        monitored_playlists = [p for p in get_monitored_playlists() if p.get("username") == username]
+        monitored_with_name = next((p for p in monitored_playlists if p.get("name") == name), None)
+
+        return jsonify({
+            "status": "success",
+            "exists": existing is not None,
+            "is_monitored": monitored_with_name is not None,
+        })
+    except Exception as e:
+        print(f"Error in playlist check name: {e}", file=sys.stderr)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -1916,6 +1936,7 @@ def api_add_monitored_playlist():
     data = request.get_json()
     url = data.get("url", "").strip()
     poll_interval_hours = data.get("poll_interval_hours", 24)
+    auto_cleanup = data.get("auto_cleanup", False)
     username = get_current_user()
 
     if not url or not is_playlist_url(url):
@@ -1929,14 +1950,10 @@ def api_add_monitored_playlist():
     entry = add_monitored_playlist(
         url=url, name=name, platform=platform,
         username=username, poll_interval_hours=poll_interval_hours,
+        auto_cleanup=auto_cleanup,
     )
-    entry["last_track_count"] = len(tracks)
-    from playlist_monitor import _save_playlists, _load_playlists
-    all_pl = _load_playlists()
-    for p in all_pl:
-        if p["id"] == entry["id"]:
-            p["last_track_count"] = len(tracks)
-    _save_playlists(all_pl)
+    # Update the entry with track count using the proper API
+    entry = update_monitored_playlist(entry["id"], {"last_track_count": len(tracks)}, username=username) or entry
 
     return jsonify({"status": "success", "playlist": entry})
 
@@ -1986,26 +2003,100 @@ def api_sync_monitored_playlist(playlist_id):
     }
     def _run_sync():
         from downloaders.playlist_downloader import extract_playlist_tracks as _ext
+        from utils import get_user_history_path
+
+        auto_cleanup = entry.get('auto_cleanup', False)
+        playlist_id = entry['id']
+        username = entry['username']
+        playlist_name = entry.get('name', '')
+        navidrome_playlist_id = entry.get('navidrome_playlist_id')
+
+        # Extract current playlist tracks FIRST
         track_count = None
+        current_tracks = None
+        source_name = None
         try:
-            _, _, tracks = _ext(entry['url'])
+            _, source_name, tracks = _ext(entry['url'])
             if tracks:
                 track_count = len(tracks)
-        except Exception:
-            pass
+                # Build list with artist/title for cleanup comparison
+                current_tracks = [{'artist': t.get('artist', ''), 'title': t.get('title', '')} for t in tracks]
+        except Exception as e:
+            print(f"[Sync] Warning: Could not extract tracks from {entry['url']}: {e}", file=sys.stderr)
+
+        # Run auto-cleanup AFTER extracting tracks - only delete songs no longer in playlist
+        # Safety: Only run cleanup if we successfully got the current track list
+        cleanup_deleted = 0
+        cleanup_kept = 0
+        if auto_cleanup and username and current_tracks is not None:
+            source_key = f"playlist_{playlist_id}"
+            history_path = get_user_history_path(username)
+            print(f"[Sync] Running auto-cleanup for {playlist_name}...")
+            try:
+                cleanup_result = navidrome_api_global.cleanup_source(
+                    source_key, history_path,
+                    exclude_playlist=playlist_name,
+                    username=username,
+                    current_tracks=current_tracks
+                )
+                cleanup_deleted = cleanup_result['deleted']
+                cleanup_kept = cleanup_result['kept']
+                print(f"[Sync] Cleanup: deleted {cleanup_deleted}, kept {cleanup_kept}")
+                # Update download status with cleanup results
+                if download_id in downloads_queue:
+                    downloads_queue[download_id]['cleanup_deleted'] = cleanup_deleted
+                    downloads_queue[download_id]['cleanup_kept'] = cleanup_kept
+            except Exception as e:
+                print(f"[Sync] Cleanup error: {e}", file=sys.stderr)
+        elif auto_cleanup and username and current_tracks is None:
+            print(f"[Sync] Skipping cleanup - could not fetch current playlist tracks")
         try:
-            asyncio.run(
+            result = asyncio.run(
                 download_playlist(
                     url=entry['url'],
-                    username=entry['username'],
+                    username=username,
                     navidrome_api=navidrome_api_global,
                     download_id=download_id,
                     update_status_fn=update_download_status,
+                    playlist_name_override=playlist_name,  # Use stored name (Navidrome name)
+                    playlist_id=playlist_id if auto_cleanup else None,
+                    navidrome_playlist_id=navidrome_playlist_id,
                 )
             )
+
+            # Update monitored playlist entry with navidrome_playlist_id and sync name from Navidrome
+            updates = {}
+            nd_playlist_id = result.get("navidrome_playlist_id") if result else navidrome_playlist_id
+
+            if result and result.get("navidrome_playlist_id") and result["navidrome_playlist_id"] != navidrome_playlist_id:
+                updates["navidrome_playlist_id"] = result["navidrome_playlist_id"]
+                nd_playlist_id = result["navidrome_playlist_id"]
+                print(f"[Sync] Stored Navidrome playlist ID: {nd_playlist_id}")
+
+            # Sync name from Navidrome playlist (so UI shows what's in Navidrome, not source)
+            # Compare against source_name (what download_playlist used), not playlist_name (stored name)
+            source_name_used = result.get("source_name", "") if result else ""
+            if nd_playlist_id:
+                nd_playlist = navidrome_api_global._get_playlist_by_id(nd_playlist_id)
+                if nd_playlist and nd_playlist.get("name"):
+                    nd_name = nd_playlist["name"]
+                    # Always update download queue and status file with Navidrome name
+                    # (download_playlist wrote source name, we need to overwrite it)
+                    if download_id in downloads_queue:
+                        downloads_queue[download_id]['title'] = nd_name
+                    update_status_file(download_id, 'completed', None, title=nd_name)
+
+                    # Only update the monitored playlist entry if name changed
+                    if nd_name != playlist_name:
+                        updates["name"] = nd_name
+                        print(f"[Sync] Synced name from Navidrome: '{playlist_name}' -> '{nd_name}'")
+
+            if updates:
+                update_monitored_playlist(playlist_id, updates, username=username)
+
         except Exception as e:
-            print(f"Error in manual sync for {entry['name']}: {e}", file=sys.stderr)
-        mark_synced(entry['id'], track_count)
+            print(f"Error in manual sync for {playlist_name}: {e}", file=sys.stderr)
+        mark_synced(playlist_id, track_count)
 
     threading.Thread(target=_run_sync, daemon=True).start()
     return jsonify({"status": "success", "message": f"Sync started for {entry['name']}"})

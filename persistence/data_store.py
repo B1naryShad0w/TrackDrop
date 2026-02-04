@@ -36,9 +36,6 @@ DEFAULT_USER_SETTINGS = {
     "listenbrainz_token": "",
     "lastfm_enabled": False,
     "lastfm_username": "",
-    "lastfm_api_key": "",
-    "lastfm_api_secret": "",
-    "lastfm_session_key": "",
     "cron_minute": 0,
     "cron_hour": 0,
     "cron_day": 1,
@@ -558,8 +555,18 @@ class DataStore:
         name: str,
         platform: str,
         poll_interval_hours: int = 24,
+        auto_cleanup: bool = False,
     ) -> Dict[str, Any]:
-        """Add a playlist to be monitored. Returns the new entry."""
+        """Add a playlist to be monitored. Returns the new entry.
+
+        Args:
+            username: User who owns this monitored playlist
+            url: URL of the playlist
+            name: Display name for the playlist
+            platform: Platform (spotify, deezer, youtube, tidal)
+            poll_interval_hours: How often to check for updates
+            auto_cleanup: If True, old tracks are cleaned up when playlist is refetched
+        """
         user_lock = self._get_user_lock(username)
         with user_lock:
             data = self._load_user_data(username)
@@ -577,6 +584,7 @@ class DataStore:
                 "platform": platform,
                 "username": username,
                 "poll_interval_hours": poll_interval_hours,
+                "auto_cleanup": auto_cleanup,
                 "enabled": True,
                 "added_at": datetime.now().isoformat(),
                 "last_synced": None,
@@ -596,7 +604,7 @@ class DataStore:
 
             for p in playlists:
                 if p["id"] == playlist_id:
-                    for key in ("poll_interval_hours", "enabled", "name"):
+                    for key in ("poll_interval_hours", "enabled", "name", "last_track_count", "auto_cleanup", "navidrome_playlist_id"):
                         if key in updates:
                             p[key] = updates[key]
                     data['monitored_playlists'] = playlists

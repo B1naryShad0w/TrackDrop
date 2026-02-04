@@ -29,14 +29,8 @@ echo "TOKEN_LB = os.getenv(\"TOKEN_LB\", \"${TRACKDROP_TOKEN_LB:-}\")" >> config
 echo "USER_LB = os.getenv(\"USER_LB\", \"${TRACKDROP_USER_LB:-}\")" >> config.py
 echo "" >> config.py
 
-# Last.fm API Configuration (Optional)
+# Last.fm API Configuration (only username needed for recommendations - per-user setting)
 echo "LASTFM_ENABLED = os.getenv(\"LASTFM_ENABLED\", \"${TRACKDROP_LASTFM_ENABLED:-False}\").lower() == \"true\"" >> config.py
-echo "LASTFM_API_KEY = os.getenv(\"LASTFM_API_KEY\", \"${TRACKDROP_LASTFM_API_KEY:-}\")" >> config.py
-echo "LASTFM_API_SECRET = os.getenv(\"LASTFM_API_SECRET\", \"${TRACKDROP_LASTFM_API_SECRET:-}\")" >> config.py
-echo "LASTFM_USERNAME = os.getenv(\"LASTFM_USERNAME\", \"${TRACKDROP_LASTFM_USERNAME:-}\")" >> config.py
-echo "LASTFM_PASSWORD = os.getenv(\"LASTFM_PASSWORD\", \"${TRACKDROP_LASTFM_PASSWORD:-}\")" >> config.py
-echo "LASTFM_PASSWORD_HASH = os.getenv(\"LASTFM_PASSWORD_HASH\", \"${TRACKDROP_LASTFM_PASSWORD_HASH:-}\")" >> config.py
-echo "LASTFM_SESSION_KEY = os.getenv(\"LASTFM_SESSION_KEY\", \"${TRACKDROP_LASTFM_SESSION_KEY:-}\")" >> config.py
 echo "" >> config.py
 
 # LLM Suggestions Settings
@@ -90,12 +84,10 @@ echo "" >> config.py
 # Set up cron job from persisted user settings (or defaults)
 mkdir -p /app/logs
 touch /app/logs/trackdrop.log
-# Rebuild cron from user_settings.json if it exists, otherwise use default
-SETTINGS_FILE="/app/data/user_settings.json"
-if [ -f "$SETTINGS_FILE" ]; then
-    echo "Restoring cron schedules from persisted user settings..."
-    /usr/local/bin/python3 -c "
-import json, os
+# Rebuild cron from per-user data files (user_*.json) or use default
+echo "Restoring cron schedules from persisted user settings..."
+/usr/local/bin/python3 -c "
+import json, os, glob
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -114,36 +106,41 @@ def convert_local_to_utc(minute, hour, day_of_week, timezone_str):
     utc_day = (day_of_week + day_diff) % 7
     return utc_dt.minute, utc_dt.hour, utc_day
 
-settings_file = '$SETTINGS_FILE'
-with open(settings_file, 'r') as f:
-    data = json.load(f)
+data_dir = '/app/data'
 cron_lines = []
-for username, settings in data.items():
-    if not settings.get('cron_enabled', True):
-        continue
-    minute = settings.get('cron_minute', 0)
-    hour = settings.get('cron_hour', 0)
-    day = settings.get('cron_day', 2)
-    timezone = settings.get('cron_timezone', 'UTC')
-    utc_minute, utc_hour, utc_day = convert_local_to_utc(minute, hour, day, timezone)
-    cron_lines.append(f'{utc_minute} {utc_hour} * * {utc_day} root /usr/local/bin/python3 /app/trackdrop.py --user {username} >> /proc/1/fd/1 2>&1')
+
+# Read per-user data files (new format: user_<username>.json)
+for filepath in glob.glob(os.path.join(data_dir, 'user_*.json')):
+    filename = os.path.basename(filepath)
+    # Extract username from filename (user_<username>.json)
+    if filename.startswith('user_') and filename.endswith('.json'):
+        username = filename[5:-5]  # Remove 'user_' prefix and '.json' suffix
+        try:
+            with open(filepath, 'r') as f:
+                settings = json.load(f).get('settings', {})
+            if not settings.get('cron_enabled', True):
+                continue
+            minute = settings.get('cron_minute', 0)
+            hour = settings.get('cron_hour', 0)
+            day = settings.get('cron_day', 1)  # Default Monday
+            timezone = settings.get('cron_timezone', 'UTC')
+            utc_minute, utc_hour, utc_day = convert_local_to_utc(minute, hour, day, timezone)
+            cron_lines.append(f'{utc_minute} {utc_hour} * * {utc_day} root /usr/local/bin/python3 /app/trackdrop.py --user {username} >> /proc/1/fd/1 2>&1')
+        except Exception as e:
+            print(f'Error reading {filepath}: {e}')
+
 if cron_lines:
     with open('/etc/cron.d/trackdrop-cron', 'w') as f:
         f.write('\n'.join(cron_lines) + '\n')
     os.chmod('/etc/cron.d/trackdrop-cron', 0o644)
     print(f'Restored {len(cron_lines)} cron schedule(s)')
 else:
-    print('No enabled cron schedules found in user settings')
+    print('No enabled cron schedules found in user settings, using default (Monday 00:00)')
     # Write default so cron has something
     with open('/etc/cron.d/trackdrop-cron', 'w') as f:
-        f.write('0 0 * * 2 root /usr/local/bin/python3 /app/trackdrop.py >> /proc/1/fd/1 2>&1\n')
+        f.write('0 0 * * 1 root /usr/local/bin/python3 /app/trackdrop.py >> /proc/1/fd/1 2>&1\n')
     os.chmod('/etc/cron.d/trackdrop-cron', 0o644)
 "
-else
-    echo "No user settings found, using default cron schedule (Tuesday 00:00)..."
-    echo "0 0 * * 2 root /usr/local/bin/python3 /app/trackdrop.py >> /proc/1/fd/1 2>&1" > /etc/cron.d/trackdrop-cron
-    chmod 0644 /etc/cron.d/trackdrop-cron
-fi
 
 # Replace ARL placeholder in streamrip_config.toml
 # Use temp file + cat to avoid sed -i rename failures on overlay/mounted filesystems
@@ -184,8 +181,6 @@ sleep 2
 # Start cron service
 cron &
 
-# Start Gunicorn server for the Flask app in the background
-gunicorn --bind 0.0.0.0:5000 --timeout 300 "web_ui.app:app" &
-
-# Execute the main command & keep container running
-exec "$@"
+# Start Gunicorn server for the Flask app as the main process (PID 1)
+# This ensures proper SIGTERM handling for graceful shutdown
+exec gunicorn --bind 0.0.0.0:5000 --timeout 300 "web_ui.app:app"

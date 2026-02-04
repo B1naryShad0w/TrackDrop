@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Optional
 
 from persistence.data_store import get_data_store
+from utils import update_status_file
 
 _scheduler_thread: Optional[threading.Thread] = None
 _scheduler_running = False
@@ -31,14 +32,25 @@ def add_monitored_playlist(
     platform: str,
     username: str,
     poll_interval_hours: int = 24,
+    auto_cleanup: bool = False,
 ) -> dict:
-    """Add a playlist to be monitored. Returns the new entry."""
+    """Add a playlist to be monitored. Returns the new entry.
+
+    Args:
+        url: URL of the playlist
+        name: Display name for the playlist
+        platform: Platform (spotify, deezer, youtube, tidal)
+        username: User who owns this monitored playlist
+        poll_interval_hours: How often to check for updates
+        auto_cleanup: If True, old tracks are cleaned up when playlist is refetched
+    """
     return get_data_store().add_monitored_playlist(
         username=username,
         url=url,
         name=name,
         platform=platform,
         poll_interval_hours=poll_interval_hours,
+        auto_cleanup=auto_cleanup,
     )
 
 
@@ -83,33 +95,102 @@ def mark_synced(playlist_id: str, track_count: int = None, username: str = None)
                 return
 
 
-def _sync_playlist(entry: dict, navidrome_api, update_status_fn):
+def _sync_playlist(entry: dict, navidrome_api, update_status_fn, downloads_queue=None, download_id=None):
     """Run a sync for a single monitored playlist."""
     from downloaders.playlist_downloader import download_playlist, extract_playlist_tracks
+    from utils import get_user_history_path
 
-    download_id = str(uuid.uuid4())
-    print(f"[PlaylistMonitor] Syncing: {entry['name']} ({entry['url']})")
+    if download_id is None:
+        download_id = str(uuid.uuid4())
+    playlist_id = entry["id"]
+    username = entry.get("username", "")
+    auto_cleanup = entry.get("auto_cleanup", False)
+    playlist_name = entry.get("name", "")
+    navidrome_playlist_id = entry.get("navidrome_playlist_id")
+    print(f"[PlaylistMonitor] Syncing: {playlist_name} ({entry['url']})")
 
+    # Extract current playlist tracks FIRST
     track_count = None
+    current_tracks = None
+    source_name = None
     try:
-        # Get track count before downloading
-        _, _, tracks = extract_playlist_tracks(entry["url"])
+        _, source_name, tracks = extract_playlist_tracks(entry["url"])
         if tracks:
             track_count = len(tracks)
+            # Build list with artist/title for cleanup comparison
+            current_tracks = [{'artist': t.get('artist', ''), 'title': t.get('title', '')} for t in tracks]
+    except Exception as e:
+        print(f"[PlaylistMonitor] Warning: Could not extract tracks from {entry['url']}: {e}", file=sys.stderr)
 
-        asyncio.run(
+    # Run auto-cleanup AFTER extracting tracks - only delete songs no longer in playlist
+    # Safety: Only run cleanup if we successfully got the current track list
+    if auto_cleanup and username and current_tracks is not None:
+        source_key = f"playlist_{playlist_id}"
+        history_path = get_user_history_path(username)
+        print(f"[PlaylistMonitor] Running auto-cleanup for {playlist_name}...")
+        try:
+            # Pass playlist name so songs in this playlist aren't protected from cleanup
+            # Pass username for DataStore access
+            # Pass current_tracks so only removed songs get deleted
+            cleanup_result = navidrome_api.cleanup_source(
+                source_key, history_path,
+                exclude_playlist=playlist_name,
+                username=username,
+                current_tracks=current_tracks
+            )
+            print(f"[PlaylistMonitor] Cleanup: deleted {cleanup_result['deleted']}, kept {cleanup_result['kept']}")
+        except Exception as e:
+            print(f"[PlaylistMonitor] Cleanup error: {e}", file=sys.stderr)
+    elif auto_cleanup and username and current_tracks is None:
+        print(f"[PlaylistMonitor] Skipping cleanup - could not fetch current playlist tracks")
+
+    try:
+        result = asyncio.run(
             download_playlist(
                 url=entry["url"],
-                username=entry["username"],
+                username=username,
                 navidrome_api=navidrome_api,
                 download_id=download_id,
                 update_status_fn=update_status_fn,
+                playlist_name_override=playlist_name,  # Use stored name (Navidrome name)
+                playlist_id=playlist_id if auto_cleanup else None,  # Track history if auto_cleanup enabled
+                navidrome_playlist_id=navidrome_playlist_id,
             )
         )
-    except Exception as e:
-        print(f"[PlaylistMonitor] Error syncing {entry['name']}: {e}", file=sys.stderr)
 
-    mark_synced(entry["id"], track_count, username=entry.get("username"))
+        # Update monitored playlist entry with navidrome_playlist_id and sync name from Navidrome
+        updates = {}
+        nd_playlist_id = result.get("navidrome_playlist_id") if result else navidrome_playlist_id
+
+        if result and result.get("navidrome_playlist_id") and result["navidrome_playlist_id"] != navidrome_playlist_id:
+            updates["navidrome_playlist_id"] = result["navidrome_playlist_id"]
+            nd_playlist_id = result["navidrome_playlist_id"]
+            print(f"[PlaylistMonitor] Stored Navidrome playlist ID: {nd_playlist_id}")
+
+        # Sync name from Navidrome playlist (so UI shows what's in Navidrome, not source)
+        # Always update download queue and status file with Navidrome name
+        # (download_playlist wrote source name, we need to overwrite it)
+        if nd_playlist_id:
+            nd_playlist = navidrome_api._get_playlist_by_id(nd_playlist_id)
+            if nd_playlist and nd_playlist.get("name"):
+                nd_name = nd_playlist["name"]
+                # Always update download queue and status file
+                if downloads_queue and download_id and download_id in downloads_queue:
+                    downloads_queue[download_id]["title"] = nd_name
+                update_status_file(download_id, 'completed', None, title=nd_name)
+
+                # Only update the monitored playlist entry if name changed
+                if nd_name != playlist_name:
+                    updates["name"] = nd_name
+                    print(f"[PlaylistMonitor] Synced name from Navidrome: '{playlist_name}' -> '{nd_name}'")
+
+        if updates:
+            update_monitored_playlist(playlist_id, updates, username=username)
+
+    except Exception as e:
+        print(f"[PlaylistMonitor] Error syncing {playlist_name}: {e}", file=sys.stderr)
+
+    mark_synced(playlist_id, track_count, username=username)
 
 
 def _scheduler_loop(navidrome_api, update_status_fn, downloads_queue):
@@ -157,7 +238,7 @@ def _scheduler_loop(navidrome_api, update_status_fn, downloads_queue):
                     "failed_count": 0,
                 }
 
-                _sync_playlist(entry, navidrome_api, update_status_fn)
+                _sync_playlist(entry, navidrome_api, update_status_fn, downloads_queue, download_id)
 
         except Exception as e:
             print(f"[PlaylistMonitor] Scheduler error: {e}", file=sys.stderr)

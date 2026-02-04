@@ -41,8 +41,8 @@ class LinkDownloader:
         deezer_short_re = r"link\.deezer\.com\/s\/([a-zA-Z0-9]+)"
         apple_track_re = r"music\.apple\.com\/(?:[a-z]{2}\/)?song\/[^\/]+\/(\d+)"
         apple_album_re = r"music\.apple\.com\/(?:[a-z]{2}\/)?album\/[^\/]+\/(\d+)"
-        tidal_track_re = r"tidal\.com\/track\/(\d+)"
-        tidal_album_re = r"tidal\.com\/album\/(\d+)"
+        tidal_track_re = r"tidal\.com\/(?:browse\/)?track\/(\d+)"
+        tidal_album_re = r"tidal\.com\/(?:browse\/)?album\/(\d+)"
         amazon_track_re = r"music\.amazon\.[a-z]{2,3}\/tracks\/([A-Z0-9]+)"
         amazon_album_re = r"music\.amazon\.[a-z]{2,3}\/albums\/([A-Z0-9]+)"
 
