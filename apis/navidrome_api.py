@@ -1301,12 +1301,30 @@ class NavidromeAPI:
                 playlist_id = playlist.get('id')
                 print(f"[DEBUG] Created playlist id={playlist_id}, now updating owner to '{owner_username}' (id={owner_id})", flush=True)
 
-                # Update the playlist ownership directly in the database
-                # (REST API doesn't support setting ownerId on creation or update)
-                if self._update_playlist_owner_in_db(playlist_id, owner_id):
-                    print(f"Created playlist '{name}' for user '{owner_username}'")
+                # Try to update the playlist ownership via REST API PUT
+                update_data = {
+                    "id": playlist_id,
+                    "name": name,
+                    "ownerId": owner_id,
+                    "public": False,
+                }
+                print(f"[DEBUG] Attempting PUT /api/playlist/{playlist_id} with ownerId={owner_id}", flush=True)
+                put_response = requests.put(
+                    f"{self.root_nd}/api/playlist/{playlist_id}",
+                    headers=headers,
+                    json=update_data,
+                    timeout=30
+                )
+                if put_response.status_code in (200, 201):
+                    updated_playlist = put_response.json()
+                    actual_owner = updated_playlist.get('ownerId')
+                    print(f"[DEBUG] PUT response: ownerId is now {actual_owner}", flush=True)
+                    if actual_owner == owner_id:
+                        print(f"Created playlist '{name}' for user '{owner_username}'", flush=True)
+                    else:
+                        print(f"[DEBUG] Warning: ownerId was not updated (still {actual_owner})", flush=True)
                 else:
-                    print(f"  Warning: Failed to update playlist owner in database")
+                    print(f"[DEBUG] PUT failed: {put_response.status_code} - {put_response.text}", flush=True)
 
                 # Add songs to the playlist
                 if song_ids and playlist_id:
