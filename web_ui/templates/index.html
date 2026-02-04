@@ -1327,15 +1327,8 @@
             }
         }
 
-        async function dismissWelcomeMessage() {
+        function dismissWelcomeMessage() {
             document.getElementById('welcomeMessage').style.display = 'none';
-            // Mark as dismissed permanently (both locally and on server)
-            localStorage.setItem('welcomeDismissed', 'true');
-            try {
-                await fetch('/api/user/setup_done', { method: 'POST' });
-            } catch (e) {
-                console.error('Failed to mark setup done:', e);
-            }
         }
 
         function openSettingsModal() {
@@ -2547,11 +2540,11 @@ function showCleanupResults(data) {
             const hasAnyConfig = hasNavidrome || hasListenBrainz || hasLastFm || (config.DEEZER_ARL && config.DEEZER_ARL !== '');
             const llmSection = document.getElementById('llmSection');
 
-            // Show welcome message if no configuration is set (and not dismissed)
+            // Show welcome message only if no API keys are configured
             const welcomeMessage = document.getElementById('welcomeMessage');
-            if (!hasAnyConfig && !localStorage.getItem('welcomeDismissed')) {
+            if (!hasAnyConfig) {
                 welcomeMessage.style.display = 'block';
-            } else if (hasAnyConfig) {
+            } else {
                 welcomeMessage.style.display = 'none';
             }
 
@@ -3008,13 +3001,6 @@ function showCleanupResults(data) {
 
         // Auto-load content based on configuration
         window.onload = async function() {
-            // Show welcome message for first-time users (unless dismissed)
-            {% if first_time %}
-            if (!localStorage.getItem('welcomeDismissed')) {
-                document.getElementById('welcomeMessage').style.display = 'block';
-            }
-            {% endif %}
-
             // Load configuration first to determine what to show
             try {
                 const response = await fetch('/api/config');
@@ -3036,9 +3022,8 @@ function showCleanupResults(data) {
                 {% endif %}
             } catch (error) {
                 console.error('Error loading initial configuration:', error);
-                if (!localStorage.getItem('welcomeDismissed')) {
-                    document.getElementById('welcomeMessage').style.display = 'block';
-                }
+                // Show welcome message on error (likely no config)
+                document.getElementById('welcomeMessage').style.display = 'block';
             }
 
             // PWA share target: auto-submit shared URL
