@@ -390,7 +390,7 @@ async def download_playlist(
         download_id: UUID for progress tracking.
         update_status_fn: Callback(download_id, status, message, title, current, total).
     """
-    print(f"[DEBUG] download_playlist called with username='{username}'")
+    print(f"[DEBUG] download_playlist called with username='{username}'", flush=True)
     # Per-track status list for UI
     track_statuses = []  # [{artist, title, status, message}, ...]
 
@@ -610,17 +610,17 @@ async def download_playlist(
 
     # Create/update Navidrome playlist for the specific user
     if all_navidrome_ids:
-        print(f"[DEBUG] playlist_downloader: Creating playlist '{playlist_name}' for user '{username}'")
+        print(f"[DEBUG] playlist_downloader: Creating playlist '{playlist_name}' for user '{username}'", flush=True)
         _update("in_progress", f"Creating Navidrome playlist '{playlist_name}' for user '{username}'...",
                 title=playlist_name, current=downloaded_count, total=total)
         # Use user-specific playlist functions to ensure correct ownership
-        print(f"[DEBUG] playlist_downloader: Calling _find_playlist_by_name_for_user('{playlist_name}', '{username}')")
+        print(f"[DEBUG] playlist_downloader: Calling _find_playlist_by_name_for_user('{playlist_name}', '{username}')", flush=True)
         existing_pl = navidrome_api._find_playlist_by_name_for_user(playlist_name, username)
         if existing_pl:
-            print(f"[DEBUG] playlist_downloader: Found existing playlist id={existing_pl.get('id')}, updating")
+            print(f"[DEBUG] playlist_downloader: Found existing playlist id={existing_pl.get('id')}, updating", flush=True)
             navidrome_api._update_playlist_for_user(existing_pl["id"], all_navidrome_ids)
         else:
-            print(f"[DEBUG] playlist_downloader: No existing playlist, calling _create_playlist_for_user('{playlist_name}', ..., '{username}')")
+            print(f"[DEBUG] playlist_downloader: No existing playlist, calling _create_playlist_for_user('{playlist_name}', ..., '{username}')", flush=True)
             navidrome_api._create_playlist_for_user(playlist_name, all_navidrome_ids, username)
 
     # Save download history (only newly downloaded tracks)

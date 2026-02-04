@@ -1788,7 +1788,7 @@ def download_from_link():
         if is_playlist_url(link):
             download_id = str(uuid.uuid4())
             username = get_current_user()
-            print(f"[DEBUG] app.py download_from_link: playlist download for username='{username}'")
+            print(f"[DEBUG] app.py download_from_link: playlist download for username='{username}'", flush=True)
             monitor = data.get('monitor', False)
             poll_interval_hours = data.get('poll_interval_hours', 24)
             playlist_name_override = data.get('playlist_name', None)

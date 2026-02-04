@@ -758,13 +758,13 @@ class NavidromeAPI:
 
             # Use admin REST API to create playlist for target user, or fall back to Subsonic API
             if target_user:
-                print(f"[DEBUG] update_api_playlists: using target_user='{target_user}' for playlist '{playlist_name}'")
+                print(f"[DEBUG] update_api_playlists: using target_user='{target_user}' for playlist '{playlist_name}'", flush=True)
                 existing = self._find_playlist_by_name_for_user(playlist_name, target_user)
                 if existing:
-                    print(f"[DEBUG] Found existing playlist id={existing['id']} for user '{target_user}'")
+                    print(f"[DEBUG] Found existing playlist id={existing['id']} for user '{target_user}'", flush=True)
                     self._update_playlist_for_user(existing['id'], song_ids)
                 else:
-                    print(f"[DEBUG] No existing playlist, creating new for user '{target_user}'")
+                    print(f"[DEBUG] No existing playlist, creating new for user '{target_user}'", flush=True)
                     self._create_playlist_for_user(playlist_name, song_ids, target_user)
             else:
                 existing = self._find_playlist_by_name(playlist_name, salt, token)
@@ -1112,7 +1112,7 @@ class NavidromeAPI:
         This is needed because Navidrome's REST API doesn't support setting ownerId.
         """
         if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
-            print(f"[DEBUG] Cannot update playlist owner: DB path not configured")
+            print(f"[DEBUG] Cannot update playlist owner: DB path not configured", flush=True)
             return False
         try:
             conn = sqlite3.connect(self.navidrome_db_path)
@@ -1122,10 +1122,10 @@ class NavidromeAPI:
             rows_affected = cursor.rowcount
             conn.close()
             if rows_affected > 0:
-                print(f"[DEBUG] Updated playlist {playlist_id} owner to {owner_id} in database")
+                print(f"[DEBUG] Updated playlist {playlist_id} owner to {owner_id} in database", flush=True)
                 return True
             else:
-                print(f"[DEBUG] No playlist found with id {playlist_id}")
+                print(f"[DEBUG] No playlist found with id {playlist_id}", flush=True)
                 return False
         except Exception as e:
             print(f"Error updating playlist owner in DB: {e}")
@@ -1186,7 +1186,7 @@ class NavidromeAPI:
             # Use admin credentials for REST API auth
             admin_user = self.admin_user or self.user_nd
             admin_pass = self.admin_password or self.password_nd
-            print(f"[DEBUG] _get_navidrome_jwt_token: authenticating as '{admin_user}'")
+            print(f"[DEBUG] _get_navidrome_jwt_token: authenticating as '{admin_user}'", flush=True)
 
             response = requests.post(
                 f"{self.root_nd}/auth/login",
@@ -1195,7 +1195,7 @@ class NavidromeAPI:
             )
             if response.status_code == 200:
                 data = response.json()
-                print(f"[DEBUG] _get_navidrome_jwt_token: successfully authenticated as '{admin_user}'")
+                print(f"[DEBUG] _get_navidrome_jwt_token: successfully authenticated as '{admin_user}'", flush=True)
                 return data.get('token')
             else:
                 print(f"Failed to get Navidrome JWT token: {response.status_code}")
@@ -1209,7 +1209,7 @@ class NavidromeAPI:
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
-                print(f"[DEBUG] _get_user_id_by_username: failed to get JWT token")
+                print(f"[DEBUG] _get_user_id_by_username: failed to get JWT token", flush=True)
                 return None
 
             headers = {"x-nd-authorization": f"Bearer {token}"}
@@ -1220,12 +1220,12 @@ class NavidromeAPI:
             )
             if response.status_code == 200:
                 users = response.json()
-                print(f"[DEBUG] _get_user_id_by_username: looking for '{username}', found users: {[u.get('userName') for u in users]}")
+                print(f"[DEBUG] _get_user_id_by_username: looking for '{username}', found users: {[u.get('userName') for u in users]}", flush=True)
                 for user in users:
                     if user.get('userName', '').lower() == username.lower():
-                        print(f"[DEBUG] _get_user_id_by_username: matched user ID {user.get('id')}")
+                        print(f"[DEBUG] _get_user_id_by_username: matched user ID {user.get('id')}", flush=True)
                         return user.get('id')
-                print(f"[DEBUG] _get_user_id_by_username: no match found for '{username}'")
+                print(f"[DEBUG] _get_user_id_by_username: no match found for '{username}'", flush=True)
             return None
         except Exception as e:
             print(f"Error looking up user ID: {e}")
@@ -1237,11 +1237,11 @@ class NavidromeAPI:
         Uses admin credentials to create a playlist, then updates ownership to the specified user.
         Note: Navidrome's POST /api/playlist ignores ownerId, so we must update it after creation.
         """
-        print(f"[DEBUG] _create_playlist_for_user called:")
-        print(f"[DEBUG]   name='{name}'")
-        print(f"[DEBUG]   owner_username='{owner_username}'")
-        print(f"[DEBUG]   admin_user='{self.admin_user}' (fallback user_nd='{self.user_nd}')")
-        print(f"[DEBUG]   navidrome_db_path='{self.navidrome_db_path}'")
+        print(f"[DEBUG] _create_playlist_for_user called:", flush=True)
+        print(f"[DEBUG]   name='{name}'", flush=True)
+        print(f"[DEBUG]   owner_username='{owner_username}'", flush=True)
+        print(f"[DEBUG]   admin_user='{self.admin_user}' (fallback user_nd='{self.user_nd}')", flush=True)
+        print(f"[DEBUG]   navidrome_db_path='{self.navidrome_db_path}'", flush=True)
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
@@ -1277,7 +1277,7 @@ class NavidromeAPI:
             if response.status_code in (200, 201):
                 playlist = response.json()
                 playlist_id = playlist.get('id')
-                print(f"[DEBUG] Created playlist id={playlist_id}, now updating owner to '{owner_username}' (id={owner_id})")
+                print(f"[DEBUG] Created playlist id={playlist_id}, now updating owner to '{owner_username}' (id={owner_id})", flush=True)
 
                 # Update the playlist ownership directly in the database
                 # (REST API doesn't support setting ownerId on creation or update)
@@ -1349,11 +1349,11 @@ class NavidromeAPI:
 
     def _find_playlist_by_name_for_user(self, name, owner_username):
         """Find a playlist by name owned by a specific user."""
-        print(f"[DEBUG] _find_playlist_by_name_for_user: looking for playlist '{name}' owned by '{owner_username}'")
+        print(f"[DEBUG] _find_playlist_by_name_for_user: looking for playlist '{name}' owned by '{owner_username}'", flush=True)
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
-                print(f"[DEBUG] _find_playlist_by_name_for_user: failed to get JWT token")
+                print(f"[DEBUG] _find_playlist_by_name_for_user: failed to get JWT token", flush=True)
                 return None
 
             headers = {"x-nd-authorization": f"Bearer {token}"}
@@ -1366,20 +1366,20 @@ class NavidromeAPI:
 
             if response.status_code == 200:
                 playlists = response.json()
-                print(f"[DEBUG] _find_playlist_by_name_for_user: API returned {len(playlists)} playlists")
+                print(f"[DEBUG] _find_playlist_by_name_for_user: API returned {len(playlists)} playlists", flush=True)
                 for pl in playlists:
-                    print(f"[DEBUG]   - '{pl.get('name')}' owned by ownerId={pl.get('ownerId')} (ownerName={pl.get('ownerName', 'N/A')})")
+                    print(f"[DEBUG]   - '{pl.get('name')}' owned by ownerId={pl.get('ownerId')} (ownerName={pl.get('ownerName', 'N/A')})", flush=True)
 
                 owner_id = self._get_user_id_by_username(owner_username)
-                print(f"[DEBUG] _find_playlist_by_name_for_user: looking for ownerId={owner_id} for user '{owner_username}'")
+                print(f"[DEBUG] _find_playlist_by_name_for_user: looking for ownerId={owner_id} for user '{owner_username}'", flush=True)
 
                 for pl in playlists:
                     if pl.get('name') == name and pl.get('ownerId') == owner_id:
-                        print(f"[DEBUG] _find_playlist_by_name_for_user: FOUND matching playlist id={pl.get('id')}")
+                        print(f"[DEBUG] _find_playlist_by_name_for_user: FOUND matching playlist id={pl.get('id')}", flush=True)
                         return pl
-                print(f"[DEBUG] _find_playlist_by_name_for_user: NO matching playlist found")
+                print(f"[DEBUG] _find_playlist_by_name_for_user: NO matching playlist found", flush=True)
             else:
-                print(f"[DEBUG] _find_playlist_by_name_for_user: API returned status {response.status_code}")
+                print(f"[DEBUG] _find_playlist_by_name_for_user: API returned status {response.status_code}", flush=True)
             return None
         except Exception as e:
             print(f"Error finding playlist: {e}")
