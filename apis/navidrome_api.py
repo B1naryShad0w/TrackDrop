@@ -1186,6 +1186,7 @@ class NavidromeAPI:
             # Use admin credentials for REST API auth
             admin_user = self.admin_user or self.user_nd
             admin_pass = self.admin_password or self.password_nd
+            print(f"[DEBUG] _get_navidrome_jwt_token: authenticating as '{admin_user}'")
 
             response = requests.post(
                 f"{self.root_nd}/auth/login",
@@ -1194,6 +1195,7 @@ class NavidromeAPI:
             )
             if response.status_code == 200:
                 data = response.json()
+                print(f"[DEBUG] _get_navidrome_jwt_token: successfully authenticated as '{admin_user}'")
                 return data.get('token')
             else:
                 print(f"Failed to get Navidrome JWT token: {response.status_code}")
@@ -1235,7 +1237,11 @@ class NavidromeAPI:
         Uses admin credentials to create a playlist, then updates ownership to the specified user.
         Note: Navidrome's POST /api/playlist ignores ownerId, so we must update it after creation.
         """
-        print(f"[DEBUG] _create_playlist_for_user called with owner_username='{owner_username}'")
+        print(f"[DEBUG] _create_playlist_for_user called:")
+        print(f"[DEBUG]   name='{name}'")
+        print(f"[DEBUG]   owner_username='{owner_username}'")
+        print(f"[DEBUG]   admin_user='{self.admin_user}' (fallback user_nd='{self.user_nd}')")
+        print(f"[DEBUG]   navidrome_db_path='{self.navidrome_db_path}'")
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
@@ -1343,9 +1349,11 @@ class NavidromeAPI:
 
     def _find_playlist_by_name_for_user(self, name, owner_username):
         """Find a playlist by name owned by a specific user."""
+        print(f"[DEBUG] _find_playlist_by_name_for_user: looking for playlist '{name}' owned by '{owner_username}'")
         try:
             token = self._get_navidrome_jwt_token()
             if not token:
+                print(f"[DEBUG] _find_playlist_by_name_for_user: failed to get JWT token")
                 return None
 
             headers = {"x-nd-authorization": f"Bearer {token}"}
@@ -1358,10 +1366,20 @@ class NavidromeAPI:
 
             if response.status_code == 200:
                 playlists = response.json()
+                print(f"[DEBUG] _find_playlist_by_name_for_user: API returned {len(playlists)} playlists")
+                for pl in playlists:
+                    print(f"[DEBUG]   - '{pl.get('name')}' owned by ownerId={pl.get('ownerId')} (ownerName={pl.get('ownerName', 'N/A')})")
+
                 owner_id = self._get_user_id_by_username(owner_username)
+                print(f"[DEBUG] _find_playlist_by_name_for_user: looking for ownerId={owner_id} for user '{owner_username}'")
+
                 for pl in playlists:
                     if pl.get('name') == name and pl.get('ownerId') == owner_id:
+                        print(f"[DEBUG] _find_playlist_by_name_for_user: FOUND matching playlist id={pl.get('id')}")
                         return pl
+                print(f"[DEBUG] _find_playlist_by_name_for_user: NO matching playlist found")
+            else:
+                print(f"[DEBUG] _find_playlist_by_name_for_user: API returned status {response.status_code}")
             return None
         except Exception as e:
             print(f"Error finding playlist: {e}")
