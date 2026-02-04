@@ -34,8 +34,23 @@ class ListenBrainzAPI:
         """Retrieves the name of the latest *recommendation* playlist from ListenBrainz asynchronously."""
         playlist_json = await self._get_recommendation_playlist(self.user_lb)
 
+        print(f"[DEBUG] Looking for playlist starting with: 'Weekly Exploration for {self.user_lb}'")
+        print(f"[DEBUG] Found {len(playlist_json.get('playlists', []))} playlists")
+
         for playlist in playlist_json["playlists"]:
-            if playlist["playlist"]["title"].startswith(f"Weekly Exploration for {self.user_lb}"):
+            title = playlist["playlist"]["title"]
+            print(f"[DEBUG] Playlist: {title}")
+            if title.startswith(f"Weekly Exploration for {self.user_lb}"):
+                latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
+                latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
+                return latest_playlist['playlist']['title']
+
+        # Try case-insensitive match as fallback
+        search_prefix = f"Weekly Exploration for {self.user_lb}".lower()
+        for playlist in playlist_json["playlists"]:
+            title = playlist["playlist"]["title"]
+            if title.lower().startswith(search_prefix):
+                print(f"[DEBUG] Found with case-insensitive match: {title}")
                 latest_playlist_mbid = playlist["playlist"]["identifier"].split("/")[-1]
                 latest_playlist = await self._get_playlist_by_mbid(latest_playlist_mbid)
                 return latest_playlist['playlist']['title']
