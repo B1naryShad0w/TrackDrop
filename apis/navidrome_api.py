@@ -1114,16 +1114,24 @@ class NavidromeAPI:
 
         This is needed because Navidrome's REST API doesn't support setting ownerId.
         """
-        if not self.navidrome_db_path or not os.path.exists(self.navidrome_db_path):
+        print(f"[DEBUG] _update_playlist_owner_in_db called: playlist_id={playlist_id}, owner_id={owner_id}", flush=True)
+        print(f"[DEBUG] _update_playlist_owner_in_db: db_path='{self.navidrome_db_path}'", flush=True)
+        if not self.navidrome_db_path:
             print(f"[DEBUG] Cannot update playlist owner: DB path not configured", flush=True)
             return False
+        if not os.path.exists(self.navidrome_db_path):
+            print(f"[DEBUG] Cannot update playlist owner: DB file does not exist at '{self.navidrome_db_path}'", flush=True)
+            return False
         try:
+            print(f"[DEBUG] _update_playlist_owner_in_db: connecting to database...", flush=True)
             conn = sqlite3.connect(self.navidrome_db_path)
             cursor = conn.cursor()
+            print(f"[DEBUG] _update_playlist_owner_in_db: executing UPDATE...", flush=True)
             cursor.execute("UPDATE playlist SET owner_id = ? WHERE id = ?", (owner_id, playlist_id))
             conn.commit()
             rows_affected = cursor.rowcount
             conn.close()
+            print(f"[DEBUG] _update_playlist_owner_in_db: rows_affected={rows_affected}", flush=True)
             if rows_affected > 0:
                 print(f"[DEBUG] Updated playlist {playlist_id} owner to {owner_id} in database", flush=True)
                 return True
@@ -1131,7 +1139,7 @@ class NavidromeAPI:
                 print(f"[DEBUG] No playlist found with id {playlist_id}", flush=True)
                 return False
         except Exception as e:
-            print(f"Error updating playlist owner in DB: {e}")
+            print(f"[DEBUG] Error updating playlist owner in DB: {e}", flush=True)
             return False
 
     def star_song_for_user(self, song_id, username):
