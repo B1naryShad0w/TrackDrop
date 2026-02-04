@@ -1270,62 +1270,53 @@ class NavidromeAPI:
             return False
 
     def _update_playlist_for_user(self, playlist_id, song_ids):
-        """Update a playlist's tracks using the Navidrome REST API.
+        """Update a playlist's tracks using the Subsonic API.
 
         Clears existing tracks first, then adds the new ones.
+        Uses admin credentials to modify the playlist.
         """
         try:
-            token = self._get_navidrome_jwt_token()
-            if not token:
-                return False
+            # Use admin credentials for Subsonic API
+            admin_user, salt, token = self._get_admin_auth_params()
 
-            headers = {
-                "x-nd-authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
+            # Get current songs in the playlist
+            current_songs = self._get_playlist_songs(playlist_id, salt, token)
 
-            # Get existing tracks from the playlist
-            print(f"[DEBUG] Getting tracks from playlist {playlist_id}", flush=True)
-            tracks_response = requests.get(
-                f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
-                headers=headers,
-                timeout=30
-            )
-            print(f"[DEBUG] GET tracks response: {tracks_response.status_code}", flush=True)
-
-            if tracks_response.status_code == 200:
-                existing_tracks = tracks_response.json()
-                print(f"[DEBUG] Existing tracks count: {len(existing_tracks) if isinstance(existing_tracks, list) else 'N/A'}", flush=True)
-                if existing_tracks and isinstance(existing_tracks, list) and len(existing_tracks) > 0:
-                    # Get the playlist-track IDs (not mediaFileId)
-                    existing_ids = [t.get('id') for t in existing_tracks if t.get('id')]
-                    print(f"[DEBUG] Track IDs to delete: {existing_ids[:5]}...", flush=True)
-                    if existing_ids:
-                        # Try with {"ids": [...]} format
-                        print(f"[DEBUG] Trying DELETE with ids format", flush=True)
-                        delete_response = requests.delete(
-                            f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
-                            headers=headers,
-                            json={"ids": existing_ids},
-                            timeout=30
-                        )
-                        print(f"[DEBUG] DELETE response: {delete_response.status_code} - {delete_response.text[:200] if delete_response.text else 'empty'}", flush=True)
-
-            # Add new tracks
-            if song_ids:
-                response = requests.post(
-                    f"{self.root_nd}/api/playlist/{playlist_id}/tracks",
-                    headers=headers,
-                    json={"ids": song_ids},
-                    timeout=60
-                )
-                if response.status_code in (200, 201):
-                    print(f"  Updated playlist with {len(song_ids)} tracks")
-                    return True
-                else:
-                    print(f"  Warning: Failed to update tracks: {response.status_code}")
+            # Remove all existing songs using songIndexToRemove
+            if current_songs:
+                url = f"{self.root_nd}/rest/updatePlaylist.view"
+                params = {
+                    'u': admin_user, 't': token, 's': salt,
+                    'v': '1.16.1', 'c': 'trackdrop', 'f': 'json', 'playlistId': playlist_id
+                }
+                param_list = [(k, v) for k, v in params.items()]
+                for i in range(len(current_songs)):
+                    param_list.append(('songIndexToRemove', i))
+                try:
+                    response = requests.get(url, params=param_list, timeout=60)
+                    response.raise_for_status()
+                except Exception as e:
+                    print(f"Error removing songs from playlist: {e}")
                     return False
 
+            # Add new songs
+            if song_ids:
+                url = f"{self.root_nd}/rest/createPlaylist.view"
+                params = {
+                    'u': admin_user, 't': token, 's': salt,
+                    'v': '1.16.1', 'c': 'trackdrop', 'f': 'json', 'playlistId': playlist_id
+                }
+                param_list = [(k, v) for k, v in params.items()]
+                for sid in song_ids:
+                    param_list.append(('songId', sid))
+                try:
+                    response = requests.get(url, params=param_list, timeout=60)
+                    response.raise_for_status()
+                except Exception as e:
+                    print(f"Error adding songs to playlist: {e}")
+                    return False
+
+            print(f"  Updated playlist with {len(song_ids)} tracks")
             return True
         except Exception as e:
             print(f"Error updating playlist: {e}")
