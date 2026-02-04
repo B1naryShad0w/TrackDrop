@@ -1329,8 +1329,8 @@
 
         function dismissWelcomeMessage() {
             document.getElementById('welcomeMessage').style.display = 'none';
-            // Mark as dismissed for this session
-            sessionStorage.setItem('welcomeDismissed', 'true');
+            // Mark as dismissed permanently
+            localStorage.setItem('welcomeDismissed', 'true');
         }
 
         function openSettingsModal() {
@@ -3005,7 +3005,7 @@ function showCleanupResults(data) {
         window.onload = async function() {
             // Show welcome message for first-time users (unless dismissed)
             {% if first_time %}
-            if (!sessionStorage.getItem('welcomeDismissed')) {
+            if (!localStorage.getItem('welcomeDismissed')) {
                 document.getElementById('welcomeMessage').style.display = 'block';
             }
             {% endif %}
