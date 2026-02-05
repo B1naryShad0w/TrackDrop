@@ -2017,7 +2017,7 @@ function showCleanupResults(data) {
             showMessage('info', 'Download started...');
             // Add to client-side queue display immediately
             const downloadId = `listenbrainz-${Date.now()}`;
-            downloadQueue.push({ id: downloadId, artist: 'ListenBrainz Playlist', title: 'Multiple Tracks', status: 'in_progress' });
+            downloadQueue.unshift({ id: downloadId, artist: 'ListenBrainz Playlist', title: 'Multiple Tracks', status: 'in_progress' });
             updateDownloadQueueUI();
 
             const response = await fetch('/api/trigger_listenbrainz_download', {
@@ -2115,7 +2115,7 @@ function showCleanupResults(data) {
             showMessage('info', 'Download started...');
             // Add to client-side queue display immediately
             const downloadId = `lastfm-${Date.now()}`;
-            downloadQueue.push({ id: downloadId, artist: 'Last.fm Playlist', title: 'Multiple Tracks', status: 'in_progress' });
+            downloadQueue.unshift({ id: downloadId, artist: 'Last.fm Playlist', title: 'Multiple Tracks', status: 'in_progress' });
             updateDownloadQueueUI();
 
             const response = await fetch('/api/trigger_lastfm_download', {
@@ -2161,7 +2161,7 @@ function showCleanupResults(data) {
             // Show immediate feedback message
             showMessage('info', 'Download started...');
             // Add to client-side queue display immediately
-            downloadQueue.push({ artist: artist, title: album, status: 'in_progress' });
+            downloadQueue.unshift({ artist: artist, title: album, status: 'in_progress' });
             updateDownloadQueueUI();
 
             const response = await fetch('/api/trigger_fresh_release_download', {
@@ -2268,7 +2268,7 @@ function showCleanupResults(data) {
                 // Show immediate feedback message
                 showMessage('info', 'Download started...');
                 // Add to client-side queue display immediately
-                downloadQueue.push({ artist: artist, title: title, status: 'in_progress' });
+                downloadQueue.unshift({ artist: artist, title: title, status: 'in_progress' });
                 updateDownloadQueueUI();
 
                 const response = await fetch('/api/trigger_track_download', {
@@ -2894,7 +2894,7 @@ function showCleanupResults(data) {
             downloadLinkBtn.disabled = true;
 
             showMessage('info', 'Download started...');
-            downloadQueue.push({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
+            downloadQueue.unshift({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
             updateDownloadQueueUI();
 
             try {

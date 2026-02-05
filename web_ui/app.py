@@ -1843,9 +1843,18 @@ def download_from_link():
             update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.", title=current_title)
             return jsonify({"status": "success", "message": f"Successfully downloaded and organized {len(result)} files from {link}."})
         else:
+            # Check if the download was actually completed (e.g., already in library)
+            # The link_downloader may have already set status to 'completed'
+            current_status = downloads_queue.get(download_id, {}).get('status', '')
+            current_message = downloads_queue.get(download_id, {}).get('message', '')
             current_title = downloads_queue.get(download_id, {}).get('title', link)
-            update_download_status(download_id, 'failed', f"No files downloaded. The track may not be available on Deezer.", title=current_title)
-            return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
+
+            if current_status == 'completed':
+                # Already marked as completed (e.g., "already in library")
+                return jsonify({"status": "info", "message": current_message or f"No new files downloaded from {link}."})
+            else:
+                update_download_status(download_id, 'failed', f"No files downloaded. The track may not be available on Deezer.", title=current_title)
+                return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
 
     except Exception as e:
         print(f"Error downloading from link: {e}", file=sys.stderr)

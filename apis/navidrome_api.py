@@ -676,7 +676,7 @@ class NavidromeAPI:
             self._start_scan()
             self._wait_for_scan()
 
-        # Group tracks by source
+        # Group tracks by source (songs can appear in multiple playlists via 'sources' list)
         source_map = {
             'listenbrainz': 'ListenBrainz Weekly',
             'last.fm': 'Last.fm Weekly',
@@ -685,11 +685,14 @@ class NavidromeAPI:
 
         tracks_by_source = {}
         for song in all_recommendations:
-            src = song.get('source', 'Unknown').lower()
-            playlist_name = source_map.get(src, f"{song.get('source', 'Unknown')} Weekly")
-            if playlist_name not in tracks_by_source:
-                tracks_by_source[playlist_name] = []
-            tracks_by_source[playlist_name].append(song)
+            # Use 'sources' list if available (for multi-source tracks), otherwise fall back to 'source'
+            sources = song.get('sources', [song.get('source', 'Unknown')])
+            for src in sources:
+                src_lower = src.lower()
+                playlist_name = source_map.get(src_lower, f"{src} Weekly")
+                if playlist_name not in tracks_by_source:
+                    tracks_by_source[playlist_name] = []
+                tracks_by_source[playlist_name].append(song)
 
         for playlist_name, songs in tracks_by_source.items():
             if target_user:

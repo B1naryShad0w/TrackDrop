@@ -226,14 +226,22 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         elif not LLM_API_KEY:
             print("LLM API key is not configured")
 
-    # Deduplicate
+    # Deduplicate (but track all sources so song appears on all relevant playlists)
     unique_recommendations = []
-    seen = set()
+    seen = {}  # key -> index in unique_recommendations
     for rec in all_recommendations:
         key = (rec['artist'].lower(), rec['title'].lower())
         if key not in seen:
+            # First time seeing this track - add 'sources' list
+            rec['sources'] = [rec.get('source', 'Unknown')]
             unique_recommendations.append(rec)
-            seen.add(key)
+            seen[key] = len(unique_recommendations) - 1
+        else:
+            # Track already exists - add this source to its sources list
+            existing = unique_recommendations[seen[key]]
+            new_source = rec.get('source', 'Unknown')
+            if new_source not in existing.get('sources', []):
+                existing.setdefault('sources', []).append(new_source)
 
     if not unique_recommendations:
         print("\nNo recommendations to process")
