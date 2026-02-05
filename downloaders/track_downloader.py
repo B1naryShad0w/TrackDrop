@@ -10,6 +10,7 @@ from tqdm import tqdm
 import sys
 import importlib
 import config
+from utils import update_status_file
 
 class TrackDownloader:
     def __init__(self, tagger):
@@ -25,17 +26,10 @@ class TrackDownloader:
         current_download_method = config.DOWNLOAD_METHOD
         temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
 
-        if not deezer_link:
-            deezer_link = await self._get_deezer_link_and_details(song_info)
-        if not deezer_link:
-            print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
-            return None
-
-        # Duplicate check: if navidrome_api is provided, search using the
-        # Deezer canonical metadata (which matches what Navidrome indexes).
+        # Check library first — skip Deezer entirely if the song already exists.
         if navidrome_api:
-            search_artist = song_info.get('deezer_album_artist') or (song_info.get('deezer_artists', [None]) or [None])[0] or song_info['artist']
-            search_title = song_info.get('deezer_title') or song_info['title']
+            search_artist = song_info.get('artist', '')
+            search_title = song_info.get('title', '')
             search_album = song_info.get('album') or None
             try:
                 salt, token = navidrome_api._get_navidrome_auth_params()
@@ -44,9 +38,16 @@ class TrackDownloader:
                     matched_album = existing.get('album', '?')
                     print(f"  Already in Navidrome: {search_artist} - {search_title} [{matched_album}] (id={existing['id']})")
                     song_info['_duplicate'] = True
+                    song_info['_navidrome_id'] = existing['id']
                     return None
             except Exception as e:
                 print(f"  Warning: Navidrome duplicate check failed: {e}", file=sys.stderr)
+
+        if not deezer_link:
+            deezer_link = await self._get_deezer_link_and_details(song_info)
+        if not deezer_link:
+            print(f"  ❌ No Deezer link found for {song_info['artist']} - {song_info['title']}")
+            return None
 
         downloaded_file_path = None
         if current_download_method == "deemix":
@@ -80,9 +81,10 @@ class TrackDownloader:
             tag_artists = song_info.get('deezer_artists')
             tag_title = song_info.get('deezer_title', song_info['title'])
             tag_album_artist = song_info.get('deezer_album_artist')
+            primary_artist = tag_album_artist or (tag_artists[0] if tag_artists else None)
             self.tagger.tag_track(
                 downloaded_file_path,
-                None,  # no singular artist — use plural ARTISTS tag instead
+                primary_artist,  # standard artist tag for compatibility
                 tag_title,
                 song_info['album'],
                 song_info['release_date'],
@@ -228,6 +230,33 @@ class TrackDownloader:
                 print(f"Skipping download for {song_info['artist']} - {song_info['title']} (Error resolving media or already downloaded).", file=sys.stderr)
                 print(f"Debug: Deezer link: {deezer_link}, track_id: {track_id}", file=sys.stderr)
                 return None
+
+            # Wrap downloadable.download to report byte-level progress
+            download_id = song_info.get('download_id')
+            if download_id and hasattr(my_track, 'downloadable') and my_track.downloadable:
+                _original_dl = my_track.downloadable.download
+                try:
+                    _total_size = await my_track.downloadable.size()
+                except Exception:
+                    _total_size = 0
+                _bytes_so_far = [0]
+                _last_pct = [0]
+                _dl_title = f"{song_info['artist']} - {song_info['title']}"
+
+                async def _progress_download(path, callback):
+                    def _progress_callback(chunk_size):
+                        callback(chunk_size)
+                        _bytes_so_far[0] += chunk_size
+                        if _total_size > 0:
+                            pct = min(100, int(_bytes_so_far[0] * 100 / _total_size))
+                            if pct >= _last_pct[0] + 5:  # Throttle: update every 5%
+                                _last_pct[0] = pct
+                                update_status_file(download_id, 'in_progress',
+                                    f"Downloading... {pct}%", title=_dl_title,
+                                    progress_percent=pct)
+                    await _original_dl(path, _progress_callback)
+
+                my_track.downloadable.download = _progress_download
 
             await my_track.rip()
 

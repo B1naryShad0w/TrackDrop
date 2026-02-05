@@ -183,4 +183,4 @@ cron &
 
 # Start Gunicorn server for the Flask app as the main process (PID 1)
 # This ensures proper SIGTERM handling for graceful shutdown
-exec gunicorn --bind 0.0.0.0:5000 --timeout 300 "web_ui.app:app"
+exec gunicorn --bind 0.0.0.0:5000 --timeout 300 --threads 4 "web_ui.app:app"

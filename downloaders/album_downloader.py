@@ -11,6 +11,7 @@ import config
 import re
 from apis.deezer_api import DeezerAPI
 from utils.text import sanitize_for_matching, sanitize_filename
+from utils import update_status_file
 
 class AlbumDownloader:
     def __init__(self, tagger):
@@ -19,7 +20,7 @@ class AlbumDownloader:
         self.temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         self.deezer_arl = config.DEEZER_ARL
 
-    async def download_album(self, album_info, is_album_recommendation=False):
+    async def download_album(self, album_info, is_album_recommendation=False, update_status_fn=None):
         """Downloads an album using the configured method."""
         # Reload config to get the latest DOWNLOAD_METHOD
         importlib.reload(config)
@@ -27,11 +28,33 @@ class AlbumDownloader:
         temp_download_folder = config.TEMP_DOWNLOAD_FOLDER
         deezer_arl = config.DEEZER_ARL
 
-        print(f"Starting download for album: {album_info['artist']} - {album_info['album']}")
+        download_id = album_info.get('download_id')
+        track_statuses = []
+        downloaded_count = 0
+        failed_count = 0
+
+        def _update(status, message, title=None, total=None):
+            extra = {
+                "tracks": track_statuses,
+                "downloaded_count": downloaded_count,
+                "skipped_count": 0,
+                "failed_count": failed_count,
+                "download_type": "album",
+            }
+            if update_status_fn:
+                update_status_fn(download_id, status, message, title, downloaded_count, total, **extra)
+            if download_id:
+                update_status_file(download_id, status, message, title, downloaded_count, total, **extra)
+
+        album_label = f"{album_info['artist']} - {album_info['album']}"
+        print(f"Starting download for album: {album_label}")
+        _update("in_progress", "Searching on Deezer...", title=album_label)
+
         deezer_link, deezer_album_data = await self._get_deezer_album_link(album_info)
         if not deezer_link:
             error_msg = "Album not found on Deezer!"
             print(error_msg)
+            _update("failed", error_msg, title=album_label)
             return {"status": "error", "message": error_msg}
 
         # Update album_info with canonical data straight from Deezer API response
@@ -45,48 +68,67 @@ class AlbumDownloader:
             if 'release_date' in deezer_album_data:
                 album_info['release_date'] = deezer_album_data['release_date']
                 print(f"Updated release date to canonical Deezer date: {album_info['release_date']}")
-            # Also update album_art if available in deezer_album_data
             if 'cover_xl' in deezer_album_data:
                  album_info['album_art'] = deezer_album_data['cover_xl']
                  print(f"Updated album art URL from Deezer.")
 
-
+        album_label = f"{album_info['artist']} - {album_info['album']}"
         print(f"Found Deezer link: {deezer_link}")
+
+        # Fetch tracklist from Deezer upfront for progress tracking
+        album_id = deezer_link.split('/')[-1]
+        deezer_api_instance = DeezerAPI()
+        deezer_tracks = await deezer_api_instance.get_deezer_album_tracks(album_id)
+
+        track_title_map = {}
+        if deezer_tracks:
+            for track in deezer_tracks:
+                sanitized_deezer_title = self._sanitize_for_matching(track['title'])
+                track_title_map[sanitized_deezer_title] = track['title']
+            # Initialize track statuses from Deezer tracklist
+            track_statuses = [
+                {"artist": album_info['artist'], "title": t['title'], "status": "pending", "message": ""}
+                for t in deezer_tracks
+            ]
+        else:
+            print(f"WARNING: Could not retrieve tracklist from Deezer for album {album_info['album']}.")
+
+        total = len(track_statuses) or None
+        _update("in_progress", f"Downloading {total or '?'} tracks...", title=album_label, total=total)
 
         downloaded_files = []
         if current_download_method == "deemix":
+            # Mark all tracks as in_progress during bulk download
+            for ts in track_statuses:
+                ts["status"] = "in_progress"
+                ts["message"] = "Downloading..."
+            _update("in_progress", "Downloading album...", title=album_label, total=total)
             downloaded_files = self._download_album_deemix(deezer_link, album_info, temp_download_folder, deezer_arl)
         elif current_download_method == "streamrip":
+            for ts in track_statuses:
+                ts["status"] = "in_progress"
+                ts["message"] = "Downloading..."
+            _update("in_progress", "Downloading album...", title=album_label, total=total)
             downloaded_files = await self._download_album_streamrip(deezer_link, album_info, temp_download_folder, deezer_arl)
         else:
-            error_msg = f"Unknown DOWNLOAD_METHOD: {current_download_method}. Skipping download for {album_info['artist']} - {album_info['album']}."
+            error_msg = f"Unknown DOWNLOAD_METHOD: {current_download_method}. Skipping download for {album_label}."
             print(error_msg)
+            _update("failed", error_msg, title=album_label, total=total)
             return {"status": "error", "message": error_msg}
 
         if downloaded_files:
-            album_id = deezer_link.split('/')[-1] # Extract album ID
-
-            # Fetch tracklist from Deezer
-            deezer_api_instance = DeezerAPI()
-            deezer_tracks = await deezer_api_instance.get_deezer_album_tracks(album_id)
-
-            track_title_map = {}
-            if deezer_tracks:
-                for track in deezer_tracks:
-                    sanitized_deezer_title = self._sanitize_for_matching(track['title'])
-                    track_title_map[sanitized_deezer_title] = track['title']
-            else:
-                print(f"WARNING: Could not retrieve tracklist from Deezer for album {album_info['album']}.")
+            _update("in_progress", "Tagging tracks...", title=album_label, total=total)
 
             # Tag all tracks in the album
-            for file_path in downloaded_files:
+            for file_idx, file_path in enumerate(downloaded_files):
                 base_filename = os.path.splitext(os.path.basename(file_path))[0]
                 sanitized_local_filename = self._sanitize_for_matching(base_filename)
-                
+
                 current_track_title = base_filename # Default to filename if no match
 
                 found_deezer_title = None
-                
+                matched_track_idx = None
+
                 # First strat: Direct match of sanitized local filename to sanitized Deezer titles
                 if sanitized_local_filename in track_title_map:
                     found_deezer_title = track_title_map[sanitized_local_filename]
@@ -94,7 +136,7 @@ class AlbumDownloader:
                     # Second strat: More robust matching by trying to remove artist/track number
                     temp_filename = base_filename
                     artist_to_match = album_info['artist']
-                    
+
                     # Remove leading track number patterns
                     temp_filename = re.sub(r"^\d+\s*[-–—\.]\s*", "", temp_filename, 1)
 
@@ -121,14 +163,18 @@ class AlbumDownloader:
                 if found_deezer_title:
                     current_track_title = found_deezer_title
                     print(f"Matched local file '{os.path.basename(file_path)}' to Deezer title: '{current_track_title}'")
+                    # Find the matching track status index
+                    for ti, ts in enumerate(track_statuses):
+                        if ts['title'] == found_deezer_title and ts['status'] != 'completed':
+                            matched_track_idx = ti
+                            break
                 else:
                     print(f"WARNING: Could not find matching Deezer title for file '{os.path.basename(file_path)}'. Using cleaned filename as title.")
                     cleaned_fallback_title = re.sub(r"^\d+\s*[-–—\.]\s*", "", base_filename, 1)
                     cleaned_fallback_title = re.sub(r"^\s*[-–—]\s*", "", cleaned_fallback_title, 1)
-                    cleaned_fallback_title = re.sub(r"^\s*{}\s*[-–—_.]?\s*".format(re.escape(album_info['artist'])), "", cleaned_fallback_title, 1, flags=re.IGNORECASE) # Remove artist from filename
+                    cleaned_fallback_title = re.sub(r"^\s*{}\s*[-–—_.]?\s*".format(re.escape(album_info['artist'])), "", cleaned_fallback_title, 1, flags=re.IGNORECASE)
                     cleaned_fallback_title = cleaned_fallback_title.strip(' -.')
                     current_track_title = cleaned_fallback_title if cleaned_fallback_title else base_filename
-
 
                 self.tagger.tag_track(
                     file_path,
@@ -141,10 +187,31 @@ class AlbumDownloader:
                     album_info.get('album_art'),
                     is_album_recommendation=is_album_recommendation
                 )
+
+                downloaded_count += 1
+                if matched_track_idx is not None:
+                    track_statuses[matched_track_idx]["status"] = "completed"
+                    track_statuses[matched_track_idx]["message"] = "Downloaded"
+                _update("in_progress",
+                        f"Tagged {downloaded_count}/{len(downloaded_files)}: {current_track_title}",
+                        title=album_label, total=total)
+
+            # Mark any unmatched tracks as failed
+            for ts in track_statuses:
+                if ts['status'] != 'completed':
+                    ts['status'] = 'failed'
+                    ts['message'] = 'Not found in download'
+                    failed_count += 1
+
             return {"status": "success", "files": downloaded_files}
         else:
-            error_msg = f"Failed to download album {album_info['artist']} - {album_info['album']}."
+            error_msg = f"Failed to download album {album_label}."
             print(error_msg)
+            for ts in track_statuses:
+                ts['status'] = 'failed'
+                ts['message'] = 'Download failed'
+                failed_count += 1
+            _update("failed", error_msg, title=album_label, total=total)
             return {"status": "error", "message": error_msg}
 
     async def _get_deezer_album_link(self, album_info):

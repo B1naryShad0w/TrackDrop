@@ -352,7 +352,7 @@ class LinkDownloader:
 
             elif media_type == "album":
                 # Get album tracklist from Deezer and check which tracks already exist
-                album_resp = await self.deezer_api._make_request_with_retries(f"https://api.deezer.com/album/{song_info['deezer_id']}/tracks")
+                album_resp = await self.deezer_api._make_request(f"https://api.deezer.com/album/{song_info['deezer_id']}/tracks")
                 if album_resp and album_resp.status_code == 200:
                     album_tracks = album_resp.json().get("data", [])
                     if album_tracks:
@@ -457,7 +457,7 @@ class LinkDownloader:
                     }
 
                     # Get metadata from Deezer API
-                    deezer_resp = await self.deezer_api._make_request_with_retries(f"{self.deezer_api.track_url_base}{song_info['deezer_id']}")
+                    deezer_resp = await self.deezer_api._make_request(f"{self.deezer_api.track_url_base}{song_info['deezer_id']}")
                     if deezer_resp and deezer_resp.status_code == 200:
                         track_data = deezer_resp.json()
                         full_song_info['artist'] = track_data.get('artist', {}).get('name', '')
@@ -477,6 +477,8 @@ class LinkDownloader:
                             full_song_info['source'] = original_platform.capitalize()
 
                     if full_song_info.get('artist') and full_song_info.get('title'):
+                        if download_id:
+                            full_song_info['download_id'] = download_id
                         downloaded_track_path = await self.track_downloader.download_track(full_song_info, lb_recommendation=lb_recommendation)
                         if downloaded_track_path:
                             downloaded_files.append(downloaded_track_path)
@@ -484,7 +486,7 @@ class LinkDownloader:
 
                 elif media_type == "album":
                     album_deezer_id = song_info['deezer_id']
-                    album_resp = await self.deezer_api._make_request_with_retries(f"https://api.deezer.com/album/{album_deezer_id}")
+                    album_resp = await self.deezer_api._make_request(f"https://api.deezer.com/album/{album_deezer_id}")
                     album_data = album_resp.json() if album_resp and album_resp.status_code == 200 else None
 
                     if album_data:
@@ -506,6 +508,8 @@ class LinkDownloader:
                                     'source': 'Deezer',
                                     'album_art': album_art
                                 }
+                                if download_id:
+                                    full_song_info['download_id'] = download_id
                                 downloaded_track_path = await self.track_downloader.download_track(full_song_info, lb_recommendation=lb_recommendation)
                                 if downloaded_track_path:
                                     downloaded_files.append(downloaded_track_path)
