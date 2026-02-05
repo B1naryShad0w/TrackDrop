@@ -1321,7 +1321,7 @@
             </div>
         </div>
 
-        <!-- Message notifications disabled -->
+        <div id="message" class="message" style="display: none;"></div>
 
         <!-- Welcome greeting -->
         <div id="welcomeGreeting" class="playlist-section" style="border-top: none; padding: 20px 15px; text-align: center;">
@@ -2160,23 +2160,23 @@ function showCleanupResults(data) {
             const isExpanded = expandedItems.has(item.id);
             const sourceStats = item.source_stats || {};
 
-            // Progress bar gradient based on status
-            let barStyle = 'background: linear-gradient(90deg, var(--info-color), var(--primary-color));';
-            if (item.status === 'completed') barStyle = 'background: linear-gradient(90deg, var(--success-color), #00b87a);';
-            else if (item.status === 'failed') barStyle = 'background: var(--error-color);';
+            // Progress bar color: green if completed, blue if in progress, red if failed
+            let barColor = 'var(--info-color)';
+            if (item.status === 'completed') barColor = 'var(--success-color)';
+            else if (item.status === 'failed') barColor = 'var(--error-color)';
 
             // Build source stats display
             let sourceStatsHtml = '';
             const sourceEntries = Object.entries(sourceStats);
             if (sourceEntries.length > 0) {
                 sourceStatsHtml = `
-                    <div class="dq-source-stats">
+                    <div class="dq-source-stats" style="display: flex; gap: 12px; font-size: 0.8em; margin-top: 6px; flex-wrap: wrap;">
                         ${sourceEntries.map(([src, stats]) => {
                             const apiCount = stats.api_count || 0;
                             const finalCount = stats.final_count !== undefined ? stats.final_count : apiCount;
-                            const dedupNote = finalCount !== apiCount ? ` → ${finalCount}` : '';
-                            return `<span style="display: flex; align-items: center; gap: 6px;">
-                                <span style="width: 6px; height: 6px; border-radius: 50%; background-color: var(--text-muted);"></span>
+                            const dedupNote = finalCount !== apiCount ? ` (${finalCount} after dedup)` : '';
+                            return `<span style="display: flex; align-items: center; gap: 4px;">
+                                <span style="width: 8px; height: 8px; border-radius: 50%; background-color: #888;"></span>
                                 ${_escHtml(src)}: ${apiCount}${dedupNote}
                             </span>`;
                         }).join('')}
