@@ -174,8 +174,7 @@ class Tagger:
             elif file_path.lower().endswith('.flac'):
                 if artists and len(artists) > 1:
                     audio['artists'] = artists
-                    if 'artist' in audio:
-                        del audio['artist']
+                    audio['artist'] = [artists[0]]  # Keep standard tag
                 elif artist:
                     audio['artist'] = [artist]
                 if album_artist:
@@ -192,8 +191,7 @@ class Tagger:
             elif file_path.lower().endswith(('.ogg', '.oga')):
                 if artists and len(artists) > 1:
                     audio['artists'] = artists
-                    if 'artist' in audio:
-                        del audio['artist']
+                    audio['artist'] = [artists[0]]  # Keep standard tag
                 elif artist:
                     audio['artist'] = [artist]
                 if album_artist:
@@ -273,7 +271,7 @@ def update_status_file(download_id, status, message=None, title=None,
         status_data["total_track_count"] = total_track_count
 
     # Pass through extra fields
-    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type', 'source_stats'):
+    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type', 'source_stats', 'progress_percent'):
         if key in kwargs and kwargs[key] is not None:
             status_data[key] = kwargs[key]
 

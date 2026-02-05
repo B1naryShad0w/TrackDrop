@@ -56,7 +56,7 @@
             justify-content: flex-start; /* Align main content to the left when panel is open */
         }
         #downloadQueueModalContent {
-            padding-right: 40px;
+            padding-right: 16px;
         }
 
         .container {
@@ -205,6 +205,19 @@
 
         .download-queue-item.dq-animate-in {
             animation: dqItemSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+        }
+
+        .download-queue-item.dq-removing {
+            opacity: 0;
+            max-height: 0;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            transition: opacity 0.3s ease, max-height 0.3s ease, margin 0.3s ease, padding 0.3s ease;
+        }
+
+        .download-queue-item {
+            transition: opacity 0.3s ease;
         }
 
         @keyframes dqItemSlideIn {
@@ -460,7 +473,7 @@
         /* Source stats styling */
         .dq-source-stats {
             display: flex;
-            gap: 12px;
+            gap: 14px;
             font-family: var(--font-mono);
             font-size: 0.7em;
             margin-top: 8px;
@@ -470,6 +483,21 @@
             background: rgba(0, 0, 0, 0.15);
             border-radius: 6px;
         }
+        .dq-source-stats .dq-source-tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dq-source-stats .dq-source-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .dq-source-dot.src-listenbrainz { background-color: #e85d04; box-shadow: 0 0 6px rgba(232, 93, 4, 0.4); }
+        .dq-source-dot.src-lastfm { background-color: #d51007; box-shadow: 0 0 6px rgba(213, 16, 7, 0.4); }
+        .dq-source-dot.src-llm { background-color: #7b61ff; box-shadow: 0 0 6px rgba(123, 97, 255, 0.4); }
+        .dq-source-dot.src-default { background-color: #888; }
 
         /* Empty state */
         .dq-empty {
@@ -1875,11 +1903,10 @@
         function openDownloadQueueModal() {
             const downloadQueuePanel = document.getElementById('downloadQueuePanel');
             if (downloadQueuePanel.classList.contains('open')) {
-                closeDownloadQueuePanel(); // Close if already open
+                closeDownloadQueuePanel();
             } else {
                 downloadQueuePanel.classList.add('open');
-                document.body.classList.add('download-queue-panel-open'); // Add class to body
-                fetchDownloadQueueStatus(); // Load queue status when panel opens
+                document.body.classList.add('download-queue-panel-open');
             }
         }
 
@@ -2141,10 +2168,58 @@ function showCleanupResults(data) {
             return d.innerHTML;
         }
 
+        function _sourceDotClass(srcName) {
+            const key = srcName.toLowerCase().replace(/[^a-z]/g, '');
+            if (key === 'listenbrainz') return 'src-listenbrainz';
+            if (key === 'lastfm') return 'src-lastfm';
+            if (key === 'llm') return 'src-llm';
+            return 'src-default';
+        }
+
+        function _buildSourceStatsHtml(sourceStats) {
+            const entries = Object.entries(sourceStats || {});
+            if (entries.length === 0) return '';
+            return `
+                <div class="dq-source-stats">
+                    ${entries.map(([src, stats]) => {
+                        const apiCount = stats.api_count || 0;
+                        const finalCount = stats.final_count !== undefined ? stats.final_count : apiCount;
+                        const dedupNote = finalCount !== apiCount ? ` (${finalCount} after dedup)` : '';
+                        return `<span class="dq-source-tag">
+                            <span class="dq-source-dot ${_sourceDotClass(src)}"></span>
+                            ${_escHtml(src)}: ${apiCount}${dedupNote}
+                        </span>`;
+                    }).join('')}
+                </div>
+            `;
+        }
+
         function toggleTrackList(itemId) {
             if (expandedItems.has(itemId)) expandedItems.delete(itemId);
             else expandedItems.add(itemId);
-            updateDownloadQueueUI();
+            const isExpanded = expandedItems.has(itemId);
+            const el = document.querySelector(`.download-queue-item[data-item-id="${itemId}"]`);
+            if (!el) return;
+            const trackList = el.querySelector('.dq-track-list');
+            const expandBtn = el.querySelector('.dq-expand-btn');
+            if (trackList) trackList.classList.toggle('open', isExpanded);
+            if (expandBtn) {
+                const item = downloadQueue.find(d => d.id === itemId);
+                const count = item ? (item.tracks || []).length : 0;
+                expandBtn.textContent = isExpanded ? '▼ HIDE TRACKS' : `▶ SHOW TRACKS (${count})`;
+            }
+            if (isExpanded && trackList) {
+                const item = downloadQueue.find(d => d.id === itemId);
+                if (item && item.tracks) {
+                    trackList.innerHTML = item.tracks.map(t => `
+                        <div class="dq-track-entry">
+                            <span class="dq-track-status-icon" style="color: ${_trackStatusColor(t.status)}">${_statusIcon(t.status, 14)}</span>
+                            <span class="dq-track-label">${_escHtml(t.artist)} — ${_escHtml(t.title)}</span>
+                            <span class="dq-track-msg">${_escHtml(t.message)}</span>
+                        </div>
+                    `).join('');
+                }
+            }
         }
 
         function renderPlaylistItem(item, animate = false) {
@@ -2166,23 +2241,7 @@ function showCleanupResults(data) {
             else if (item.status === 'failed') barColor = 'var(--error-color)';
 
             // Build source stats display
-            let sourceStatsHtml = '';
-            const sourceEntries = Object.entries(sourceStats);
-            if (sourceEntries.length > 0) {
-                sourceStatsHtml = `
-                    <div class="dq-source-stats" style="display: flex; gap: 12px; font-size: 0.8em; margin-top: 6px; flex-wrap: wrap;">
-                        ${sourceEntries.map(([src, stats]) => {
-                            const apiCount = stats.api_count || 0;
-                            const finalCount = stats.final_count !== undefined ? stats.final_count : apiCount;
-                            const dedupNote = finalCount !== apiCount ? ` (${finalCount} after dedup)` : '';
-                            return `<span style="display: flex; align-items: center; gap: 4px;">
-                                <span style="width: 8px; height: 8px; border-radius: 50%; background-color: #888;"></span>
-                                ${_escHtml(src)}: ${apiCount}${dedupNote}
-                            </span>`;
-                        }).join('')}
-                    </div>
-                `;
-            }
+            const sourceStatsHtml = _buildSourceStatsHtml(sourceStats);
 
             let trackListHtml = '';
             if (tracks.length > 0) {
@@ -2207,7 +2266,7 @@ function showCleanupResults(data) {
             const animClass = animate ? ' dq-animate-in' : '';
 
             return `
-                <div class="download-queue-item ${item.status}${animClass}" data-item-id="${item.id}">
+                <div class="download-queue-item ${item.status}${animClass}" data-item-id="${item.id}" data-status="${item.status}">
                     <div class="download-queue-item-header">
                         <div class="track-info">
                             <div class="track-title">${_escHtml(item.title)}</div>
@@ -2222,7 +2281,7 @@ function showCleanupResults(data) {
                         <div class="dq-progress-bar">
                             <div class="dq-progress-bar-inner" style="width: ${pct}%; ${barStyle}"></div>
                         </div>
-                        <div class="dq-stats">
+                        <div class="dq-stats" data-key="${dl}-${skip}-${fail}-${cleanupDeleted}-${pending}-${item.status}">
                             ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
                             ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
                             ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
@@ -2238,8 +2297,13 @@ function showCleanupResults(data) {
         function renderSimpleItem(item, animate = false) {
             const msgColor = item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : 'var(--text-muted)';
             const animClass = animate ? ' dq-animate-in' : '';
+            const progressBar = (item.progress_percent != null && item.status === 'in_progress') ? `
+                <div class="dq-progress-bar">
+                    <div class="dq-progress-bar-inner" style="width: ${item.progress_percent}%;"></div>
+                </div>
+            ` : '';
             return `
-                <div class="download-queue-item ${item.status}${animClass}" data-item-id="${item.id}">
+                <div class="download-queue-item ${item.status}${animClass}" data-item-id="${item.id}" data-status="${item.status}">
                     <div class="download-queue-item-header">
                         <div class="track-info">
                             <div class="track-title">${_escHtml(item.title)}</div>
@@ -2250,6 +2314,7 @@ function showCleanupResults(data) {
                             ${_statusIcon(item.status)}
                         </div>
                     </div>
+                    ${progressBar}
                 </div>
             `;
         }
@@ -2299,39 +2364,46 @@ function showCleanupResults(data) {
             // Get current item IDs in the queue
             const currentIds = new Set(downloadQueue.map(item => item.id));
 
-            // Remove items that are no longer in the queue
+            // Fade out items that are no longer in the queue (instead of instant remove)
             queueContent.querySelectorAll('.download-queue-item').forEach(el => {
                 const itemId = el.dataset.itemId;
-                if (itemId && !currentIds.has(itemId)) {
-                    el.remove();
-                    renderedItemIds.delete(itemId);
+                if (itemId && !currentIds.has(itemId) && !el.classList.contains('dq-removing')) {
+                    el.classList.add('dq-removing');
+                    el.addEventListener('transitionend', () => {
+                        el.remove();
+                        renderedItemIds.delete(itemId);
+                    }, { once: true });
+                    // Fallback removal if transition doesn't fire
+                    setTimeout(() => { if (el.parentNode) { el.remove(); renderedItemIds.delete(itemId); } }, 400);
                 }
             });
 
-            // Update or add items
-            downloadQueue.forEach((item, index) => {
+            // Update existing items in place, create new items
+            downloadQueue.forEach((item) => {
+                if (!item.id) return; // Skip items without IDs
                 const existingEl = queueContent.querySelector(`.download-queue-item[data-item-id="${item.id}"]`);
 
                 if (existingEl) {
-                    // Update existing item in place
                     updateExistingItem(existingEl, item);
                 } else {
-                    // Add new item with animation
                     const isNew = !renderedItemIds.has(item.id);
-                    const html = (item.download_type === 'playlist' || (item.tracks && item.tracks.length > 0))
+                    const html = (item.download_type === 'playlist' || item.download_type === 'album' || (item.tracks && item.tracks.length > 0))
                         ? renderPlaylistItem(item, isNew)
                         : renderSimpleItem(item, isNew);
-
-                    // Find the correct position to insert
-                    const nextSibling = queueContent.children[index];
-                    if (nextSibling) {
-                        nextSibling.insertAdjacentHTML('beforebegin', html);
-                    } else {
-                        queueContent.insertAdjacentHTML('beforeend', html);
-                    }
+                    queueContent.insertAdjacentHTML('beforeend', html);
                     renderedItemIds.add(item.id);
                 }
             });
+
+            // Only reorder DOM if order actually differs from downloadQueue
+            const desiredOrder = downloadQueue.filter(item => item.id).map(item => item.id);
+            const domOrder = [...queueContent.querySelectorAll('.download-queue-item:not(.dq-removing)')].map(el => el.dataset.itemId);
+            if (desiredOrder.length !== domOrder.length || desiredOrder.some((id, i) => id !== domOrder[i])) {
+                desiredOrder.forEach(id => {
+                    const el = queueContent.querySelector(`.download-queue-item[data-item-id="${id}"]`);
+                    if (el) queueContent.appendChild(el);
+                });
+            }
 
             // Remove empty state if present
             const emptyState = queueContent.querySelector('.dq-empty');
@@ -2339,22 +2411,45 @@ function showCleanupResults(data) {
         }
 
         function updateExistingItem(el, item) {
-            // Update status class
-            el.className = `download-queue-item ${item.status}`;
+            // Cache previous state to avoid unnecessary DOM writes
+            const prevStatus = el.dataset.status;
+            const statusChanged = prevStatus !== item.status;
 
-            // Update status icon
-            const statusIcon = el.querySelector('.status-icon');
-            if (statusIcon) {
-                statusIcon.className = `status-icon ${item.status}`;
-                statusIcon.innerHTML = _statusIcon(item.status);
+            // Update status class only when status changes
+            if (statusChanged) {
+                el.dataset.status = item.status;
+                // Preserve any existing classes like dq-animate-in, just toggle status
+                el.classList.remove('in_progress', 'completed', 'failed', 'pending');
+                el.classList.add(item.status);
             }
 
-            // Update message
+            // Update status icon only when status changes (avoids resetting spin animation)
+            if (statusChanged) {
+                const statusIcon = el.querySelector('.status-icon');
+                if (statusIcon) {
+                    statusIcon.className = `status-icon ${item.status}`;
+                    statusIcon.innerHTML = _statusIcon(item.status);
+                }
+            }
+
+            // Update title if it changed (e.g. URL -> resolved track name)
+            const titleEl = el.querySelector('.track-title');
+            if (titleEl && titleEl.textContent !== (item.title || '')) {
+                titleEl.textContent = item.title || '';
+            }
+
+            // Update artist if it changed
+            const artistEl = el.querySelector('.track-info > div:nth-child(2)');
+            if (artistEl && !artistEl.classList.contains('dq-message') && artistEl.textContent !== (item.artist || '')) {
+                artistEl.textContent = item.artist || '';
+            }
+
+            // Update message only when it changes
             const msgColor = item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : 'var(--text-muted)';
             let msgEl = el.querySelector('.dq-message');
             if (item.message) {
                 if (msgEl) {
-                    msgEl.textContent = item.message;
+                    if (msgEl.textContent !== item.message) msgEl.textContent = item.message;
                     msgEl.style.color = msgColor;
                 } else {
                     const trackInfo = el.querySelector('.track-info');
@@ -2366,6 +2461,27 @@ function showCleanupResults(data) {
                 msgEl.remove();
             }
 
+            // Update source stats when they arrive
+            const sourceStats = item.source_stats || {};
+            const sourceEntries = Object.entries(sourceStats);
+            let sourceStatsEl = el.querySelector('.dq-source-stats');
+            if (sourceEntries.length > 0) {
+                const newHtml = _buildSourceStatsHtml(sourceStats);
+                if (sourceStatsEl) {
+                    // Compare a data key to avoid unnecessary rewrites
+                    const statsKey = sourceEntries.map(([s, v]) => `${s}:${v.api_count||0}:${v.final_count||''}`).join(',');
+                    if (sourceStatsEl.dataset.key !== statsKey) {
+                        sourceStatsEl.outerHTML = newHtml;
+                        sourceStatsEl = el.querySelector('.dq-source-stats');
+                        if (sourceStatsEl) sourceStatsEl.dataset.key = statsKey;
+                    }
+                } else {
+                    // Insert after the header
+                    const header = el.querySelector('.download-queue-item-header');
+                    if (header) header.insertAdjacentHTML('afterend', newHtml);
+                }
+            }
+
             // Update progress bar
             const tracks = item.tracks || [];
             const total = item.total_track_count || tracks.length || 0;
@@ -2373,30 +2489,75 @@ function showCleanupResults(data) {
             const skip = item.skipped_count || 0;
             const fail = item.failed_count || 0;
             const processed = dl + skip + fail;
-            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+            const isSimpleProgress = item.progress_percent != null && total === 0;
+            const pct = isSimpleProgress ? item.progress_percent : (total > 0 ? Math.round((processed / total) * 100) : 0);
 
-            const progressInner = el.querySelector('.dq-progress-bar-inner');
-            if (progressInner) {
-                progressInner.style.width = `${pct}%`;
-                if (item.status === 'completed') {
-                    progressInner.style.background = 'linear-gradient(90deg, var(--success-color), #00b87a)';
-                } else if (item.status === 'failed') {
-                    progressInner.style.background = 'var(--error-color)';
+            let progressBar = el.querySelector('.dq-progress-bar');
+            let progressInner = el.querySelector('.dq-progress-bar-inner');
+            let statsEl = el.querySelector('.dq-stats');
+
+            if (isSimpleProgress && item.status === 'in_progress' && !progressInner) {
+                // Simple single-track progress bar
+                const header = el.querySelector('.download-queue-item-header');
+                if (header) {
+                    header.insertAdjacentHTML('afterend', `
+                        <div class="dq-progress-bar">
+                            <div class="dq-progress-bar-inner" style="width: ${pct}%;"></div>
+                        </div>
+                    `);
+                    progressBar = el.querySelector('.dq-progress-bar');
+                    progressInner = el.querySelector('.dq-progress-bar-inner');
+                }
+            } else if (isSimpleProgress && item.status !== 'in_progress') {
+                if (progressBar) { progressBar.remove(); progressBar = null; progressInner = null; }
+            } else if (total > 0 && !progressInner) {
+                // Playlist progress bar + stats: created when total first becomes known
+                // Insert after source stats if present, otherwise after header
+                const anchor = el.querySelector('.dq-source-stats') || el.querySelector('.download-queue-item-header');
+                if (anchor) {
+                    let barColor = 'var(--info-color)';
+                    if (item.status === 'completed') barColor = 'var(--success-color)';
+                    else if (item.status === 'failed') barColor = 'var(--error-color)';
+                    anchor.insertAdjacentHTML('afterend', `
+                        <div class="dq-stats" data-key=""></div>
+                        <div class="dq-progress-bar">
+                            <div class="dq-progress-bar-inner" style="width: ${pct}%; background: ${barColor};"></div>
+                        </div>
+                    `);
+                    progressBar = el.querySelector('.dq-progress-bar');
+                    progressInner = el.querySelector('.dq-progress-bar-inner');
+                    statsEl = el.querySelector('.dq-stats');
                 }
             }
 
-            // Update stats
-            const statsEl = el.querySelector('.dq-stats');
+            if (progressInner) {
+                const currentWidth = progressInner.style.width;
+                const newWidth = `${pct}%`;
+                if (currentWidth !== newWidth) progressInner.style.width = newWidth;
+                if (statusChanged) {
+                    if (item.status === 'completed') {
+                        progressInner.style.background = 'linear-gradient(90deg, var(--success-color), #00b87a)';
+                    } else if (item.status === 'failed') {
+                        progressInner.style.background = 'var(--error-color)';
+                    }
+                }
+            }
+
+            // Update stats only when values change
             if (statsEl) {
                 const pending = Math.max(0, total - processed);
                 const cleanupDeleted = item.cleanup_deleted || 0;
-                statsEl.innerHTML = `
-                    ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
-                    ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
-                    ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
-                    ${cleanupDeleted > 0 ? `<span class="dq-stat"><span class="dq-stat-dot" style="background-color: var(--warning-color); box-shadow: 0 0 6px rgba(255, 180, 0, 0.5);"></span>${cleanupDeleted} removed</span>` : ''}
-                    ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
-                `;
+                const statsKey = `${dl}-${skip}-${fail}-${cleanupDeleted}-${pending}-${item.status}`;
+                if (statsEl.dataset.key !== statsKey) {
+                    statsEl.dataset.key = statsKey;
+                    statsEl.innerHTML = `
+                        ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
+                        ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
+                        ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
+                        ${cleanupDeleted > 0 ? `<span class="dq-stat"><span class="dq-stat-dot" style="background-color: var(--warning-color); box-shadow: 0 0 6px rgba(255, 180, 0, 0.5);"></span>${cleanupDeleted} removed</span>` : ''}
+                        ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
+                    `;
+                }
             }
 
             // Handle track list and expand button
@@ -2405,27 +2566,23 @@ function showCleanupResults(data) {
             const isExpanded = expandedItems.has(item.id);
 
             if (tracks.length > 0) {
-                // Create expand button if it doesn't exist
                 if (!expandBtn) {
                     const btnHtml = `<button class="dq-expand-btn" onclick="toggleTrackList('${item.id}')">▶ SHOW TRACKS (${tracks.length})</button>`;
                     el.insertAdjacentHTML('beforeend', btnHtml);
                     expandBtn = el.querySelector('.dq-expand-btn');
                 }
 
-                // Create track list if it doesn't exist
                 if (!trackList) {
                     const listHtml = `<div class="dq-track-list" data-item-id="${item.id}"></div>`;
                     el.insertAdjacentHTML('beforeend', listHtml);
                     trackList = el.querySelector('.dq-track-list');
                 }
 
-                // Update expand button text
-                expandBtn.textContent = isExpanded ? '▼ HIDE TRACKS' : `▶ SHOW TRACKS (${tracks.length})`;
+                const btnText = isExpanded ? '▼ HIDE TRACKS' : `▶ SHOW TRACKS (${tracks.length})`;
+                if (expandBtn.textContent !== btnText) expandBtn.textContent = btnText;
 
-                // Update track list class
                 trackList.classList.toggle('open', isExpanded);
 
-                // Update track list content if expanded
                 if (isExpanded) {
                     const scrollPos = trackList.scrollTop;
                     trackList.innerHTML = tracks.map(t => `
@@ -2457,10 +2614,51 @@ function showCleanupResults(data) {
             }
         }
 
-        // Start polling the download queue when the page loads
+        let eventSource = null;
+
+        function connectSSE() {
+            if (eventSource) eventSource.close();
+            eventSource = new EventSource('/api/download_stream');
+
+            eventSource.addEventListener('init', (e) => {
+                downloadQueue.length = 0;
+                JSON.parse(e.data).forEach(item => downloadQueue.push(item));
+                // Clear container for clean re-render on init
+                const queueContent = document.getElementById('downloadQueueModalContent');
+                if (queueContent) {
+                    queueContent.innerHTML = '';
+                    renderedItemIds.clear();
+                }
+                updateDownloadQueueUI();
+            });
+
+            eventSource.addEventListener('update', (e) => {
+                const item = JSON.parse(e.data);
+                const idx = downloadQueue.findIndex(d => d.id === item.id);
+                if (idx >= 0) {
+                    downloadQueue[idx] = item;
+                } else {
+                    downloadQueue.unshift(item);
+                }
+                updateDownloadQueueUI();
+            });
+
+            eventSource.addEventListener('remove', (e) => {
+                const id = JSON.parse(e.data).id;
+                const idx = downloadQueue.findIndex(d => d.id === id);
+                if (idx >= 0) downloadQueue.splice(idx, 1);
+                updateDownloadQueueUI();
+            });
+
+            eventSource.onerror = () => {
+                eventSource.close();
+                setTimeout(connectSSE, 3000);
+            };
+        }
+
+        // Connect SSE for real-time download status updates
         document.addEventListener('DOMContentLoaded', () => {
-            fetchDownloadQueueStatus(); // Initial fetch immediately
-            downloadQueueInterval = setInterval(fetchDownloadQueueStatus, 3000); // Poll every 3 seconds
+            connectSSE();
         });
 
         function showMessage(type, text) {
@@ -2724,13 +2922,6 @@ function showCleanupResults(data) {
             downloadBtn.innerHTML = '<div class="spinner" style="margin-right: 8px;"></div>Downloading...';
             downloadBtn.disabled = true;
 
-            // Show immediate feedback message
-            showMessage('info', 'Download started...');
-            // Add to client-side queue display immediately
-            const downloadId = `listenbrainz-${Date.now()}`;
-            downloadQueue.unshift({ id: downloadId, artist: 'ListenBrainz Playlist', title: 'Multiple Tracks', status: 'in_progress' });
-            updateDownloadQueueUI();
-
             const response = await fetch('/api/trigger_listenbrainz_download', {
                 method: 'POST'
             });
@@ -2822,13 +3013,6 @@ function showCleanupResults(data) {
             downloadBtn.innerHTML = '<div class="spinner" style="margin-right: 8px;"></div>Downloading...';
             downloadBtn.disabled = true;
 
-            // Show immediate feedback message
-            showMessage('info', 'Download started...');
-            // Add to client-side queue display immediately
-            const downloadId = `lastfm-${Date.now()}`;
-            downloadQueue.unshift({ id: downloadId, artist: 'Last.fm Playlist', title: 'Multiple Tracks', status: 'in_progress' });
-            updateDownloadQueueUI();
-
             const response = await fetch('/api/trigger_lastfm_download', {
                 method: 'POST'
             });
@@ -2868,12 +3052,6 @@ function showCleanupResults(data) {
         async function downloadFreshRelease(artist, album, releaseDate) {
             // Get the state of the album recommendation setting from config
             const isAlbumRecommendation = window.albumRecommendationEnabled || false;
-
-            // Show immediate feedback message
-            showMessage('info', 'Download started...');
-            // Add to client-side queue display immediately
-            downloadQueue.unshift({ artist: artist, title: album, status: 'in_progress' });
-            updateDownloadQueueUI();
 
             const response = await fetch('/api/trigger_fresh_release_download', {
                 method: 'POST',
@@ -2975,12 +3153,6 @@ function showCleanupResults(data) {
                 const originalContent = buttonElement.innerHTML;
                 buttonElement.innerHTML = '<div class="spinner"></div>';
                 buttonElement.disabled = true;
-
-                // Show immediate feedback message
-                showMessage('info', 'Download started...');
-                // Add to client-side queue display immediately
-                downloadQueue.unshift({ artist: artist, title: title, status: 'in_progress' });
-                updateDownloadQueueUI();
 
                 const response = await fetch('/api/trigger_track_download', {
                     method: 'POST',
@@ -3594,9 +3766,6 @@ function showCleanupResults(data) {
         async function _doPlaylistDownload(url, playlistName, downloadLinkBtn) {
             try {
                 downloadLinkBtn.innerHTML = '<div class="spinner"></div>Downloading...';
-                showMessage('info', `Downloading playlist: ${playlistName}`);
-                downloadQueue.unshift({ artist: 'Playlist', title: playlistName, status: 'in_progress' });
-                updateDownloadQueueUI();
                 openDownloadQueueModal();
 
                 const response = await fetch('/api/download_from_link', {
@@ -3691,10 +3860,6 @@ function showCleanupResults(data) {
             const originalContent = downloadLinkBtn.innerHTML;
             downloadLinkBtn.innerHTML = '<div class="spinner"></div>Downloading...';
             downloadLinkBtn.disabled = true;
-
-            showMessage('info', 'Download started...');
-            downloadQueue.unshift({ artist: 'Link Download', title: musicLink, status: 'in_progress' });
-            updateDownloadQueueUI();
 
             try {
                 const response = await fetch('/api/download_from_link', {

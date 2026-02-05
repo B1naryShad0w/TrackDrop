@@ -382,7 +382,10 @@ class NavidromeAPI:
         if best_score >= 60:
             return best_song
 
-        print(f"No confident match for '{artist} - {title}' (best score: {best_score})")
+        # Debug: show top candidates and their scores
+        print(f"  [MATCH FAIL] '{artist} - {title}' → no match (best={best_score}, candidates={len(all_candidates)})")
+        for s, sc in scored[:3]:
+            print(f"    score={sc}: {s.get('artist','?')} - {s.get('title','?')} [{s.get('album','?')}]")
         return None
 
     def _find_song_by_path(self, file_path):
@@ -581,12 +584,25 @@ class NavidromeAPI:
 
     def _wait_for_scan(self, timeout=120):
         """Wait for an ongoing library scan to complete (sync version)."""
+        # Wait a moment for the scan to actually start (Navidrome processes
+        # startScan asynchronously — getScanStatus may briefly return false
+        # before the scan begins).
+        time.sleep(2)
+        saw_scanning = False
         start = time.time()
         while time.time() - start < timeout:
-            if not self._get_scan_status():
+            scanning = self._get_scan_status()
+            if scanning:
+                saw_scanning = True
+            elif saw_scanning:
+                # Scan was running and is now done
                 print("Library scan completed")
                 return True
-            time.sleep(3)
+            elif not saw_scanning and (time.time() - start) > 10:
+                # Never saw scanning start after 10s — assume it finished quickly
+                print("Library scan completed (fast)")
+                return True
+            time.sleep(2)
         print(f"Scan did not complete within {timeout}s")
         return False
 
@@ -710,15 +726,28 @@ class NavidromeAPI:
                 song_key = (song.get('artist', '').lower(), song.get('title', '').lower())
                 was_downloaded = song_key in downloaded_set
 
+                # If duplicate check already found the Navidrome ID, use it directly
+                if song.get('_navidrome_id'):
+                    nd_song = {'id': song['_navidrome_id']}
+                    print(f"  Found by cached ID: {song['artist']} - {song['title']} (id={song['_navidrome_id']})")
+
                 # Try path-based lookup first for downloaded songs
-                if was_downloaded and song_key in downloaded_file_paths:
+                if not nd_song and was_downloaded and song_key in downloaded_file_paths:
                     final_path = downloaded_file_paths[song_key]
                     nd_song = self._find_song_by_path(final_path)
                     if nd_song:
                         print(f"  Found by path: {song['artist']} - {song['title']}")
 
                 if not nd_song:
-                    nd_song = self._search_song_in_navidrome(song['artist'], song['title'], salt, token)
+                    # Only search for songs that were downloaded or are known
+                    # duplicates. Songs that completely failed (no Deezer link,
+                    # not in library) should not be searched — fuzzy matching
+                    # without album context produces false positives.
+                    if was_downloaded or song.get('_duplicate'):
+                        search_album = song.get('album') or None
+                        nd_song = self._search_song_in_navidrome(song['artist'], song['title'], salt, token, album=search_album)
+                        if nd_song:
+                            print(f"  Found by search: {song['artist']} - {song['title']} → ND: {nd_song.get('artist', '?')} - {nd_song.get('title', '?')} [{nd_song.get('album', '?')}]")
 
                 if nd_song:
                     song_ids.append(nd_song['id'])
@@ -736,7 +765,7 @@ class NavidromeAPI:
                     else:
                         print(f"  Pre-existing: {song['artist']} - {song['title']}")
                 else:
-                    print(f"  Not found: {song['artist']} - {song['title']}")
+                    print(f"  NOT FOUND IN NAVIDROME: {song['artist']} - {song['title']} (was_downloaded={was_downloaded}, duplicate={song.get('_duplicate', False)})")
 
             if not song_ids:
                 print(f"  No tracks found for '{playlist_name}', skipping")
@@ -911,7 +940,7 @@ class NavidromeAPI:
         # Clean up empty folders and trigger scan if we deleted files
         if result['deleted'] > 0:
             remove_empty_folders(self.music_library_path)
-            self._start_scan(full_scan=True)
+            self._start_scan(full_scan=False)
             self._wait_for_scan(timeout=120)
             # Use Navidrome's native API to purge only the specific songs we deleted
             if deleted_song_ids:
@@ -1401,7 +1430,7 @@ class NavidromeAPI:
         if results['deleted']:
             from utils import remove_empty_folders
             remove_empty_folders(self.music_library_path)
-            self._start_scan(full_scan=True)
+            self._start_scan(full_scan=False)
             await self._wait_for_scan_async(timeout=60)
             # Purge only the specific songs we deleted
             if deleted_song_ids:
