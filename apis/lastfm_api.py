@@ -56,6 +56,7 @@ class LastFmAPI:
                 return []
             data = response.json()
 
+            print(f"[DEBUG] Last.fm API returned {len(data.get('playlist', []))} tracks in playlist", flush=True)
             for track_data in data["playlist"]:
                 artist = track_data["artists"][0]["name"]
                 title = track_data["name"]

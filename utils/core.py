@@ -273,7 +273,7 @@ def update_status_file(download_id, status, message=None, title=None,
         status_data["total_track_count"] = total_track_count
 
     # Pass through extra fields
-    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type', 'source_stats'):
         if key in kwargs and kwargs[key] is not None:
             status_data[key] = kwargs[key]
 

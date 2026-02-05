@@ -280,7 +280,7 @@ def update_download_status(download_id, status, message=None, title=None, curren
         if total_track_count is not None:
             item['total_track_count'] = total_track_count
         # Pass through extra fields
-        for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+        for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type', 'source_stats'):
             if key in kwargs and kwargs[key] is not None:
                 item[key] = kwargs[key]
     else:
@@ -297,7 +297,7 @@ def update_download_status(download_id, status, message=None, title=None, curren
             'current_track_count': current_track_count,
             'total_track_count': total_track_count
         }
-        for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+        for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type', 'source_stats'):
             if key in kwargs and kwargs[key] is not None:
                 new_item[key] = kwargs[key]
         downloads_queue[download_id] = new_item
@@ -743,7 +743,7 @@ def get_download_queue():
                     current_track_count = status_data.get('current_track_count')
                     total_track_count = status_data.get('total_track_count')
                     extra = {}
-                    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type'):
+                    for key in ('tracks', 'skipped_count', 'failed_count', 'downloaded_count', 'download_type', 'source_stats'):
                         if key in status_data:
                             extra[key] = status_data[key]
                     update_download_status(download_id, status, message, title, current_track_count, total_track_count, **extra)
@@ -1843,9 +1843,29 @@ def download_from_link():
             update_download_status(download_id, 'completed', f"Downloaded {len(result)} files.", title=current_title)
             return jsonify({"status": "success", "message": f"Successfully downloaded and organized {len(result)} files from {link}."})
         else:
-            current_title = downloads_queue.get(download_id, {}).get('title', link)
-            update_download_status(download_id, 'failed', f"No files downloaded. The track may not be available on Deezer.", title=current_title)
-            return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
+            # Check if the download was actually completed (e.g., already in library)
+            # The link_downloader writes to status file, so read it directly
+            # (in-memory queue may not be updated yet by polling thread)
+            current_status = ''
+            current_message = ''
+            current_title = link
+            status_file = os.path.join(DOWNLOAD_STATUS_DIR, f"{download_id}.json")
+            if os.path.exists(status_file):
+                try:
+                    with open(status_file, 'r') as f:
+                        status_data = json.load(f)
+                    current_status = status_data.get('status', '')
+                    current_message = status_data.get('message', '')
+                    current_title = status_data.get('title', link)
+                except Exception:
+                    pass
+
+            if current_status == 'completed':
+                # Already marked as completed (e.g., "already in library")
+                return jsonify({"status": "info", "message": current_message or f"No new files downloaded from {link}."})
+            else:
+                update_download_status(download_id, 'failed', f"No files downloaded. The track may not be available on Deezer.", title=current_title)
+                return jsonify({"status": "info", "message": f"No files downloaded from {link}. The track may not be available on Deezer."})
 
     except Exception as e:
         print(f"Error downloading from link: {e}", file=sys.stderr)
