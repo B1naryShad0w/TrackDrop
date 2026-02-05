@@ -9,33 +9,46 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>TrackDrop</title>
+    <!-- Google Fonts: JetBrains Mono for that clean techy feel -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary-color: #4142e0; 
+            --primary-color: #4142e0;
             --secondary-color: #3fbbda;
-            --accent-color: #80f2ff; 
-            --background-color: #1a1a2e;
-            --card-background: #2e2e4a;
-            --text-color: #e0e0e0;
-            --border-color: #4a4a6a;
-            --success-color: #28a745;
-            --error-color: #dc3545;
-            --info-color: #17a2b8;
+            --accent-color: #80f2ff;
+            --background-color: #0d0d1a;
+            --card-background: #1a1a2e;
+            --text-color: #e8e8f0;
+            --text-muted: #8888a0;
+            --border-color: #2a2a4a;
+            --success-color: #00d68f;
+            --error-color: #ff4757;
+            --info-color: #3fbbda;
+            --warning-color: #ffb400;
+            --font-mono: 'JetBrains Mono', monospace;
+            --font-sans: 'Outfit', -apple-system, sans-serif;
+            --glow-primary: rgba(65, 66, 224, 0.4);
+            --glow-accent: rgba(128, 242, 255, 0.3);
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: var(--font-sans);
             margin: 0;
-            padding: 20px; /* Base padding */
+            padding: 20px;
             background-color: var(--background-color);
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(65, 66, 224, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(63, 187, 218, 0.06) 0%, transparent 50%);
             color: var(--text-color);
             line-height: 1.6;
             display: flex;
-            justify-content: center; /* Center content by default */
+            justify-content: center;
             align-items: flex-start;
             min-height: 100vh;
             box-sizing: border-box;
-            transition: padding-right 0.3s ease-out, justify-content 0.3s ease-out; /* Smooth transition for padding and centering */
+            transition: padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1), justify-content 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         body.download-queue-panel-open {
@@ -49,14 +62,20 @@
         .container {
             width: 100%;
             max-width: 900px;
-            margin: 0 auto; /* Center by default */
+            margin: 0 auto;
             background-color: var(--card-background);
             padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            animation: fadeIn 0.8s ease-out;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
+            animation: containerFadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
-            transition: max-width 0.3s ease-out; /* Only max-width transition needed now */
+            transition: max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        @keyframes containerFadeIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
         /* When panel is open, container will naturally adjust within the new body padding. */
         /* No specific .container adjustment needed when body.download-queue-panel-open is active. */
@@ -98,19 +117,19 @@
         }
         .download-queue-modal {
             position: fixed;
-            top: 20px; /* Add top margin */
-            right: calc(-500px + 17px); /* Hidden initially, adjust for scrollbar width */
-            width: calc(500px - 17px); /* Adjust width for scrollbar */
-            max-width: calc(90% - 17px); /* Max width on smaller screens, adjust for scrollbar */
-            height: calc(100% - 40px); /* Adjust height for top and bottom margin */
-            background-color: var(--card-background);
-            box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+            top: 12px;
+            right: calc(-480px);
+            width: 480px;
+            max-width: calc(95vw - 24px);
+            height: calc(100% - 24px);
+            background: var(--card-background);
+            backdrop-filter: blur(20px);
+            box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
             z-index: 1000;
-            transition: right 0.3s ease-out;
-            display: flex; /* Use flexbox for content alignment */
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
             flex-direction: column;
-            border-top-left-radius: 12px; /* Rounded corners for the panel */
-            border-bottom-left-radius: 12px;
+            border-radius: 16px 0 0 16px;
         }
 
         .download-queue-modal.open {
@@ -118,42 +137,135 @@
         }
 
         .download-queue-modal .modal-content {
-            margin: 0; /* Remove margin from original modal-content */
-            padding: 30px;
-            padding-right: 40px; /* Add 40px right padding */
-            /* border-radius: 0; Removed to allow outer radius to show */
-            box-shadow: none; /* Remove box-shadow */
+            /* Override general .modal-content styles */
+            margin: 0;
             width: 100%;
-            height: 100%;
+            max-width: none;
+            max-height: none;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            animation: none;
+            /* Actual layout */
+            padding: 24px;
+            box-sizing: border-box;
+            flex: 1 1 0;
+            min-height: 0;
             display: flex;
             flex-direction: column;
+            position: relative;
+            z-index: 1;
+            overflow: hidden;
+        }
+
+        .dq-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .dq-header h2 {
+            font-family: var(--font-mono);
+            font-size: 0.9em;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .dq-header-badge {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            font-family: var(--font-mono);
+            font-size: 0.7em;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .download-queue-item {
             display: flex;
-            align-items: flex-start;
-            padding: 12px;
-            margin-bottom: 8px;
-            background-color: #3a3a5a;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
             flex-direction: column;
+            padding: 16px;
+            margin-bottom: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            transition: background 0.2s ease, border-color 0.2s ease;
+            position: relative;
+            overflow: hidden;
         }
 
-        .download-queue-item.in_progress { border-left: 4px solid var(--info-color); }
-        .download-queue-item.completed { border-left: 4px solid var(--success-color); }
-        .download-queue-item.failed { border-left: 4px solid var(--error-color); }
+        .download-queue-item.dq-animate-in {
+            animation: dqItemSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+        }
+
+        @keyframes dqItemSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .download-queue-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .download-queue-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            border-radius: 3px 0 0 3px;
+            transition: all 0.3s ease;
+        }
+
+        .download-queue-item.in_progress::before {
+            background: linear-gradient(180deg, var(--info-color), var(--primary-color));
+            box-shadow: 0 0 12px var(--glow-accent);
+        }
+        .download-queue-item.completed::before {
+            background: var(--success-color);
+            box-shadow: 0 0 8px rgba(0, 214, 143, 0.4);
+        }
+        .download-queue-item.failed::before {
+            background: var(--error-color);
+            box-shadow: 0 0 8px rgba(255, 71, 87, 0.4);
+        }
 
         .download-queue-item-header {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             width: 100%;
+            gap: 12px;
         }
 
         .download-queue-item .track-info {
             flex-grow: 1;
-            margin-left: 10px;
             min-width: 0;
+        }
+
+        .download-queue-item .track-info .track-title {
+            font-family: var(--font-sans);
+            font-weight: 600;
+            font-size: 0.95em;
+            color: var(--text-color);
+            margin: 0;
+            line-height: 1.3;
         }
 
         .download-queue-item .track-info > div {
@@ -163,98 +275,239 @@
         }
 
         .download-queue-item .status-icon {
-            width: 32px;
-            height: 32px;
-            margin-left: 10px;
+            width: 36px;
+            height: 36px;
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
         }
 
         .download-queue-item .status-icon.in_progress {
-            animation: none;
+            background: rgba(63, 187, 218, 0.15);
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes statusPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(65, 66, 224, 0.4); }
+            50% { transform: scale(1.1); box-shadow: 0 0 8px 2px rgba(65, 66, 224, 0.6); }
+        }
+
+        .download-queue-item .status-icon.completed {
+            background: rgba(0, 214, 143, 0.15);
         }
         .download-queue-item .status-icon.completed svg { color: var(--success-color); }
+        .download-queue-item .status-icon.failed {
+            background: rgba(255, 71, 87, 0.15);
+        }
         .download-queue-item .status-icon.failed svg { color: var(--error-color); }
 
-        /* Progress bar */
+        /* Enhanced Progress bar */
         .dq-progress-bar {
             width: 100%;
-            height: 4px;
-            background-color: #2a2a4a;
-            border-radius: 2px;
-            margin-top: 8px;
+            height: 6px;
+            background-color: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+            margin-top: 12px;
             overflow: hidden;
+            position: relative;
         }
+
         .dq-progress-bar-inner {
             height: 100%;
-            border-radius: 2px;
-            transition: width 0.3s ease;
+            border-radius: 3px;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .dq-progress-bar-inner::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+            animation: progressShimmer 1.5s ease-in-out infinite;
+        }
+
+        @keyframes progressShimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
         }
 
         /* Stats row */
         .dq-stats {
             display: flex;
-            gap: 12px;
-            font-size: 0.8em;
-            margin-top: 6px;
+            gap: 16px;
+            font-family: var(--font-mono);
+            font-size: 0.75em;
+            margin-top: 10px;
             flex-wrap: wrap;
+            color: var(--text-muted);
         }
-        .dq-stat { display: flex; align-items: center; gap: 4px; }
+
+        .dq-stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
         .dq-stat-dot {
-            width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
         }
-        .dq-stat-dot.downloaded { background-color: var(--success-color); }
-        .dq-stat-dot.skipped { background-color: var(--secondary-color); }
-        .dq-stat-dot.failed { background-color: var(--error-color); }
-        .dq-stat-dot.pending { background-color: #666; }
+
+        .dq-stat-dot.downloaded { background-color: var(--success-color); box-shadow: 0 0 6px rgba(0, 214, 143, 0.5); }
+        .dq-stat-dot.skipped { background-color: var(--secondary-color); box-shadow: 0 0 6px rgba(63, 187, 218, 0.5); }
+        .dq-stat-dot.failed { background-color: var(--error-color); box-shadow: 0 0 6px rgba(255, 71, 87, 0.5); }
+        .dq-stat-dot.pending { background-color: #555; }
 
         /* Expandable track list */
         .dq-expand-btn {
-            background: none; border: none; color: var(--accent-color);
-            cursor: pointer; font-size: 0.8em; padding: 4px 0; margin-top: 4px;
-            transition: color 0.2s; width: auto; box-shadow: none;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: var(--font-mono);
+            font-size: 0.7em;
+            padding: 6px 0;
+            margin-top: 8px;
+            transition: color 0.2s;
+            width: auto;
+            box-shadow: none;
+            letter-spacing: 0.03em;
         }
-        .dq-expand-btn:hover { color: var(--primary-color); background: none; transform: none; }
+
+        .dq-expand-btn:hover {
+            color: var(--accent-color);
+            background: none;
+            transform: none;
+        }
+
         .dq-track-list {
             width: 100%;
-            max-height: 300px;
+            max-height: 250px;
             overflow-y: auto;
-            margin-top: 6px;
+            margin-top: 8px;
             display: none;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 8px;
         }
+
+        .dq-track-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .dq-track-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .dq-track-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
         .dq-track-list.open { display: block; }
+
         .dq-track-entry {
             display: flex;
             align-items: center;
-            padding: 4px 8px;
+            padding: 6px 10px;
+            font-family: var(--font-sans);
             font-size: 0.8em;
-            border-radius: 4px;
-            gap: 8px;
+            border-radius: 6px;
+            gap: 10px;
+            transition: background 0.2s;
         }
-        .dq-track-entry:nth-child(odd) { background-color: rgba(255,255,255,0.03); }
-        .dq-track-entry .dq-track-status-icon {
-            width: 14px; height: 14px; flex-shrink: 0;
-        }
-        .dq-track-entry .dq-track-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .dq-track-entry .dq-track-msg { color: #888; font-size: 0.9em; flex-shrink: 0; }
 
+        .dq-track-entry:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .dq-track-entry .dq-track-status-icon {
+            width: 14px;
+            height: 14px;
+            flex-shrink: 0;
+        }
+
+        .dq-track-entry .dq-track-label {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-color);
+        }
+
+        .dq-track-entry .dq-track-msg {
+            color: var(--text-muted);
+            font-size: 0.85em;
+            flex-shrink: 0;
+            font-family: var(--font-mono);
+        }
+
+        /* Source stats styling */
+        .dq-source-stats {
+            display: flex;
+            gap: 12px;
+            font-family: var(--font-mono);
+            font-size: 0.7em;
+            margin-top: 8px;
+            flex-wrap: wrap;
+            color: var(--text-muted);
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 6px;
+        }
+
+        /* Empty state */
+        .dq-empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .dq-empty-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 16px;
+            opacity: 0.3;
+        }
+
+        .dq-empty p {
+            font-family: var(--font-mono);
+            font-size: 0.85em;
+            letter-spacing: 0.03em;
+        }
+
+        /* Responsive adjustments for the download queue */
         /* Responsive adjustments for the download queue */
         @media (max-width: 768px) {
             .download-queue-modal {
-                width: calc(85% - 17px);
-                right: calc(-85% + 17px);
+                width: 100%;
+                max-width: none;
+                right: -100%;
                 top: 0;
                 height: 100%;
                 border-radius: 0;
-                border-top-left-radius: 12px;
-                border-bottom-left-radius: 12px;
                 z-index: 1100;
             }
-            /* On mobile, overlay the panel instead of pushing content */
             body.download-queue-panel-open {
                 padding-right: 20px;
+            }
+            .dq-header h2 {
+                font-size: 0.8em;
             }
         }
 
@@ -266,37 +519,69 @@
             top: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            animation: fadeIn 0.3s ease-out;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            animation: modalFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
         .modal-content {
-            background-color: var(--card-background);
-            margin: 10% auto;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            background: linear-gradient(180deg, var(--card-background) 0%, rgba(20, 20, 36, 0.98) 100%);
+            margin: 8% auto;
+            padding: 28px;
+            border-radius: 16px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
             width: 90%;
-            max-width: 500px;
+            max-width: 520px;
             position: relative;
             max-height: 80vh;
             overflow-y: auto;
+            animation: modalContentSlide 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes modalContentSlide {
+            from { opacity: 0; transform: translateY(-20px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .modal-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .modal-content::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
         }
 
         .close {
             position: absolute;
-            top: 15px;
+            top: 16px;
             right: 20px;
-            color: var(--text-color);
-            font-size: 28px;
-            font-weight: bold;
+            color: var(--text-muted);
+            font-size: 24px;
+            font-weight: 400;
             cursor: pointer;
-            opacity: 0.7;
-            transition: opacity 0.3s ease;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
         }
 
         .close:hover {
             opacity: 1;
+            background: rgba(255, 255, 255, 0.05);
         }
 
         @keyframes fadeIn {
@@ -305,18 +590,22 @@
         }
 
         h1 {
-            color: var(--primary-color);
+            font-family: var(--font-sans);
+            color: var(--text-color);
             text-align: center;
             margin-bottom: 30px;
-            font-size: 2.5em;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+            font-size: 2.2em;
+            font-weight: 700;
+            letter-spacing: -0.02em;
         }
 
         h2 {
-            color: var(--secondary-color);
+            font-family: var(--font-sans);
+            color: var(--text-color);
             margin-top: 25px;
             margin-bottom: 15px;
-            font-size: 1.8em;
+            font-size: 1.5em;
+            font-weight: 600;
         }
 
         .form-group {
@@ -326,83 +615,105 @@
         label {
             display: block;
             margin-bottom: 8px;
-            font-weight: 600;
+            font-family: var(--font-sans);
+            font-weight: 500;
+            font-size: 0.9em;
             color: var(--text-color);
         }
 
         input[type="text"], input[type="password"] {
-            width: calc(100% - 24px);
-            padding: 12px;
+            width: calc(100% - 28px);
+            padding: 14px;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 1em;
-            background-color: #3a3a5a;
+            border-radius: 10px;
+            font-family: var(--font-sans);
+            font-size: 0.95em;
+            background-color: rgba(255, 255, 255, 0.04);
             color: var(--text-color);
-            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            transition: all 0.2s ease;
+        }
+
+        input[type="text"]::placeholder, input[type="password"]::placeholder {
+            color: var(--text-muted);
+            opacity: 0.6;
         }
 
         input[type="text"]:focus, input[type="password"]:focus {
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(106, 13, 173, 0.3);
+            box-shadow: 0 0 0 3px rgba(65, 66, 224, 0.15);
+            background-color: rgba(255, 255, 255, 0.06);
             outline: none;
         }
 
         button {
-            background-color: var(--primary-color);
+            background: linear-gradient(135deg, var(--primary-color) 0%, #5253f0 100%);
             color: white;
-            padding: 12px 20px;
+            padding: 12px 22px;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: 1em;
+            font-family: var(--font-sans);
+            font-size: 0.9em;
             font-weight: 600;
             margin-right: 10px;
-            transition: background-color 0.3s ease, transform 0.2s ease;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(65, 66, 224, 0.25);
         }
 
         button:hover {
-            background-color: var(--secondary-color);
+            background: linear-gradient(135deg, #5253f0 0%, var(--secondary-color) 100%);
             transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(65, 66, 224, 0.35);
         }
 
         button:active {
             transform: translateY(0);
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 8px rgba(65, 66, 224, 0.2);
         }
 
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Message notifications */
         .message {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 15px;
-            border-radius: 8px;
+            bottom: 24px;
+            right: 24px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-family: var(--font-sans);
             font-weight: 500;
-            animation: slideIn 0.5s ease-out;
+            font-size: 0.9em;
+            animation: messageSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 1000;
-            max-width: 400px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            max-width: 380px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        @keyframes messageSlideIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
         .message.success {
-            background-color: rgba(40, 167, 69, 0.2);
+            background: rgba(0, 214, 143, 0.15);
             color: var(--success-color);
-            border: 1px solid var(--success-color);
+            border-color: rgba(0, 214, 143, 0.3);
         }
         .message.error {
-            background-color: rgba(220, 53, 69, 0.2);
+            background: rgba(255, 71, 87, 0.15);
             color: var(--error-color);
-            border: 1px solid var(--error-color);
+            border-color: rgba(255, 71, 87, 0.3);
         }
         .message.info {
-            background-color: rgba(23, 162, 184, 0.2);
+            background: rgba(63, 187, 218, 0.15);
             color: var(--info-color);
-            border: 1px solid var(--info-color);
+            border-color: rgba(63, 187, 218, 0.3);
         }
         .message.warning {
             background-color: rgba(255, 193, 7, 0.2);
@@ -652,21 +963,38 @@
             height: 48px; /* Twice as big */
         }
 
-        .download-queue-modal .close-btn-svg {
+        /* Collapse handle on left edge */
+        .dq-collapse-handle {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 28px; /* Slightly larger for visibility */
-            height: 28px;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 0 8px 8px 0;
             cursor: pointer;
-            color: var(--text-color); /* Use text color for visibility */
-            opacity: 0.7;
-            transition: opacity 0.3s ease;
-            z-index: 1001; /* Ensure it's above other modal content */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 1001;
         }
 
-        .download-queue-modal .close-btn-svg:hover {
-            opacity: 1;
+        .dq-collapse-handle:hover {
+            background: rgba(255, 255, 255, 0.12);
+            width: 28px;
+        }
+
+        .dq-collapse-handle svg {
+            width: 16px;
+            height: 16px;
+            color: var(--text-muted);
+            transition: transform 0.3s ease;
+        }
+
+        .dq-collapse-handle:hover svg {
+            color: var(--text-color);
         }
 
         @keyframes pulse {
@@ -967,10 +1295,13 @@
             </svg>
         </div>
         <div class="header-icons-top-right">
-            <!-- Download queue icon -->
-            <svg class="header-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="openDownloadQueueModal()">
-                <path d="M 17.727626,19.369618 V 0.99999999 m 0,18.36961801 -5.004657,-5.009896 m 5.004657,5.009896 5.004658,-5.009896 M 1,1.7696715 H 12.200214 M 1,7.4045513 H 12.200214 M 1,13.03943 h 5.6001067" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <!-- Download queue icon with badge -->
+            <div style="position: relative;" onclick="openDownloadQueueModal()">
+                <svg class="header-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M 17.727626,19.369618 V 0.99999999 m 0,18.36961801 -5.004657,-5.009896 m 5.004657,5.009896 5.004658,-5.009896 M 1,1.7696715 H 12.200214 M 1,7.4045513 H 12.200214 M 1,13.03943 h 5.6001067" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span id="dqIconBadge" style="display: none; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; background: var(--primary-color); border-radius: 50%; animation: badgePulse 2s ease-in-out infinite;"></span>
+            </div>
             <!-- Logout icon -->
             <svg class="header-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="window.location.href='/logout'" title="Logout ({{ username }})">
                 <path d="M16 17L21 12M21 12L16 7M21 12H9M9 3H7.8C6.11984 3 5.27976 3 4.63803 3.32698C4.07354 3.6146 3.6146 4.07354 3.32698 4.63803C3 5.27976 3 6.11984 3 7.8V16.2C3 17.8802 3 18.7202 3.32698 19.362C3.6146 19.9265 4.07354 20.3854 4.63803 20.673C5.27976 21 6.11984 21 7.8 21H9" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -997,20 +1328,46 @@
             <h2 id="greetingText" style="color: var(--text-color); font-weight: 400; margin: 0;"></h2>
         </div>
 
-        <!-- Welcome/help message -->
-        <div id="welcomeMessage" class="playlist-section" style="display: none; position: relative;">
-            <button onclick="dismissWelcomeMessage()" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 1.5em; cursor: pointer; color: #888; padding: 5px 10px;" title="Dismiss">&times;</button>
-            <div style="text-align: center; padding: 40px;">
-                <h2 style="color: var(--primary-color); margin-bottom: 20px;">Welcome to TrackDrop!</h2>
-                <p style="font-size: 1.2em; margin-bottom: 30px; color: var(--text-color);">
-                    To get started, please configure your music services in the settings menu (gear icon in the top left).
-                </p>
-                <p style="color: #b0b0b0; margin-bottom: 20px;">
-                    You can set up ListenBrainz for music discovery and recommendations, Last.fm for additional playlist sources, and Navidrome for your music library management.
-                </p>
-                <button onclick="openSettingsModal(); dismissWelcomeMessage();" style="font-size: 1.1em; padding: 12px 24px;">
-                    Open Settings
-                </button>
+        <!-- Welcome/help modal -->
+        <div id="welcomeModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 440px; padding: 0; overflow: hidden;">
+                <div style="padding: 24px 24px 20px; border-bottom: 1px solid var(--border-color);">
+                    <h2 style="margin: 0; font-size: 1.3em; color: var(--text-color);">Welcome to TrackDrop</h2>
+                </div>
+                <div style="padding: 20px 24px; max-height: 60vh; overflow-y: auto;">
+                    <div style="margin-bottom: 20px;">
+                        <div style="font-weight: 600; color: var(--text-color); margin-bottom: 6px; font-size: 0.95em;">Get Started</div>
+                        <p style="color: var(--text-muted); margin: 0; font-size: 0.9em; line-height: 1.5;">
+                            Configure your music services in Settings (gear icon) to enable automatic recommendations.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <div style="font-weight: 600; color: var(--text-color); margin-bottom: 6px; font-size: 0.95em;">Download Music</div>
+                        <p style="color: var(--text-muted); margin: 0; font-size: 0.9em; line-height: 1.5;">
+                            Paste any link from Spotify, Deezer, Tidal, YouTube, or other services to download in FLAC quality.
+                        </p>
+                    </div>
+
+                    <div style="padding: 14px; background: rgba(65, 66, 224, 0.08); border-radius: 10px; border: 1px solid rgba(65, 66, 224, 0.15);">
+                        <div style="font-weight: 600; color: var(--accent-color); margin-bottom: 6px; font-size: 0.95em;">Mobile App</div>
+                        <p style="color: var(--text-muted); margin: 0 0 10px 0; font-size: 0.9em; line-height: 1.5;">
+                            Install TrackDrop on your phone, then share links directly from any music app to start downloading.
+                        </p>
+                        <div style="color: var(--text-muted); font-size: 0.8em; opacity: 0.8;">
+                            iOS: Share → Add to Home Screen<br>
+                            Android: Menu → Install App
+                        </div>
+                    </div>
+                </div>
+                <div style="padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; justify-content: flex-end;">
+                    <button onclick="dismissWelcomeMessage()" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-color); padding: 10px 18px;">
+                        Got it
+                    </button>
+                    <button onclick="openSettingsModal(); dismissWelcomeMessage();" style="padding: 10px 18px;">
+                        Open Settings
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -1248,13 +1605,23 @@
 
     <!-- Download Queue Panel -->
     <div id="downloadQueuePanel" class="download-queue-modal">
-        <svg class="close-btn-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="closeDownloadQueuePanel()">
-            <path d="M6 18L18 6M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <div class="dq-collapse-handle" onclick="closeDownloadQueuePanel()" title="Collapse">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
         <div class="modal-content">
-            <h2>Download Queue</h2>
+            <div class="dq-header">
+                <h2>DOWNLOADS</h2>
+                <span id="dqBadge" class="dq-header-badge" style="display: none;">0 active</span>
+            </div>
             <div id="downloadQueueModalContent" style="flex-grow: 1; overflow-y: auto;">
-                <p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>
+                <div class="dq-empty">
+                    <svg class="dq-empty-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M 17.727626,19.369618 V 0.99999999 m 0,18.36961801 -5.004657,-5.009896 m 5.004657,5.009896 5.004658,-5.009896 M 1,1.7696715 H 12.200214 M 1,7.4045513 H 12.200214 M 1,13.03943 h 5.6001067" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <p>No downloads in queue</p>
+                </div>
             </div>
         </div>
     </div>
@@ -1470,19 +1837,28 @@
         }
 
         // Initialize greeting on page load
-        document.addEventListener('DOMContentLoaded', showRandomGreeting);
+        // First-time setup flag from server
+        const isFirstTime = {{ 'true' if first_time else 'false' }};
+
+        document.addEventListener('DOMContentLoaded', () => {
+            showRandomGreeting();
+            // Auto-show welcome modal for first-time users
+            if (isFirstTime) {
+                document.getElementById('welcomeModal').style.display = 'block';
+            }
+        });
 
         function toggleWelcomeMessage() {
-            const welcomeMsg = document.getElementById('welcomeMessage');
-            if (welcomeMsg.style.display === 'none' || welcomeMsg.style.display === '') {
-                welcomeMsg.style.display = 'block';
-            } else {
-                welcomeMsg.style.display = 'none';
-            }
+            const modal = document.getElementById('welcomeModal');
+            modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
         }
 
         function dismissWelcomeMessage() {
-            document.getElementById('welcomeMessage').style.display = 'none';
+            document.getElementById('welcomeModal').style.display = 'none';
+            // Mark first-time setup as done so it doesn't show again
+            if (isFirstTime) {
+                fetch('/api/user/setup_done', { method: 'POST' }).catch(() => {});
+            }
         }
 
         function openSettingsModal() {
@@ -1771,7 +2147,7 @@ function showCleanupResults(data) {
             updateDownloadQueueUI();
         }
 
-        function renderPlaylistItem(item) {
+        function renderPlaylistItem(item, animate = false) {
             const tracks = item.tracks || [];
             const total = item.total_track_count || tracks.length || 0;
             const dl = item.downloaded_count || 0;
@@ -1812,13 +2188,13 @@ function showCleanupResults(data) {
             if (tracks.length > 0) {
                 trackListHtml = `
                     <button class="dq-expand-btn" onclick="toggleTrackList('${item.id}')">
-                        ${isExpanded ? '▼ Hide tracks' : '▶ Show tracks (' + tracks.length + ')'}
+                        ${isExpanded ? '▼ HIDE TRACKS' : '▶ SHOW TRACKS (' + tracks.length + ')'}
                     </button>
                     <div class="dq-track-list ${isExpanded ? 'open' : ''}" data-item-id="${item.id}">
                         ${tracks.map(t => `
                             <div class="dq-track-entry">
                                 <span class="dq-track-status-icon" style="color: ${_trackStatusColor(t.status)}">${_statusIcon(t.status, 14)}</span>
-                                <span class="dq-track-label">${_escHtml(t.artist)} - ${_escHtml(t.title)}</span>
+                                <span class="dq-track-label">${_escHtml(t.artist)} — ${_escHtml(t.title)}</span>
                                 <span class="dq-track-msg">${_escHtml(t.message)}</span>
                             </div>
                         `).join('')}
@@ -1826,12 +2202,16 @@ function showCleanupResults(data) {
                 `;
             }
 
+            // Status message styling
+            const msgColor = item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : 'var(--text-muted)';
+            const animClass = animate ? ' dq-animate-in' : '';
+
             return `
-                <div class="download-queue-item ${item.status}">
+                <div class="download-queue-item ${item.status}${animClass}" data-item-id="${item.id}">
                     <div class="download-queue-item-header">
                         <div class="track-info">
                             <div class="track-title">${_escHtml(item.title)}</div>
-                            ${item.message ? `<div style="font-size: 0.85em; margin-top: 3px; color: ${item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : '#b0b0b0'}">${_escHtml(item.message)}</div>` : ''}
+                            ${item.message ? `<div class="dq-message" style="font-family: var(--font-mono); font-size: 0.75em; margin-top: 4px; color: ${msgColor};">${_escHtml(item.message)}</div>` : ''}
                         </div>
                         <div class="status-icon ${item.status}">
                             ${_statusIcon(item.status)}
@@ -1840,13 +2220,13 @@ function showCleanupResults(data) {
                     ${sourceStatsHtml}
                     ${total > 0 ? `
                         <div class="dq-progress-bar">
-                            <div class="dq-progress-bar-inner" style="width: ${pct}%; background-color: ${barColor};"></div>
+                            <div class="dq-progress-bar-inner" style="width: ${pct}%; ${barStyle}"></div>
                         </div>
                         <div class="dq-stats">
                             ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
                             ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
                             ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
-                            ${cleanupDeleted > 0 ? `<span class="dq-stat"><span class="dq-stat-dot" style="background-color: #ff9800;"></span>${cleanupDeleted} removed</span>` : ''}
+                            ${cleanupDeleted > 0 ? `<span class="dq-stat"><span class="dq-stat-dot" style="background-color: var(--warning-color); box-shadow: 0 0 6px rgba(255, 180, 0, 0.5);"></span>${cleanupDeleted} removed</span>` : ''}
                             ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
                         </div>
                     ` : ''}
@@ -1855,14 +2235,16 @@ function showCleanupResults(data) {
             `;
         }
 
-        function renderSimpleItem(item) {
+        function renderSimpleItem(item, animate = false) {
+            const msgColor = item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : 'var(--text-muted)';
+            const animClass = animate ? ' dq-animate-in' : '';
             return `
-                <div class="download-queue-item ${item.status}">
+                <div class="download-queue-item ${item.status}${animClass}" data-item-id="${item.id}">
                     <div class="download-queue-item-header">
                         <div class="track-info">
                             <div class="track-title">${_escHtml(item.title)}</div>
-                            <div class="track-artist">${_escHtml(item.artist)}</div>
-                            ${item.message ? `<div style="font-size: 0.85em; margin-top: 3px; color: ${item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : '#b0b0b0'}">${_escHtml(item.message)}</div>` : ''}
+                            <div style="font-family: var(--font-mono); font-size: 0.8em; color: var(--text-muted); margin-top: 2px;">${_escHtml(item.artist)}</div>
+                            ${item.message ? `<div class="dq-message" style="font-family: var(--font-mono); font-size: 0.75em; margin-top: 4px; color: ${msgColor};">${_escHtml(item.message)}</div>` : ''}
                         </div>
                         <div class="status-icon ${item.status}">
                             ${_statusIcon(item.status)}
@@ -1872,37 +2254,190 @@ function showCleanupResults(data) {
             `;
         }
 
+        // Track rendered items to avoid re-animating
+        const renderedItemIds = new Set();
+
         function updateDownloadQueueUI() {
             const queueContent = document.getElementById('downloadQueueModalContent');
+            const badge = document.getElementById('dqBadge');
+            const iconBadge = document.getElementById('dqIconBadge');
             if (!queueContent) return;
 
-            // Preserve scroll positions before re-render
-            const mainScroll = queueContent.scrollTop;
-            const trackListScrolls = {};
-            queueContent.querySelectorAll('.dq-track-list').forEach(el => {
-                if (el.scrollTop > 0 && el.dataset.itemId) {
-                    trackListScrolls[el.dataset.itemId] = el.scrollTop;
-                }
-            });
+            // Update badges
+            const activeCount = downloadQueue.filter(item => item.status === 'in_progress').length;
 
-            if (downloadQueue.length === 0) {
-                queueContent.innerHTML = '<p style="text-align: center; color: #b0b0b0;">No downloads in queue.</p>';
-            } else {
-                queueContent.innerHTML = downloadQueue.map(item => {
-                    if (item.download_type === 'playlist' || (item.tracks && item.tracks.length > 0)) {
-                        return renderPlaylistItem(item);
-                    }
-                    return renderSimpleItem(item);
-                }).join('');
+            if (iconBadge) {
+                iconBadge.style.display = activeCount > 0 ? 'block' : 'none';
             }
 
-            // Restore scroll positions after re-render
-            queueContent.scrollTop = mainScroll;
-            queueContent.querySelectorAll('.dq-track-list').forEach(el => {
-                if (el.dataset.itemId && trackListScrolls[el.dataset.itemId]) {
-                    el.scrollTop = trackListScrolls[el.dataset.itemId];
+            if (badge) {
+                if (activeCount > 0) {
+                    badge.textContent = `${activeCount} active`;
+                    badge.style.display = 'inline-block';
+                } else if (downloadQueue.length > 0) {
+                    badge.textContent = `${downloadQueue.length} total`;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+
+            // Show empty state
+            if (downloadQueue.length === 0) {
+                renderedItemIds.clear();
+                queueContent.innerHTML = `
+                    <div class="dq-empty">
+                        <svg class="dq-empty-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M 17.727626,19.369618 V 0.99999999 m 0,18.36961801 -5.004657,-5.009896 m 5.004657,5.009896 5.004658,-5.009896 M 1,1.7696715 H 12.200214 M 1,7.4045513 H 12.200214 M 1,13.03943 h 5.6001067" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <p>No downloads in queue</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Get current item IDs in the queue
+            const currentIds = new Set(downloadQueue.map(item => item.id));
+
+            // Remove items that are no longer in the queue
+            queueContent.querySelectorAll('.download-queue-item').forEach(el => {
+                const itemId = el.dataset.itemId;
+                if (itemId && !currentIds.has(itemId)) {
+                    el.remove();
+                    renderedItemIds.delete(itemId);
                 }
             });
+
+            // Update or add items
+            downloadQueue.forEach((item, index) => {
+                const existingEl = queueContent.querySelector(`.download-queue-item[data-item-id="${item.id}"]`);
+
+                if (existingEl) {
+                    // Update existing item in place
+                    updateExistingItem(existingEl, item);
+                } else {
+                    // Add new item with animation
+                    const isNew = !renderedItemIds.has(item.id);
+                    const html = (item.download_type === 'playlist' || (item.tracks && item.tracks.length > 0))
+                        ? renderPlaylistItem(item, isNew)
+                        : renderSimpleItem(item, isNew);
+
+                    // Find the correct position to insert
+                    const nextSibling = queueContent.children[index];
+                    if (nextSibling) {
+                        nextSibling.insertAdjacentHTML('beforebegin', html);
+                    } else {
+                        queueContent.insertAdjacentHTML('beforeend', html);
+                    }
+                    renderedItemIds.add(item.id);
+                }
+            });
+
+            // Remove empty state if present
+            const emptyState = queueContent.querySelector('.dq-empty');
+            if (emptyState) emptyState.remove();
+        }
+
+        function updateExistingItem(el, item) {
+            // Update status class
+            el.className = `download-queue-item ${item.status}`;
+
+            // Update status icon
+            const statusIcon = el.querySelector('.status-icon');
+            if (statusIcon) {
+                statusIcon.className = `status-icon ${item.status}`;
+                statusIcon.innerHTML = _statusIcon(item.status);
+            }
+
+            // Update message
+            const msgColor = item.status === 'failed' ? 'var(--error-color)' : item.status === 'completed' ? 'var(--success-color)' : 'var(--text-muted)';
+            let msgEl = el.querySelector('.dq-message');
+            if (item.message) {
+                if (msgEl) {
+                    msgEl.textContent = item.message;
+                    msgEl.style.color = msgColor;
+                } else {
+                    const trackInfo = el.querySelector('.track-info');
+                    if (trackInfo) {
+                        trackInfo.insertAdjacentHTML('beforeend', `<div class="dq-message" style="font-family: var(--font-mono); font-size: 0.75em; margin-top: 4px; color: ${msgColor};">${_escHtml(item.message)}</div>`);
+                    }
+                }
+            } else if (msgEl) {
+                msgEl.remove();
+            }
+
+            // Update progress bar
+            const tracks = item.tracks || [];
+            const total = item.total_track_count || tracks.length || 0;
+            const dl = item.downloaded_count || 0;
+            const skip = item.skipped_count || 0;
+            const fail = item.failed_count || 0;
+            const processed = dl + skip + fail;
+            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+            const progressInner = el.querySelector('.dq-progress-bar-inner');
+            if (progressInner) {
+                progressInner.style.width = `${pct}%`;
+                if (item.status === 'completed') {
+                    progressInner.style.background = 'linear-gradient(90deg, var(--success-color), #00b87a)';
+                } else if (item.status === 'failed') {
+                    progressInner.style.background = 'var(--error-color)';
+                }
+            }
+
+            // Update stats
+            const statsEl = el.querySelector('.dq-stats');
+            if (statsEl) {
+                const pending = Math.max(0, total - processed);
+                const cleanupDeleted = item.cleanup_deleted || 0;
+                statsEl.innerHTML = `
+                    ${dl > 0 ? `<span class="dq-stat"><span class="dq-stat-dot downloaded"></span>${dl} downloaded</span>` : ''}
+                    ${skip > 0 ? `<span class="dq-stat"><span class="dq-stat-dot skipped"></span>${skip} in library</span>` : ''}
+                    ${fail > 0 ? `<span class="dq-stat"><span class="dq-stat-dot failed"></span>${fail} failed</span>` : ''}
+                    ${cleanupDeleted > 0 ? `<span class="dq-stat"><span class="dq-stat-dot" style="background-color: var(--warning-color); box-shadow: 0 0 6px rgba(255, 180, 0, 0.5);"></span>${cleanupDeleted} removed</span>` : ''}
+                    ${pending > 0 && item.status === 'in_progress' ? `<span class="dq-stat"><span class="dq-stat-dot pending"></span>${pending} remaining</span>` : ''}
+                `;
+            }
+
+            // Handle track list and expand button
+            let trackList = el.querySelector('.dq-track-list');
+            let expandBtn = el.querySelector('.dq-expand-btn');
+            const isExpanded = expandedItems.has(item.id);
+
+            if (tracks.length > 0) {
+                // Create expand button if it doesn't exist
+                if (!expandBtn) {
+                    const btnHtml = `<button class="dq-expand-btn" onclick="toggleTrackList('${item.id}')">▶ SHOW TRACKS (${tracks.length})</button>`;
+                    el.insertAdjacentHTML('beforeend', btnHtml);
+                    expandBtn = el.querySelector('.dq-expand-btn');
+                }
+
+                // Create track list if it doesn't exist
+                if (!trackList) {
+                    const listHtml = `<div class="dq-track-list" data-item-id="${item.id}"></div>`;
+                    el.insertAdjacentHTML('beforeend', listHtml);
+                    trackList = el.querySelector('.dq-track-list');
+                }
+
+                // Update expand button text
+                expandBtn.textContent = isExpanded ? '▼ HIDE TRACKS' : `▶ SHOW TRACKS (${tracks.length})`;
+
+                // Update track list class
+                trackList.classList.toggle('open', isExpanded);
+
+                // Update track list content if expanded
+                if (isExpanded) {
+                    const scrollPos = trackList.scrollTop;
+                    trackList.innerHTML = tracks.map(t => `
+                        <div class="dq-track-entry">
+                            <span class="dq-track-status-icon" style="color: ${_trackStatusColor(t.status)}">${_statusIcon(t.status, 14)}</span>
+                            <span class="dq-track-label">${_escHtml(t.artist)} — ${_escHtml(t.title)}</span>
+                            <span class="dq-track-msg">${_escHtml(t.message)}</span>
+                        </div>
+                    `).join('');
+                    trackList.scrollTop = scrollPos;
+                }
+            }
         }
 
         async function fetchDownloadQueueStatus() {
@@ -1929,13 +2464,8 @@ function showCleanupResults(data) {
         });
 
         function showMessage(type, text) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.className = `message ${type}`;
-            messageDiv.innerText = text;
-            messageDiv.style.display = 'block';
-            setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+            // Disabled - notifications removed per user request
+            console.log(`[${type}] ${text}`);
         }
 
         function applyTemporaryFeedbackStyle(buttonElement, status) {
@@ -2781,9 +3311,12 @@ function showCleanupResults(data) {
         }
 
         async function runNow() {
-            const btn = document.getElementById('runNowBtn');
-            btn.disabled = true;
-            btn.textContent = 'Fetching recommendations...';
+            const btn = document.getElementById('runNowBtnSettings');
+            const originalText = btn ? btn.textContent : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Fetching...';
+            }
             try {
                 const response = await fetch('/api/run_now', { method: 'POST' });
                 const data = await response.json();
@@ -2793,8 +3326,10 @@ function showCleanupResults(data) {
                 console.error('Error running now:', error);
                 showMessage('error', 'Failed to start recommendation fetch');
             }
-            btn.disabled = false;
-            btn.textContent = 'Fetch All Recommendations Now';
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
         }
 
         // Detect playlist URLs client-side for immediate UI feedback

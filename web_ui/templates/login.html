@@ -7,170 +7,242 @@
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#4142e0">
     <link rel="icon" href="/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary-color: #4142e0;
             --secondary-color: #3fbbda;
-            --background-color: #1a1a2e;
-            --card-background: #2e2e4a;
-            --text-color: #e0e0e0;
-            --border-color: #4a4a6a;
-            --error-color: #dc3545;
+            --accent-color: #80f2ff;
+            --background-color: #0d0d1a;
+            --card-background: #1a1a2e;
+            --text-color: #e8e8f0;
+            --text-muted: #8888a0;
+            --border-color: #2a2a4a;
+            --error-color: #ff4757;
+            --font-mono: 'JetBrains Mono', monospace;
+            --font-sans: 'Outfit', -apple-system, sans-serif;
         }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            overscroll-behavior: none;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: var(--font-sans);
             background-color: var(--background-color);
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(65, 66, 224, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(63, 187, 218, 0.06) 0%, transparent 50%);
             color: var(--text-color);
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            padding: 20px;
+            position: fixed;
+            inset: 0;
+            touch-action: manipulation;
         }
-        .login-card {
-            background-color: var(--card-background);
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+
+        .login-container {
             width: 100%;
             max-width: 400px;
+            transition: transform 0.3s ease;
+        }
+
+        .login-card {
+            background-color: var(--card-background);
+            padding: 40px 36px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
+        }
+
+        .logo-section {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo-section img {
+            width: 72px;
+            margin-bottom: 16px;
+            filter: drop-shadow(0 0 20px rgba(65, 66, 224, 0.3));
+        }
+
+        .logo-section h1 {
+            font-family: var(--font-sans);
+            font-weight: 700;
+            font-size: 1.8em;
+            color: var(--text-color);
+            letter-spacing: -0.02em;
+        }
+
+        .navidrome-notice {
+            background: linear-gradient(135deg, rgba(65, 66, 224, 0.12) 0%, rgba(63, 187, 218, 0.08) 100%);
+            border: 1px solid rgba(65, 66, 224, 0.25);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 28px;
             text-align: center;
         }
-        .login-card img {
-            width: 100px;
-            margin-bottom: 20px;
-            filter: drop-shadow(0 0 5px rgba(0,0,0,0.3));
+
+        .navidrome-notice .notice-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            color: var(--text-color);
+            margin-bottom: 4px;
         }
-        .login-card h1 {
-            color: var(--primary-color);
-            margin-bottom: 8px;
-            font-size: 1.8em;
+
+        .navidrome-notice .notice-subtitle {
+            font-size: 0.85em;
+            color: var(--text-muted);
         }
-        .login-card p {
-            color: #b0b0b0;
-            margin-bottom: 24px;
-            font-size: 0.9em;
-        }
+
         .form-group {
-            margin-bottom: 16px;
-            text-align: left;
+            margin-bottom: 20px;
         }
+
         .form-group label {
             display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
+            margin-bottom: 8px;
+            font-weight: 500;
             font-size: 0.9em;
+            color: var(--text-muted);
         }
+
         .form-group input {
             width: 100%;
-            padding: 12px;
+            padding: 14px 16px;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 10px;
+            font-family: var(--font-sans);
             font-size: 1em;
-            background-color: #3a3a5a;
+            background-color: rgba(255, 255, 255, 0.04);
             color: var(--text-color);
-            transition: border-color 0.3s ease;
+            transition: all 0.2s ease;
         }
+
+        .form-group input::placeholder {
+            color: var(--text-muted);
+            opacity: 0.5;
+        }
+
         .form-group input:focus {
             border-color: var(--primary-color);
             outline: none;
-            box-shadow: 0 0 0 3px rgba(65,66,224,0.3);
+            box-shadow: 0 0 0 3px rgba(65, 66, 224, 0.15);
+            background-color: rgba(255, 255, 255, 0.06);
         }
+
         .login-btn {
             width: 100%;
-            padding: 12px;
-            background-color: var(--primary-color);
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, #5253f0 100%);
             color: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
+            font-family: var(--font-sans);
             font-size: 1em;
             font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(65, 66, 224, 0.25);
             margin-top: 8px;
         }
-        .login-btn:hover { background-color: var(--secondary-color); }
-        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .login-btn:hover {
+            background: linear-gradient(135deg, #5253f0 0%, var(--secondary-color) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(65, 66, 224, 0.35);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .error-msg {
             font-size: 0.9em;
-            margin-top: 12px;
+            margin-top: 16px;
             display: none;
-            padding: 10px 14px;
-            border-radius: 8px;
+            padding: 12px 16px;
+            border-radius: 10px;
             line-height: 1.4;
+            text-align: center;
         }
+
         .error-msg.error-invalid {
             color: var(--error-color);
-            background-color: rgba(220, 53, 69, 0.12);
-            border: 1px solid rgba(220, 53, 69, 0.3);
+            background-color: rgba(255, 71, 87, 0.1);
+            border: 1px solid rgba(255, 71, 87, 0.25);
         }
+
         .error-msg.error-offline {
-            color: #ffc107;
-            background-color: rgba(255, 193, 7, 0.12);
-            border: 1px solid rgba(255, 193, 7, 0.3);
+            color: #ffb400;
+            background-color: rgba(255, 180, 0, 0.1);
+            border: 1px solid rgba(255, 180, 0, 0.25);
         }
-        .error-msg.error-generic {
-            color: var(--error-color);
-            background-color: rgba(220, 53, 69, 0.12);
-            border: 1px solid rgba(220, 53, 69, 0.3);
-        }
-        .navidrome-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background-color: rgba(255, 255, 255, 0.06);
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 6px 14px;
-            margin-bottom: 24px;
-            font-size: 0.8em;
-            color: #b0b0b0;
-        }
-        .navidrome-badge svg {
-            width: 14px;
-            height: 14px;
-            opacity: 0.7;
-        }
-        /* Mobile optimizations - prevent scrolling to see password field */
-        @media (max-height: 700px) {
-            body { align-items: flex-start; padding: 20px 16px; }
-            .login-card { padding: 24px 24px 28px; }
-            .login-card img { width: 60px; margin-bottom: 12px; }
-            .login-card h1 { font-size: 1.5em; margin-bottom: 4px; }
-            .login-card p { margin-bottom: 16px; }
-            .navidrome-badge { margin-bottom: 16px; padding: 5px 12px; }
-            .form-group { margin-bottom: 12px; }
-            .form-group input { padding: 10px; }
-        }
+
         @media (max-width: 480px) {
             body { padding: 16px; }
-            .login-card { padding: 24px 20px 28px; }
+            .login-card { padding: 28px 20px; }
         }
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <img src="/assets/logo.svg" alt="TrackDrop">
-        <h1>TrackDrop</h1>
-        <div class="navidrome-badge">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V17M6 21H18C19.1046 21 20 20.1046 20 19V13C20 11.8954 19.1046 11 18 11H6C4.89543 11 4 11.8954 4 13V19C4 20.1046 4.89543 21 6 21ZM16 11V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V11H16Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Sign in with your Navidrome credentials
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo-section">
+                <img src="/assets/logo.svg" alt="TrackDrop">
+                <h1>TrackDrop</h1>
+            </div>
+
+            <div class="navidrome-notice">
+                <div class="notice-title">Use your Navidrome account</div>
+                <div class="notice-subtitle">Same username and password as your music server</div>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter your username" autocomplete="username" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+                <div class="error-msg" id="errorMsg"></div>
+            </form>
         </div>
-        <form id="loginForm" onsubmit="handleLogin(event)">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" autocomplete="username" required autofocus>
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" autocomplete="current-password" required>
-            </div>
-            <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
-            <div class="error-msg" id="errorMsg"></div>
-        </form>
     </div>
+
     <script>
         if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
+        // Shift login card up when mobile keyboard opens
+        if (window.visualViewport) {
+            const container = document.querySelector('.login-container');
+            const initialHeight = window.visualViewport.height;
+
+            window.visualViewport.addEventListener('resize', () => {
+                const keyboardHeight = initialHeight - window.visualViewport.height;
+                if (keyboardHeight > 100) {
+                    container.style.transform = `translateY(-${keyboardHeight / 2}px)`;
+                } else {
+                    container.style.transform = '';
+                }
+            });
+        }
 
         async function handleLogin(e) {
             e.preventDefault();
