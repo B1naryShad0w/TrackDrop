@@ -694,6 +694,10 @@ class NavidromeAPI:
                     tracks_by_source[playlist_name] = []
                 tracks_by_source[playlist_name].append(song)
 
+        print(f"\n--- Playlist Distribution Debug ---", flush=True)
+        for pname, psongs in tracks_by_source.items():
+            print(f"  {pname}: {len(psongs)} tracks", flush=True)
+
         for playlist_name, songs in tracks_by_source.items():
             if target_user:
                 print(f"\n=== Updating playlist: {playlist_name} (for user: {target_user}) ===")

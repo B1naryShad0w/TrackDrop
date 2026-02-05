@@ -979,6 +979,17 @@
         <!-- Spacer to clear header icons -->
         <div style="height: 40px;"></div>
 
+        <!-- PWA Install Banner (shown on mobile when not installed) -->
+        <div id="pwaInstallBanner" style="display: none; background: #000; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                <span style="color: #ccc; font-size: 0.85em;">Install as app for a better experience</span>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <a href="#" onclick="openPwaInstructions(); return false;" style="color: #fff; font-size: 0.85em; text-decoration: underline;">How</a>
+                    <button onclick="dismissPwaBanner()" style="background: none; border: none; color: #666; font-size: 1.1em; cursor: pointer; padding: 0;">&times;</button>
+                </div>
+            </div>
+        </div>
+
         <div id="message" class="message" style="display: none;"></div>
 
         <!-- Welcome greeting -->
@@ -1033,6 +1044,22 @@
         <div class="modal-content">
             <span class="close" onclick="closeSettingsModal()">&times;</span>
             <h2>Settings</h2>
+
+            <!-- Quick Actions - Fetch Recommendations -->
+            <div style="margin-bottom: 20px; padding: 15px; background: rgba(65, 66, 224, 0.08); border-radius: 8px; border: 1px solid rgba(65, 66, 224, 0.2);">
+                <h4 style="margin: 0 0 12px 0; color: var(--text-color);">Fetch Recommendations</h4>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button onclick="fetchListenBrainzNow()" style="flex: 1; min-width: 140px; background-color: #3a3a5a; border: 1px solid #353070;">
+                        ListenBrainz
+                    </button>
+                    <button onclick="fetchLastFmNow()" style="flex: 1; min-width: 140px; background-color: #3a3a5a; border: 1px solid #8b3a3a;">
+                        Last.fm
+                    </button>
+                    <button id="runNowBtnSettings" onclick="runNow()" style="flex: 1; min-width: 140px; background-color: var(--primary-color);">
+                        Fetch All
+                    </button>
+                </div>
+            </div>
 
             <!-- Configuration Section -->
             <div class="settings">
@@ -1142,25 +1169,31 @@
                         </div>
 
                         <button onclick="saveAutomationOptions()">Save Schedule</button>
-
-                        <hr style="border-color: var(--border-color); margin: 20px 0;">
-
-                        <h4 style="margin-bottom: 12px;">Fetch Recommendations Now</h4>
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <button onclick="fetchListenBrainzNow()" style="background-color: #353070;">
-                                Fetch ListenBrainz Recommendations
-                            </button>
-                            <button onclick="fetchLastFmNow()" style="background-color: #d51007;">
-                                Fetch Last.fm Recommendations
-                            </button>
-                            <button id="runNowBtn" onclick="runNow()" style="background-color: #3a3a5a; border: 1px solid var(--border-color);">
-                                Fetch All Recommendations
-                            </button>
-                        </div>
                     </div>
                 </details>
 
                 <details>
+                    <summary>Experimental Features</summary>
+                    <div style="padding: 15px;">
+                        <div style="background: rgba(255, 180, 0, 0.1); border: 1px solid rgba(255, 180, 0, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                            <p style="color: #ffb400; margin: 0; font-size: 0.9em;">
+                                These features are experimental and may change or be removed in future updates.
+                            </p>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="experimentalFeaturesEnabled" onchange="toggleExperimentalFeatures()">
+                                Enable Experimental Features
+                            </label>
+                            <small style="color: #b0b0b0; display: block; margin-top: 8px; padding-left: 26px;">
+                                Enables playlist monitoring and custom playlist naming when downloading playlists.
+                            </small>
+                        </div>
+                        <button onclick="saveExperimentalSettings()">Save</button>
+                    </div>
+                </details>
+
+                <details id="monitoredPlaylistsSection" style="display: none;">
                     <summary>Monitored Playlists</summary>
                     <div style="padding: 15px;">
                         <small style="color: #b0b0b0; display: block; margin-bottom: 12px;">
@@ -1278,6 +1311,22 @@
         </div>
     </div>
 
+    <!-- Custom Confirmation Dialog -->
+    <div id="confirmDialog" class="pl-popup-overlay">
+        <div class="pl-popup" style="max-width: 400px;">
+            <h3 id="confirmDialogTitle">Confirm</h3>
+            <p id="confirmDialogMessage" style="color: #b0b0b0; margin-bottom: 20px;"></p>
+            <div style="display: flex; gap: 12px;">
+                <button id="confirmDialogCancel" style="flex: 1; padding: 12px; background: #3a3a5a; border: 1px solid var(--border-color);">
+                    Cancel
+                </button>
+                <button id="confirmDialogOk" style="flex: 1; padding: 12px;">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Welcome greetings with {name} placeholder
         const GREETINGS = [
@@ -1300,6 +1349,117 @@
 
         // Display name (loaded from settings)
         let userDisplayName = "{{ display_name or username }}";
+
+        // Experimental features state
+        let experimentalFeaturesEnabled = false;
+
+        // PWA detection and install banner
+        function isPwaInstalled() {
+            // Check if running in standalone mode (PWA)
+            return window.matchMedia('(display-mode: standalone)').matches ||
+                   window.navigator.standalone === true ||
+                   document.referrer.includes('android-app://');
+        }
+
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                   (window.innerWidth <= 768);
+        }
+
+        function checkPwaBanner() {
+            const banner = document.getElementById('pwaInstallBanner');
+            if (!banner) return;
+
+            // Check if user dismissed the banner before
+            const dismissed = localStorage.getItem('pwaBannerDismissed');
+            if (dismissed) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            // Show banner only on mobile when not installed as PWA
+            if (isMobileDevice() && !isPwaInstalled()) {
+                banner.style.display = 'block';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        function dismissPwaBanner() {
+            const banner = document.getElementById('pwaInstallBanner');
+            if (banner) banner.style.display = 'none';
+            localStorage.setItem('pwaBannerDismissed', 'true');
+        }
+
+        function openPwaInstructions() {
+            // Open settings modal and scroll to Mobile Apps section
+            openSettingsModal();
+            setTimeout(() => {
+                const mobileAppsDetails = document.querySelector('details summary');
+                const allDetails = document.querySelectorAll('.settings details');
+                allDetails.forEach(d => {
+                    if (d.querySelector('summary').textContent.includes('Mobile Apps')) {
+                        d.open = true;
+                        d.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
+            }, 100);
+        }
+
+        // Check PWA banner on page load
+        document.addEventListener('DOMContentLoaded', checkPwaBanner);
+
+        // Custom confirmation dialog
+        function showConfirmDialog(title, message, onConfirm, onCancel) {
+            const overlay = document.getElementById('confirmDialog');
+            document.getElementById('confirmDialogTitle').textContent = title;
+            document.getElementById('confirmDialogMessage').textContent = message;
+
+            const okBtn = document.getElementById('confirmDialogOk');
+            const cancelBtn = document.getElementById('confirmDialogCancel');
+
+            // Remove old listeners
+            const newOkBtn = okBtn.cloneNode(true);
+            const newCancelBtn = cancelBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+            newOkBtn.addEventListener('click', () => {
+                overlay.classList.remove('open');
+                if (onConfirm) onConfirm();
+            });
+
+            newCancelBtn.addEventListener('click', () => {
+                overlay.classList.remove('open');
+                if (onCancel) onCancel();
+            });
+
+            overlay.classList.add('open');
+        }
+
+        function toggleExperimentalFeatures() {
+            const enabled = document.getElementById('experimentalFeaturesEnabled').checked;
+            document.getElementById('monitoredPlaylistsSection').style.display = enabled ? 'block' : 'none';
+        }
+
+        async function saveExperimentalSettings() {
+            const enabled = document.getElementById('experimentalFeaturesEnabled').checked;
+            try {
+                const response = await fetch('/api/user/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ experimental_features_enabled: enabled })
+                });
+                const data = await response.json();
+                showMessage(data.status, data.message);
+                if (data.status === 'success') {
+                    experimentalFeaturesEnabled = enabled;
+                    document.getElementById('monitoredPlaylistsSection').style.display = enabled ? 'block' : 'none';
+                }
+            } catch (error) {
+                showMessage('error', 'Failed to save settings');
+            }
+        }
 
         function showRandomGreeting() {
             const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
@@ -1622,11 +1782,31 @@ function showCleanupResults(data) {
             const pending = Math.max(0, total - processed);
             const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
             const isExpanded = expandedItems.has(item.id);
+            const sourceStats = item.source_stats || {};
 
             // Progress bar color: green if completed, blue if in progress, red if failed
             let barColor = 'var(--info-color)';
             if (item.status === 'completed') barColor = 'var(--success-color)';
             else if (item.status === 'failed') barColor = 'var(--error-color)';
+
+            // Build source stats display
+            let sourceStatsHtml = '';
+            const sourceEntries = Object.entries(sourceStats);
+            if (sourceEntries.length > 0) {
+                sourceStatsHtml = `
+                    <div class="dq-source-stats" style="display: flex; gap: 12px; font-size: 0.8em; margin-top: 6px; flex-wrap: wrap;">
+                        ${sourceEntries.map(([src, stats]) => {
+                            const apiCount = stats.api_count || 0;
+                            const finalCount = stats.final_count !== undefined ? stats.final_count : apiCount;
+                            const dedupNote = finalCount !== apiCount ? ` (${finalCount} after dedup)` : '';
+                            return `<span style="display: flex; align-items: center; gap: 4px;">
+                                <span style="width: 8px; height: 8px; border-radius: 50%; background-color: #888;"></span>
+                                ${_escHtml(src)}: ${apiCount}${dedupNote}
+                            </span>`;
+                        }).join('')}
+                    </div>
+                `;
+            }
 
             let trackListHtml = '';
             if (tracks.length > 0) {
@@ -1657,6 +1837,7 @@ function showCleanupResults(data) {
                             ${_statusIcon(item.status)}
                         </div>
                     </div>
+                    ${sourceStatsHtml}
                     ${total > 0 ? `
                         <div class="dq-progress-bar">
                             <div class="dq-progress-bar-inner" style="width: ${pct}%; background-color: ${barColor};"></div>
@@ -2868,6 +3049,83 @@ function showCleanupResults(data) {
             }, 500);
         });
 
+        // Helper to reset download button
+        function _resetDownloadBtn(downloadLinkBtn) {
+            downloadLinkBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+            downloadLinkBtn.disabled = false;
+        }
+
+        // Actually perform the playlist download
+        async function _doPlaylistDownload(url, playlistName, downloadLinkBtn) {
+            try {
+                downloadLinkBtn.innerHTML = '<div class="spinner"></div>Downloading...';
+                showMessage('info', `Downloading playlist: ${playlistName}`);
+                downloadQueue.unshift({ artist: 'Playlist', title: playlistName, status: 'in_progress' });
+                updateDownloadQueueUI();
+                openDownloadQueueModal();
+
+                const response = await fetch('/api/download_from_link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        link: url,
+                        monitor: false,
+                        playlist_name: null
+                    })
+                });
+                const data = await response.json();
+                showMessage(data.status, data.message);
+                if (data.status === 'success') {
+                    document.getElementById('musicLinkInput').value = '';
+                }
+            } catch (error) {
+                console.error('Error downloading playlist:', error);
+                showMessage('error', 'Failed to initiate playlist download.');
+            } finally {
+                setTimeout(() => _resetDownloadBtn(downloadLinkBtn), 500);
+            }
+        }
+
+        // Simple playlist download (non-experimental mode)
+        async function _downloadPlaylistSimple(url, downloadLinkBtn) {
+            try {
+                // Get playlist info via preflight
+                const preflightResp = await fetch('/api/playlist_preflight', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const preflight = await preflightResp.json();
+
+                if (preflight.status !== 'success') {
+                    showMessage('error', preflight.message || 'Failed to load playlist info');
+                    _resetDownloadBtn(downloadLinkBtn);
+                    return;
+                }
+
+                const playlistName = preflight.name;
+                const exists = preflight.exists;
+
+                // If playlist exists, ask for confirmation with custom dialog
+                if (exists) {
+                    showConfirmDialog(
+                        'Playlist Exists',
+                        `A playlist named "${playlistName}" already exists in Navidrome. Do you want to overwrite it?`,
+                        () => _doPlaylistDownload(url, playlistName, downloadLinkBtn),  // On confirm
+                        () => _resetDownloadBtn(downloadLinkBtn)  // On cancel
+                    );
+                    return;
+                }
+
+                // No conflict - download directly
+                await _doPlaylistDownload(url, playlistName, downloadLinkBtn);
+            } catch (error) {
+                console.error('Error downloading playlist:', error);
+                showMessage('error', 'Failed to initiate playlist download.');
+                _resetDownloadBtn(downloadLinkBtn);
+            }
+        }
+
         async function downloadFromLink() {
             const musicLink = document.getElementById('musicLinkInput').value.trim();
             const downloadLinkBtn = document.getElementById('downloadLinkBtn');
@@ -2880,11 +3138,17 @@ function showCleanupResults(data) {
             const isPlaylist = _isPlaylistUrl(musicLink);
 
             if (isPlaylist) {
-                // Show popup to choose one-time vs monitor
                 _pendingPlaylistLink = musicLink;
                 downloadLinkBtn.innerHTML = '<div class="spinner"></div>Processing...';
                 downloadLinkBtn.disabled = true;
-                _showPlaylistPopup(musicLink);
+
+                if (experimentalFeaturesEnabled) {
+                    // Experimental: Show full popup with monitoring/rename options
+                    _showPlaylistPopup(musicLink);
+                } else {
+                    // Default: Simple download with overwrite confirmation
+                    await _downloadPlaylistSimple(musicLink, downloadLinkBtn);
+                }
                 return;
             }
 
@@ -3076,6 +3340,10 @@ function showCleanupResults(data) {
                     document.getElementById('lastfmEnabled').checked = s.lastfm_enabled || false;
                     document.getElementById('lastfmUsername').value = s.lastfm_username || '';
                     document.getElementById('displayName').value = s.display_name || '';
+                    // Load experimental features setting
+                    experimentalFeaturesEnabled = s.experimental_features_enabled || false;
+                    document.getElementById('experimentalFeaturesEnabled').checked = experimentalFeaturesEnabled;
+                    document.getElementById('monitoredPlaylistsSection').style.display = experimentalFeaturesEnabled ? 'block' : 'none';
                     updateListenBrainzVisibility();
                     updateLastFmVisibility();
                 }

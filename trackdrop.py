@@ -137,6 +137,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
     track_downloader = TrackDownloader(tagger)
 
     all_recommendations = []
+    source_stats = {}  # Track API response counts for UI visibility
 
     # ListenBrainz recommendations
     if source in ["all", "listenbrainz"] and lb_enabled:
@@ -151,11 +152,13 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 lb_recs = await listenbrainz_api.get_listenbrainz_recommendations()
                 if lb_recs:
                     print(f"Found {len(lb_recs)} ListenBrainz recommendations")
+                    source_stats['ListenBrainz'] = {'api_count': len(lb_recs)}
                     for song in lb_recs:
                         print(f"  {song['artist']} - {song['title']}")
                     all_recommendations.extend(lb_recs)
                 else:
                     print("No ListenBrainz recommendations found")
+                    source_stats['ListenBrainz'] = {'api_count': 0}
             else:
                 print("Playlist unchanged, skipping (use --bypass-playlist-check to force)")
         except Exception as e:
@@ -175,11 +178,13 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             lf_recs = await lastfm_api.get_lastfm_recommendations()
             if lf_recs:
                 print(f"Found {len(lf_recs)} Last.fm recommendations")
+                source_stats['Last.fm'] = {'api_count': len(lf_recs)}
                 for song in lf_recs:
                     print(f"  {song['artist']} - {song['title']}")
                 all_recommendations.extend(lf_recs)
             else:
                 print("No Last.fm recommendations found")
+                source_stats['Last.fm'] = {'api_count': 0}
         except Exception as e:
             print(f"Error fetching Last.fm recommendations: {e}")
     elif source == "lastfm" and not lf_enabled:
@@ -206,6 +211,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                 llm_recs = llm_api.get_recommendations(scrobbles)
                 if llm_recs:
                     print(f"Found {len(llm_recs)} LLM recommendations")
+                    source_stats['LLM'] = {'api_count': len(llm_recs)}
                     for rec in llm_recs:
                         rec['recording_mbid'] = ''
                         rec['release_date'] = ''
@@ -216,8 +222,10 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
                     all_recommendations.extend(llm_recs)
                 else:
                     print("LLM failed to generate recommendations")
+                    source_stats['LLM'] = {'api_count': 0}
             else:
                 print("No recent scrobbles found for LLM input")
+                source_stats['LLM'] = {'api_count': 0, 'error': 'No scrobbles'}
         except Exception as e:
             print(f"Error generating LLM recommendations: {e}")
     elif source == "llm":
@@ -227,8 +235,17 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             print("LLM API key is not configured")
 
     # Deduplicate (but track all sources so song appears on all relevant playlists)
+    print(f"\n--- Deduplication ---", flush=True)
+    print(f"Total recommendations before dedup: {len(all_recommendations)}", flush=True)
+    source_counts_before = {}
+    for rec in all_recommendations:
+        src = rec.get('source', 'Unknown')
+        source_counts_before[src] = source_counts_before.get(src, 0) + 1
+    print(f"By source before dedup: {source_counts_before}", flush=True)
+
     unique_recommendations = []
     seen = {}  # key -> index in unique_recommendations
+    multi_source_tracks = []
     for rec in all_recommendations:
         key = (rec['artist'].lower(), rec['title'].lower())
         if key not in seen:
@@ -242,10 +259,24 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             new_source = rec.get('source', 'Unknown')
             if new_source not in existing.get('sources', []):
                 existing.setdefault('sources', []).append(new_source)
+                multi_source_tracks.append(f"{existing['artist']} - {existing['title']} ({existing['sources']})")
+
+    print(f"Unique tracks after dedup: {len(unique_recommendations)}", flush=True)
+    if multi_source_tracks:
+        print(f"Tracks appearing in multiple sources ({len(multi_source_tracks)}):", flush=True)
+        for t in multi_source_tracks:
+            print(f"  {t}", flush=True)
+
+    # Calculate final counts per source after dedup (tracks can appear in multiple sources)
+    for rec in unique_recommendations:
+        for src in rec.get('sources', [rec.get('source', 'Unknown')]):
+            if src in source_stats:
+                source_stats[src]['final_count'] = source_stats[src].get('final_count', 0) + 1
 
     if not unique_recommendations:
         print("\nNo recommendations to process")
-        update_status_file(download_id, "completed", "No recommendations found", "No Recommendations")
+        update_status_file(download_id, "completed", "No recommendations found", "No Recommendations",
+                          source_stats=source_stats)
         return 0, 0
 
     print(f"\n--- Downloading {len(unique_recommendations)} Tracks ---")
@@ -270,6 +301,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
             failed_count=failed_count,
             skipped_count=skipped_count,
             download_type="playlist",
+            source_stats=source_stats,
         )
 
     update_progress("in_progress", f"Starting download of {total} tracks")
@@ -340,6 +372,7 @@ async def process_recommendations(source="all", bypass_playlist_check=False, dow
         tracks=track_statuses, downloaded_count=len(downloaded_songs),
         skipped_count=skipped_count, failed_count=failed_count,
         download_type="playlist",
+        source_stats=source_stats,
     )
 
     return len(downloaded_songs), total
